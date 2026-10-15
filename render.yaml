@@ -1,0 +1,24 @@
+# Render deployment config for secval.
+# Modeled on compplan's render.yaml. Deliberately `npm start` alone in
+# startCommand — no migration step here; the schema self-initializes on boot
+# (see server/db.ts). DO NOT deploy until Livio says "ship it".
+services:
+  - type: web
+    name: secval
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      # Persisted SQLite store lives on a disk so scan history + audit
+      # trail survive restarts.
+      - key: DATA_DIR
+        value: /var/data
+    disk:
+      name: secval-data
+      mountPath: /var/data
+      sizeGB: 1
