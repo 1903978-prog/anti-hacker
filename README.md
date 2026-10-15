@@ -4,8 +4,9 @@ An authorized continuous security-validation platform — a self-service
 scanner for **my own assets only**. The governance/safety layer is built and
 tested before any scanning capability exists.
 
-> Status: **Phase 1 (governance spine) complete.** No scanning capability
-> exists yet. See `CLAUDE.md` for standing rules and safety invariants.
+> Status: **Phases 1–3 complete** — governance spine, passive scanner + UI,
+> and a weekly automatic sweep. See `CLAUDE.md` for standing rules and safety
+> invariants.
 
 ## Phase 1 — what's here
 
@@ -51,8 +52,22 @@ allowlist, scan history, and audit trail.
 | GET | `/api/audit` | read the append-only audit trail |
 | POST | `/api/kill-switch/engage` · `/release` | halt / resume all scans |
 | POST | `/api/scan/preflight` | ask the policy engine for approval (runs nothing) |
+| POST | `/api/scan` | run a passive scan of a proven target |
+| GET | `/api/scans` · `/api/scans/:id/findings` | scan history and findings |
+| GET | `/api/schedule` | weekly schedule config + last run |
+| POST | `/api/schedule/run-now` | run the sweep across proven targets now |
 
-## Next (Phase 2)
+## Automatic scans
 
-A passive-only scanner built on top of this spine (security headers, TLS
-config, etc.) with a paste-a-URL UI and allowlist management.
+A weekly sweep runs every **Monday 08:00 Europe/Paris** (CET/CEST), scanning
+every ownership-proven target in passive mode through the same policy gate.
+
+> **Caveat:** the scheduler runs inside the web process. On Render's free tier
+> the service sleeps when idle, so a sweep can be missed if nothing wakes it.
+> For reliable timing, keep the service always-on or trigger
+> `POST /api/schedule/run-now` from an external scheduler (e.g. a Render cron).
+
+## Next (ideas)
+
+Active (authenticated / deeper) scanning for active-eligible targets, richer
+passive checks, and notifications on new findings.
