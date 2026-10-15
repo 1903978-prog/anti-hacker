@@ -1,7 +1,14 @@
-# Render deployment config for secval.
-# Modeled on compplan's render.yaml. Deliberately `npm start` alone in
-# startCommand — no migration step here; the schema self-initializes on boot
-# (see server/db.ts). DO NOT deploy until Livio says "ship it".
+# Render deployment config for secval (Blueprint).
+# Free-tier web service: no persistent disk is attached, so the SQLite store
+# lives on the container's ephemeral filesystem and RESETS on each deploy,
+# restart, or free-tier sleep. That is fine for trying the app out. For a
+# durable allowlist + audit trail, move to a paid instance with a disk (see
+# the commented block below) or a managed database.
+#
+# `tsx` is a runtime dependency so `npm start` works even with
+# NODE_ENV=production (which otherwise skips devDependencies).
+#
+# DO NOT change hosts/plan without Livio's say-so.
 services:
   - type: web
     name: secval
@@ -14,11 +21,6 @@ services:
         value: "22"
       - key: NODE_ENV
         value: production
-      # Persisted SQLite store lives on a disk so scan history + audit
-      # trail survive restarts.
-      - key: DATA_DIR
-        value: /var/data
-    disk:
-      name: secval-data
-      mountPath: /var/data
-      sizeGB: 1
+    # To make data durable later, upgrade off free and uncomment:
+    #   envVars: [{ key: DATA_DIR, value: /var/data }]
+    #   disk: { name: secval-data, mountPath: /var/data, sizeGB: 1 }
