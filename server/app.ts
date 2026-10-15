@@ -16,6 +16,7 @@ import { listAudit } from "./audit/log.js";
 import { engage, isEngaged, release } from "./governance/killswitch.js";
 import { requestApproval, type ScanMode } from "./governance/policy.js";
 import { getFindings, listScans, runPassiveScan } from "./scan/passive.js";
+import { DEFAULT_WEEKLY, getLastRun, runWeeklySweep } from "./schedule/weekly.js";
 
 // Until a real auth layer exists, the actor is a fixed operator identity.
 // Every governance action is still attributed in the audit trail.
@@ -131,6 +132,20 @@ export function createApp(db: DB): Express {
 
   app.get("/api/scans/:id/findings", (req, res) => {
     res.json(getFindings(db, req.params.id));
+  });
+
+  // --- Schedule (weekly automatic sweep) ------------------------------------
+  app.get("/api/schedule", (_req, res) => {
+    res.json({
+      ...DEFAULT_WEEKLY,
+      description: `Every ${DEFAULT_WEEKLY.weekday} at ${String(DEFAULT_WEEKLY.hour).padStart(2, "0")}:00 ${DEFAULT_WEEKLY.timeZone}`,
+      lastRun: getLastRun(db),
+    });
+  });
+
+  app.post("/api/schedule/run-now", async (_req, res) => {
+    const result = await runWeeklySweep(db, ACTOR);
+    res.json(result);
   });
 
   // --- Static UI ------------------------------------------------------------

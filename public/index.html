@@ -76,6 +76,15 @@
       </div>
 
       <div class="card">
+        <h2>Automatic scans</h2>
+        <div class="row" style="align-items:center">
+          <span id="scheduleText" class="muted" style="flex:1">…</span>
+          <button id="runNowBtn" class="ghost">Run all now</button>
+        </div>
+        <div id="scheduleMsg" class="note"></div>
+      </div>
+
+      <div class="card">
         <h2>Recent scans</h2>
         <table id="scansTable"><tbody></tbody></table>
       </div>
@@ -194,7 +203,20 @@
           <td><span class="sev ${a.decision === "deny" ? "high" : "info"}">${esc(a.decision)}</span></td></tr>`).join("");
       }
 
-      refreshKillSwitch(); refreshAllowlist(); refreshScans(); refreshAudit();
+      async function refreshSchedule() {
+        const { body } = await api("/api/schedule");
+        el("scheduleText").textContent = body.description + (body.lastRun ? ` · last run ${body.lastRun}` : " · not run yet");
+      }
+      el("runNowBtn").onclick = async () => {
+        el("runNowBtn").disabled = true;
+        el("scheduleMsg").textContent = "Scanning all proven sites…";
+        const { body } = await api("/api/schedule/run-now", { method: "POST", body: "{}" });
+        el("scheduleMsg").textContent = `Done — scanned ${body.scanned} site(s), ${body.skipped} skipped (ownership not proven), ${body.totalFindings} finding(s).`;
+        el("runNowBtn").disabled = false;
+        refreshScans(); refreshAudit();
+      };
+
+      refreshKillSwitch(); refreshAllowlist(); refreshScans(); refreshAudit(); refreshSchedule();
     </script>
   </body>
 </html>
