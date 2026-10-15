@@ -1,4 +1,6 @@
 import express, { type Express, type Request, type Response } from "express";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { z } from "zod";
 import type { DB } from "./db.js";
 import {
@@ -13,6 +15,7 @@ import { createChallenge, verifyOwnership, type ProofMethod } from "./ownership/
 import { listAudit } from "./audit/log.js";
 import { engage, isEngaged, release } from "./governance/killswitch.js";
 import { requestApproval, type ScanMode } from "./governance/policy.js";
+import { getFindings, listScans, runPassiveScan } from "./scan/passive.js";
 
 // Until a real auth layer exists, the actor is a fixed operator identity.
 // Every governance action is still attributed in the audit trail.
@@ -96,7 +99,7 @@ export function createApp(db: DB): Express {
     res.json({ killSwitch: "released" });
   });
 
-  // --- Scan approval (dry-run gate; no scanning capability exists yet) -------
+  // --- Scan approval (dry-run gate: asks the engine, runs nothing) ----------
   app.post("/api/scan/preflight", (req, res) => {
     const body = z
       .object({
@@ -112,6 +115,27 @@ export function createApp(db: DB): Express {
     });
     res.status(decision.allowed ? 200 : 403).json(decision);
   });
+
+  // --- Passive scan (gated; passive reads only) -----------------------------
+  app.post("/api/scan", async (req, res) => {
+    const body = z.object({ target: z.string() }).safeParse(req.body);
+    if (!body.success) return badRequest(res, body.error.message);
+    const result = await runPassiveScan(db, { actor: ACTOR, target: body.data.target });
+    const status = result.status === "completed" ? 200 : result.status === "denied" ? 403 : 502;
+    res.status(status).json(result);
+  });
+
+  app.get("/api/scans", (_req, res) => {
+    res.json(listScans(db));
+  });
+
+  app.get("/api/scans/:id/findings", (req, res) => {
+    res.json(getFindings(db, req.params.id));
+  });
+
+  // --- Static UI ------------------------------------------------------------
+  const publicDir = join(dirname(fileURLToPath(import.meta.url)), "..", "public");
+  app.use(express.static(publicDir));
 
   return app;
 }

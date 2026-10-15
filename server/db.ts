@@ -59,6 +59,16 @@ export function initSchema(db: Database.Database): void {
       findings_count INTEGER NOT NULL DEFAULT 0
     );
 
+    CREATE TABLE IF NOT EXISTS findings (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      scan_id    TEXT NOT NULL REFERENCES scans(id),
+      severity   TEXT NOT NULL,
+      code       TEXT NOT NULL,
+      title      TEXT NOT NULL,
+      detail     TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS app_state (
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
