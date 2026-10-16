@@ -16,6 +16,7 @@ import { listAudit } from "./audit/log.js";
 import { engage, isEngaged, release } from "./governance/killswitch.js";
 import { requestApproval, type ScanMode } from "./governance/policy.js";
 import { getFindings, listScans, runPassiveScan } from "./scan/passive.js";
+import { runActiveScan } from "./scan/active.js";
 import { DEFAULT_WEEKLY, getLastRun, runWeeklySweep } from "./schedule/weekly.js";
 
 // Until a real auth layer exists, the actor is a fixed operator identity.
@@ -122,6 +123,21 @@ export function createApp(db: DB): Express {
     const body = z.object({ target: z.string() }).safeParse(req.body);
     if (!body.success) return badRequest(res, body.error.message);
     const result = await runPassiveScan(db, { actor: ACTOR, target: body.data.target });
+    const status = result.status === "completed" ? 200 : result.status === "denied" ? 403 : 502;
+    res.status(status).json(result);
+  });
+
+  // --- Active scan (gated; active-eligible targets only; GET-only probes) ---
+  app.post("/api/scan/active", async (req, res) => {
+    const body = z
+      .object({ target: z.string(), loginPath: z.string().optional() })
+      .safeParse(req.body);
+    if (!body.success) return badRequest(res, body.error.message);
+    const result = await runActiveScan(db, {
+      actor: ACTOR,
+      target: body.data.target,
+      loginPath: body.data.loginPath,
+    });
     const status = result.status === "completed" ? 200 : result.status === "denied" ? 403 : 502;
     res.status(status).json(result);
   });

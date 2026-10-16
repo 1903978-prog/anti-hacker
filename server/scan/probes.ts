@@ -1,14 +1,15 @@
 import tls from "node:tls";
-import type { HttpResult, TlsResult } from "./types.js";
+import { randomBytes } from "node:crypto";
+import type { AuthAttemptResult, HttpResult, TlsResult } from "./types.js";
 
 /**
  * Real passive probes. Both are read-only: a single GET and a TLS handshake.
  * Neither mutates the target, and response bodies are discarded unread.
  */
 
-export async function httpProbe(url: string, timeoutMs: number): Promise<HttpResult> {
+export async function httpProbe(url: string, timeoutMs: number, method = "GET"): Promise<HttpResult> {
   const res = await fetch(url, {
-    method: "GET",
+    method,
     redirect: "manual",
     signal: AbortSignal.timeout(timeoutMs),
     headers: { "user-agent": "secval-passive/0.1 (+authorized self-scan)" },
@@ -31,6 +32,45 @@ export async function httpProbe(url: string, timeoutMs: number): Promise<HttpRes
   }
 
   return { status: res.status, headers, setCookies };
+}
+
+/**
+ * A single login-hardening probe: one POST of deliberately-invalid, random
+ * credentials to a login endpoint. It is NOT credential stuffing and NOT user
+ * enumeration — the username is a fresh random non-existent value and the
+ * password is random, so no real account is ever targeted and a correct login
+ * is impossible. A failed login mutates no data. Only the status and whether
+ * the server throttled is returned; the response body is discarded unread.
+ */
+export async function authProbe(url: string, timeoutMs: number): Promise<AuthAttemptResult> {
+  const nonce = randomBytes(9).toString("hex");
+  const body = new URLSearchParams({
+    username: `secval-nouser-${nonce}`,
+    email: `secval-nouser-${nonce}@example.invalid`,
+    password: randomBytes(16).toString("hex"),
+  });
+
+  const res = await fetch(url, {
+    method: "POST",
+    redirect: "manual",
+    signal: AbortSignal.timeout(timeoutMs),
+    headers: {
+      "user-agent": "secval-active/0.1 (+authorized self-scan)",
+      "content-type": "application/x-www-form-urlencoded",
+    },
+    body: body.toString(),
+  });
+
+  const retryAfter = res.headers.has("retry-after");
+  const rateLimited = res.status === 429 || res.status === 423 || retryAfter;
+
+  try {
+    await res.body?.cancel();
+  } catch {
+    /* ignore */
+  }
+
+  return { status: res.status, rateLimited };
 }
 
 export function tlsProbe(host: string, timeoutMs: number): Promise<TlsResult> {
