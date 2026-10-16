@@ -1,4 +1,4 @@
-import type { Finding, HttpResult, TlsResult } from "./types.js";
+import type { Finding, HttpResult, Severity, TlsResult } from "./types.js";
 
 /**
  * Pure analysis functions. They take normalized probe results and return
@@ -186,4 +186,97 @@ export function analyzeTls(tls: TlsResult, now: Date = new Date()): Finding[] {
 function parseTlsVersion(protocol: string): number | null {
   const m = /TLSv(\d+(?:\.\d+)?)/i.exec(protocol);
   return m ? Number(m[1]) : null;
+}
+
+/**
+ * A sensitive path probed by the active scanner. The probe is a single
+ * read-only GET; exposure is judged from the HTTP status only. Response
+ * bodies are never read or retained, so a positive finding records that a
+ * path is reachable — never what it contained.
+ */
+export interface SensitivePath {
+  path: string;
+  code: string;
+  title: string;
+  severity: Severity;
+  detail: string;
+}
+
+/**
+ * A small, curated set of commonly-leaked paths. Kept deliberately short so
+ * an active scan stays polite (well within the request caps) and never
+ * resembles brute-force enumeration. All are read-only GETs.
+ */
+export const SENSITIVE_PATHS: SensitivePath[] = [
+  {
+    path: "/.git/config",
+    code: "exposed-git",
+    title: "Git repository exposed",
+    severity: "high",
+    detail: "A /.git/ directory is reachable; source code and history may be downloadable.",
+  },
+  {
+    path: "/.env",
+    code: "exposed-env",
+    title: "Environment file exposed",
+    severity: "high",
+    detail: "A /.env file is reachable; such files often hold secrets and credentials.",
+  },
+  {
+    path: "/.svn/entries",
+    code: "exposed-svn",
+    title: "Subversion metadata exposed",
+    severity: "high",
+    detail: "A /.svn/ directory is reachable; source metadata may be downloadable.",
+  },
+  {
+    path: "/backup.sql",
+    code: "exposed-db-backup",
+    title: "Database backup exposed",
+    severity: "high",
+    detail: "A backup.sql file is reachable; it may contain a full database dump.",
+  },
+  {
+    path: "/server-status",
+    code: "exposed-server-status",
+    title: "Server status page exposed",
+    severity: "medium",
+    detail: "An Apache server-status page is reachable; it leaks internal request activity.",
+  },
+  {
+    path: "/phpinfo.php",
+    code: "exposed-phpinfo",
+    title: "phpinfo page exposed",
+    severity: "medium",
+    detail: "A phpinfo() page is reachable; it discloses detailed server configuration.",
+  },
+  {
+    path: "/.DS_Store",
+    code: "exposed-ds-store",
+    title: ".DS_Store file exposed",
+    severity: "low",
+    detail: "A macOS .DS_Store file is reachable; it leaks directory and file names.",
+  },
+];
+
+/**
+ * Judges whether a sensitive path is exposed, from the HTTP status alone.
+ *   2xx                -> exposed (the path's own severity)
+ *   401 / 403          -> present but access-protected (info; confirm intent)
+ *   anything else      -> no finding
+ * The response body is never consulted, upholding "retain findings, not data".
+ */
+export function analyzeExposure(p: SensitivePath, status: number): Finding | null {
+  if (status >= 200 && status < 300) {
+    return { severity: p.severity, code: p.code, title: p.title, detail: p.detail };
+  }
+  if (status === 401 || status === 403) {
+    return {
+      severity: "info",
+      code: `${p.code}-protected`,
+      title: `${p.title} (present but protected)`,
+      detail: `${p.path} exists but returned HTTP ${status}; confirm the protection is intentional.`,
+    };
+  }
+  return null;
 }
