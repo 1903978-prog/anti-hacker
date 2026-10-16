@@ -43,6 +43,20 @@ export interface AuthAttemptResult {
   rateLimited: boolean;
 }
 
+/**
+ * DNS/email-security records for a host. All read-only lookups; only the
+ * record strings needed to judge posture are kept.
+ */
+export interface DnsRecords {
+  /** TXT records at the apex/host (used to find an SPF record). */
+  txt: string[];
+  /** TXT records at _dmarc.<host> (used to find a DMARC policy). */
+  dmarcTxt: string[];
+  /** CAA record strings at the host (empty if none). */
+  caa: string[];
+}
+
 export type HttpProbe = (url: string, timeoutMs: number, method?: string) => Promise<HttpResult>;
 export type TlsProbe = (host: string, timeoutMs: number) => Promise<TlsResult>;
 export type AuthProbe = (url: string, timeoutMs: number) => Promise<AuthAttemptResult>;
+export type DnsProbe = (host: string) => Promise<DnsRecords>;

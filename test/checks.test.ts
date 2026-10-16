@@ -5,6 +5,7 @@ import {
   analyzeTls,
   analyzeHttpRedirect,
   analyzeHttpMethods,
+  analyzeDns,
 } from "../server/scan/checks.js";
 import type { HttpResult, TlsResult } from "../server/scan/types.js";
 
@@ -26,11 +27,17 @@ describe("header checks", () => {
   it("is quiet when headers are well set", () => {
     const http = bareHttp({
       "strict-transport-security": "max-age=63072000; includeSubDomains",
-      "content-security-policy": "default-src 'self'; frame-ancestors 'none'",
+      "content-security-policy":
+        "default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
       "x-content-type-options": "nosniff",
       "referrer-policy": "no-referrer",
       "permissions-policy": "geolocation=()",
       "cross-origin-opener-policy": "same-origin",
+      "cross-origin-embedder-policy": "require-corp",
+      "cross-origin-resource-policy": "same-origin",
+      "x-permitted-cross-domain-policies": "none",
+      "cache-control": "no-store",
+      "content-type": "text/html; charset=utf-8",
     });
     expect(analyzeHeaders(http)).toHaveLength(0);
   });
@@ -126,6 +133,67 @@ describe("HTTP methods check", () => {
 
   it("returns nothing when no Allow header is present", () => {
     expect(analyzeHttpMethods(undefined)).toHaveLength(0);
+  });
+
+  it("flags CONNECT", () => {
+    expect(analyzeHttpMethods("GET, CONNECT").map((f) => f.code)).toContain("http-connect-enabled");
+  });
+});
+
+describe("DNS/email checks", () => {
+  it("flags missing SPF, DMARC, and CAA", () => {
+    const codes = analyzeDns({ txt: [], dmarcTxt: [], caa: [] }).map((f) => f.code);
+    expect(codes).toContain("spf-missing");
+    expect(codes).toContain("dmarc-missing");
+    expect(codes).toContain("caa-missing");
+  });
+
+  it("flags a weak SPF (+all) and a monitor-only DMARC", () => {
+    const codes = analyzeDns({
+      txt: ["v=spf1 include:_spf.example.com +all"],
+      dmarcTxt: ["v=DMARC1; p=none; rua=mailto:x@example.com"],
+      caa: ["issue letsencrypt.org"],
+    }).map((f) => f.code);
+    expect(codes).toContain("spf-weak");
+    expect(codes).toContain("dmarc-policy-none");
+    expect(codes).not.toContain("caa-missing");
+  });
+
+  it("is quiet for a strong email posture", () => {
+    expect(
+      analyzeDns({
+        txt: ["v=spf1 -all"],
+        dmarcTxt: ["v=DMARC1; p=reject"],
+        caa: ["issue letsencrypt.org"],
+      }),
+    ).toHaveLength(0);
+  });
+});
+
+describe("extended header & cookie checks", () => {
+  const h = (headers: Record<string, string>): HttpResult => ({ status: 200, headers, setCookies: [] });
+
+  it("flags disclosure and legacy headers", () => {
+    const codes = analyzeHeaders(h({ "x-powered-by": "Express", "feature-policy": "geolocation 'none'" })).map(
+      (f) => f.code,
+    );
+    expect(codes).toContain("x-powered-by-present");
+    expect(codes).toContain("legacy-feature-policy");
+  });
+
+  it("flags CORS null origin and wildcard methods", () => {
+    const codes = analyzeHeaders(
+      h({ "access-control-allow-origin": "null", "access-control-allow-methods": "*" }),
+    ).map((f) => f.code);
+    expect(codes).toContain("cors-null-origin");
+    expect(codes).toContain("cors-methods-wildcard");
+  });
+
+  it("flags an over-broad cookie domain", () => {
+    const codes = analyzeCookies(["sid=x; Path=/; Secure; HttpOnly; SameSite=Lax; Domain=.example.com"]).map(
+      (f) => f.code,
+    );
+    expect(codes).toContain("cookie-domain-too-broad");
   });
 });
 

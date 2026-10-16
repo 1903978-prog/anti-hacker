@@ -1,6 +1,7 @@
 import tls from "node:tls";
 import { randomBytes } from "node:crypto";
-import type { AuthAttemptResult, HttpResult, TlsResult } from "./types.js";
+import { Resolver } from "node:dns/promises";
+import type { AuthAttemptResult, DnsRecords, HttpResult, TlsResult } from "./types.js";
 
 /**
  * Real passive probes. Both are read-only: a single GET and a TLS handshake.
@@ -71,6 +72,37 @@ export async function authProbe(url: string, timeoutMs: number): Promise<AuthAtt
   }
 
   return { status: res.status, rateLimited };
+}
+
+/**
+ * Read-only DNS lookups for email/domain security records. Never touches the
+ * target's HTTP server; failures (no such record) resolve to empty lists.
+ */
+export async function dnsProbe(host: string): Promise<DnsRecords> {
+  const resolver = new Resolver({ timeout: 5000, tries: 2 });
+  const txtAt = async (name: string): Promise<string[]> => {
+    try {
+      const records = await resolver.resolveTxt(name);
+      return records.map((chunks) => chunks.join(""));
+    } catch {
+      return [];
+    }
+  };
+  const caaAt = async (name: string): Promise<string[]> => {
+    try {
+      const records = await resolver.resolveCaa(name);
+      return records.map((r) => JSON.stringify(r));
+    } catch {
+      return [];
+    }
+  };
+
+  const [txt, dmarcTxt, caa] = await Promise.all([
+    txtAt(host),
+    txtAt(`_dmarc.${host}`),
+    caaAt(host),
+  ]);
+  return { txt, dmarcTxt, caa };
 }
 
 export function tlsProbe(host: string, timeoutMs: number): Promise<TlsResult> {

@@ -32,10 +32,16 @@ function fakeHttpByPath(statuses: Record<string, number>, noisePathStatus = 404)
 }
 
 const goodTls: TlsResult = { protocol: "TLSv1.3", validTo: "2035-01-01T00:00:00Z", authorized: true };
+// A clean DNS posture (good SPF, enforcing DMARC, a CAA record) -> no findings.
+const goodDns = {
+  txt: ["v=spf1 -all"],
+  dmarcTxt: ["v=DMARC1; p=reject"],
+  caa: ["issue letsencrypt.org"],
+};
 
-// Shared defaults: no real delays, and a healthy TLS handshake so tests never
-// touch the network. Tests still supply their own httpProbe / authProbe.
-const noWait = { sleep: async () => {}, tlsProbe: async () => goodTls };
+// Shared defaults: no real delays, a healthy TLS handshake, and a clean DNS
+// posture so tests never touch the network. Tests still supply their httpProbe.
+const noWait = { sleep: async () => {}, tlsProbe: async () => goodTls, dnsProbe: async () => goodDns };
 
 describe("active scan (gated)", () => {
   it("denies a proven target that is NOT active-eligible and runs no probe", async () => {
