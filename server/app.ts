@@ -17,6 +17,12 @@ import { engage, isEngaged, release } from "./governance/killswitch.js";
 import { requestApproval, type ScanMode } from "./governance/policy.js";
 import { getFindings, listScans, runPassiveScan } from "./scan/passive.js";
 import { runActiveScan } from "./scan/active.js";
+import { apiAuth, rateLimit, securityHeaders } from "./middleware.js";
+
+export interface AppOptions {
+  /** Bearer token required for state-changing API requests. */
+  apiToken?: string;
+}
 import { DEFAULT_WEEKLY, getLastRun, runWeeklySweep } from "./schedule/weekly.js";
 
 // Until a real auth layer exists, the actor is a fixed operator identity.
@@ -29,10 +35,20 @@ const ACTOR = "operator";
  * exists to prove the gate is wired in. No real scanning capability exists
  * yet (Phase 2).
  */
-export function createApp(db: DB): Express {
+export function createApp(db: DB, options: AppOptions = {}): Express {
   seedAllowlist(db);
+  const apiToken = options.apiToken ?? process.env.SECVAL_API_TOKEN;
+
   const app = express();
+  app.disable("x-powered-by");
+  app.set("trust proxy", true); // behind Render's proxy; needed for correct req.ip
+  app.use(securityHeaders());
   app.use(express.json({ limit: "32kb" }));
+
+  // Control-plane protection: rate limit all API traffic, and require a bearer
+  // token for any state-changing request (scans, allowlist, kill switch, …).
+  app.use("/api", rateLimit({ windowMs: 60_000, max: 120 }));
+  app.use("/api", apiAuth(apiToken));
 
   app.get("/health", (_req, res) => {
     res.json({ ok: true, killSwitch: isEngaged(db) ? "engaged" : "released" });
