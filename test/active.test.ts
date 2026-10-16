@@ -6,7 +6,7 @@ import { createChallenge, verifyOwnership } from "../server/ownership/proof.js";
 import { setActiveEligible } from "../server/ownership/allowlist.js";
 import { engage } from "../server/governance/killswitch.js";
 import { listAudit } from "../server/audit/log.js";
-import type { HttpResult } from "../server/scan/types.js";
+import type { AuthAttemptResult, HttpResult } from "../server/scan/types.js";
 
 async function prove(db: ReturnType<typeof freshDb>, domain: string) {
   const { token } = createChallenge(db, domain, "op")!;
@@ -136,6 +136,61 @@ describe("active scan (gated)", () => {
     expect(result.status).toBe("completed");
     // Budget exhausted after the baseline probe -> no sensitive-path probes.
     expect(probeCount).toBe(1);
+  });
+
+  it("flags a login endpoint with no rate-limiting", async () => {
+    const db = freshDb();
+    await proveAndEnableActive(db, "eendigo.com");
+    let authCount = 0;
+    const authProbe = async (): Promise<AuthAttemptResult> => {
+      authCount++;
+      return { status: 401, rateLimited: false }; // always same, never throttled
+    };
+    const result = await runActiveScan(
+      db,
+      { actor: "op", target: "eendigo.com", loginPath: "/login" },
+      { httpProbe: fakeHttpByPath({}), authProbe, ...noWait },
+    );
+    expect(result.status).toBe("completed");
+    expect(result.findings.map((f) => f.code)).toContain("no-login-rate-limit");
+    expect(authCount).toBe(5); // hard cap on login attempts
+  });
+
+  it("detects login rate-limiting and stops hammering early", async () => {
+    const db = freshDb();
+    await proveAndEnableActive(db, "eendigo.com");
+    let authCount = 0;
+    const authProbe = async (): Promise<AuthAttemptResult> => {
+      authCount++;
+      // First attempt ok, second is throttled.
+      return authCount >= 2 ? { status: 429, rateLimited: true } : { status: 401, rateLimited: false };
+    };
+    const result = await runActiveScan(
+      db,
+      { actor: "op", target: "eendigo.com", loginPath: "/login" },
+      { httpProbe: fakeHttpByPath({}), authProbe, ...noWait },
+    );
+    expect(result.status).toBe("completed");
+    expect(result.findings.map((f) => f.code)).toContain("login-rate-limit-present");
+    expect(authCount).toBe(2); // stopped as soon as throttling was observed
+  });
+
+  it("skips the login check when no loginPath is given", async () => {
+    const db = freshDb();
+    await proveAndEnableActive(db, "eendigo.com");
+    let authCount = 0;
+    const authProbe = async (): Promise<AuthAttemptResult> => {
+      authCount++;
+      return { status: 401, rateLimited: false };
+    };
+    const result = await runActiveScan(
+      db,
+      { actor: "op", target: "eendigo.com" },
+      { httpProbe: fakeHttpByPath({}), authProbe, ...noWait },
+    );
+    expect(result.status).toBe("completed");
+    expect(authCount).toBe(0);
+    expect(result.findings.some((f) => f.code.startsWith("login-") || f.code === "no-login-rate-limit")).toBe(false);
   });
 
   it("records the active scan in history and the audit trail", async () => {

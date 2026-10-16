@@ -1,4 +1,4 @@
-import type { Finding, HttpResult, Severity, TlsResult } from "./types.js";
+import type { AuthAttemptResult, Finding, HttpResult, Severity, TlsResult } from "./types.js";
 
 /**
  * Pure analysis functions. They take normalized probe results and return
@@ -279,4 +279,52 @@ export function analyzeExposure(p: SensitivePath, status: number): Finding | nul
     };
   }
   return null;
+}
+
+/**
+ * Judges login hardening from a short series of deliberately-failed login
+ * attempts (random, invalid credentials — never real accounts, never
+ * enumeration). The conclusion is drawn from HTTP status / throttling signals
+ * only; no credential or response data is ever retained.
+ *
+ *   - any attempt throttled (429/423/Retry-After) -> protection present (info)
+ *   - fewer than 2 attempts                        -> no conclusion
+ *   - every attempt identical, none throttled      -> no rate-limit (medium)
+ *   - otherwise                                     -> inconclusive (info)
+ */
+export function analyzeAuthLockout(attempts: AuthAttemptResult[]): Finding[] {
+  if (attempts.length < 2) return [];
+
+  if (attempts.some((a) => a.rateLimited)) {
+    return [
+      {
+        severity: "info",
+        code: "login-rate-limit-present",
+        title: "Login rate-limiting detected",
+        detail: `The login endpoint throttled repeated failed attempts (observed within ${attempts.length} tries).`,
+      },
+    ];
+  }
+
+  const firstStatus = attempts[0]!.status;
+  const allSameStatus = attempts.every((a) => a.status === firstStatus);
+  if (allSameStatus) {
+    return [
+      {
+        severity: "medium",
+        code: "no-login-rate-limit",
+        title: "No login rate-limiting or lockout",
+        detail: `${attempts.length} rapid failed logins were all answered the same way with no throttling or lockout; the endpoint may allow unlimited password guessing.`,
+      },
+    ];
+  }
+
+  return [
+    {
+      severity: "info",
+      code: "login-lockout-inconclusive",
+      title: "Login hardening inconclusive",
+      detail: "Responses to repeated failed logins varied without a clear throttling signal; review manually.",
+    },
+  ];
 }

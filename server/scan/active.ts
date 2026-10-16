@@ -3,13 +3,17 @@ import type { DB } from "../db.js";
 import { requestApproval } from "../governance/policy.js";
 import { isEngaged } from "../governance/killswitch.js";
 import { appendAudit } from "../audit/log.js";
-import { SENSITIVE_PATHS, analyzeExposure } from "./checks.js";
-import { httpProbe as realHttp } from "./probes.js";
-import type { Finding, HttpProbe } from "./types.js";
+import { SENSITIVE_PATHS, analyzeExposure, analyzeAuthLockout } from "./checks.js";
+import { httpProbe as realHttp, authProbe as realAuth } from "./probes.js";
+import type { AuthAttemptResult, AuthProbe, Finding, HttpProbe } from "./types.js";
 import type { ScanResult } from "./passive.js";
+
+/** Hard ceiling on failed-login probes, regardless of the request budget. */
+const MAX_LOGIN_ATTEMPTS = 5;
 
 export interface ActiveScanDeps {
   httpProbe?: HttpProbe;
+  authProbe?: AuthProbe;
   /** Delay between requests (rate limiting); injectable so tests don't wait. */
   sleep?: (ms: number) => Promise<void>;
   /** Monotonic clock in ms; injectable for deterministic runtime-budget tests. */
@@ -40,7 +44,7 @@ const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
  */
 export async function runActiveScan(
   db: DB,
-  req: { actor: string; target: string },
+  req: { actor: string; target: string; loginPath?: string },
   deps: ActiveScanDeps = {},
 ): Promise<ScanResult> {
   const decision = requestApproval(db, { actor: req.actor, target: req.target, mode: "active" });
@@ -66,6 +70,7 @@ export async function runActiveScan(
   });
 
   const httpProbe = deps.httpProbe ?? realHttp;
+  const authProbe = deps.authProbe ?? realAuth;
   const sleep = deps.sleep ?? defaultSleep;
   const now = deps.now ?? (() => Date.now());
 
@@ -113,6 +118,30 @@ export async function runActiveScan(
         const f = analyzeExposure(p, res.status);
         if (f) findings.push(f);
       }
+    }
+
+    // Optional login-hardening check: a few deliberately-failed logins with
+    // random, invalid, single-use credentials (never a real account, never
+    // enumeration) to see whether the endpoint throttles or locks out. Judged
+    // from status/throttling signals only; stops early on throttling so we are
+    // never the cause of a lockout beyond the first signal.
+    if (req.loginPath) {
+      const loginUrl = `https://${host}${req.loginPath.startsWith("/") ? "" : "/"}${req.loginPath}`;
+      const attempts: AuthAttemptResult[] = [];
+      for (let i = 0; i < MAX_LOGIN_ATTEMPTS; i++) {
+        if (isEngaged(db)) {
+          return abort(db, scanId, req.actor, host, "kill switch engaged mid-scan");
+        }
+        if (!canSend()) break;
+        await sleep(minGapMs); // rate limit
+        if (!canSend()) break;
+        const attempt = await authProbe(loginUrl, limits.maxRuntimeMs);
+        sent++;
+        attempts.push(attempt);
+        // Protection already proven; do not keep hammering the endpoint.
+        if (attempt.rateLimited) break;
+      }
+      findings.push(...analyzeAuthLockout(attempts));
     }
   } catch (err) {
     return abort(db, scanId, req.actor, host, `scan error: ${(err as Error).message}`);
