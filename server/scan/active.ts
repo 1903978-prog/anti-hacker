@@ -12,9 +12,15 @@ import {
   analyzeTls,
   analyzeHttpRedirect,
   analyzeHttpMethods,
+  analyzeDns,
 } from "./checks.js";
-import { httpProbe as realHttp, tlsProbe as realTls, authProbe as realAuth } from "./probes.js";
-import type { AuthAttemptResult, AuthProbe, Finding, HttpProbe, TlsProbe } from "./types.js";
+import {
+  httpProbe as realHttp,
+  tlsProbe as realTls,
+  authProbe as realAuth,
+  dnsProbe as realDns,
+} from "./probes.js";
+import type { AuthAttemptResult, AuthProbe, DnsProbe, Finding, HttpProbe, TlsProbe } from "./types.js";
 import type { ScanResult } from "./passive.js";
 
 /** Hard ceiling on failed-login probes, regardless of the request budget. */
@@ -24,6 +30,7 @@ export interface ActiveScanDeps {
   httpProbe?: HttpProbe;
   tlsProbe?: TlsProbe;
   authProbe?: AuthProbe;
+  dnsProbe?: DnsProbe;
   /** Delay between requests (rate limiting); injectable so tests don't wait. */
   sleep?: (ms: number) => Promise<void>;
   /** Monotonic clock in ms; injectable for deterministic runtime-budget tests. */
@@ -82,6 +89,7 @@ export async function runActiveScan(
   const httpProbe = deps.httpProbe ?? realHttp;
   const tlsProbe = deps.tlsProbe ?? realTls;
   const authProbe = deps.authProbe ?? realAuth;
+  const dnsProbe = deps.dnsProbe ?? realDns;
   const sleep = deps.sleep ?? defaultSleep;
   const now = deps.now ?? (() => Date.now());
 
@@ -169,6 +177,14 @@ export async function runActiveScan(
         sent++;
         findings.push(...analyzeHttpMethods(opt.headers["allow"]));
       }
+    }
+
+    // Email/domain security records (read-only DNS; does not touch the target's
+    // web server, so it is not counted against the HTTP request budget).
+    if (isEngaged(db)) return abort(db, scanId, req.actor, host, "kill switch engaged mid-scan");
+    if (withinBudget()) {
+      const dns = await dnsProbe(host);
+      findings.push(...analyzeDns(dns));
     }
 
     // Optional login-hardening check: a few deliberately-failed logins with
