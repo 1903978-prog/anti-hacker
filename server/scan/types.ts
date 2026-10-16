@@ -43,6 +43,6 @@ export interface AuthAttemptResult {
   rateLimited: boolean;
 }
 
-export type HttpProbe = (url: string, timeoutMs: number) => Promise<HttpResult>;
+export type HttpProbe = (url: string, timeoutMs: number, method?: string) => Promise<HttpResult>;
 export type TlsProbe = (host: string, timeoutMs: number) => Promise<TlsResult>;
 export type AuthProbe = (url: string, timeoutMs: number) => Promise<AuthAttemptResult>;

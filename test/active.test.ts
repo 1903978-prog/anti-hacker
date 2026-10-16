@@ -6,7 +6,7 @@ import { createChallenge, verifyOwnership } from "../server/ownership/proof.js";
 import { setActiveEligible } from "../server/ownership/allowlist.js";
 import { engage } from "../server/governance/killswitch.js";
 import { listAudit } from "../server/audit/log.js";
-import type { AuthAttemptResult, HttpResult } from "../server/scan/types.js";
+import type { AuthAttemptResult, HttpResult, TlsResult } from "../server/scan/types.js";
 
 async function prove(db: ReturnType<typeof freshDb>, domain: string) {
   const { token } = createChallenge(db, domain, "op")!;
@@ -31,7 +31,11 @@ function fakeHttpByPath(statuses: Record<string, number>, noisePathStatus = 404)
   };
 }
 
-const noWait = { sleep: async () => {} };
+const goodTls: TlsResult = { protocol: "TLSv1.3", validTo: "2035-01-01T00:00:00Z", authorized: true };
+
+// Shared defaults: no real delays, and a healthy TLS handshake so tests never
+// touch the network. Tests still supply their own httpProbe / authProbe.
+const noWait = { sleep: async () => {}, tlsProbe: async () => goodTls };
 
 describe("active scan (gated)", () => {
   it("denies a proven target that is NOT active-eligible and runs no probe", async () => {
@@ -86,7 +90,9 @@ describe("active scan (gated)", () => {
       { httpProbe: fakeHttpByPath({}), ...noWait },
     );
     expect(result.status).toBe("completed");
-    expect(result.findings).toEqual([]);
+    // No exposed-file findings when every sensitive path 404s. (Homepage
+    // header checks may still report, so we assert specifically on exposure.)
+    expect(result.findings.some((f) => f.code.startsWith("exposed-"))).toBe(false);
   });
 
   it("short-circuits on a catch-all server (2xx for unknown paths)", async () => {
@@ -100,8 +106,11 @@ describe("active scan (gated)", () => {
     };
     const result = await runActiveScan(db, { actor: "op", target: "eendigo.com" }, { httpProbe: http, ...noWait });
     expect(result.status).toBe("completed");
-    expect(result.findings.map((f) => f.code)).toEqual(["exposed-check-inconclusive"]);
-    expect(probeCount).toBe(1); // only the baseline probe ran; path checks skipped
+    // Baseline flags catch-all, and NO sensitive-path exposure check runs.
+    expect(result.findings.map((f) => f.code)).toContain("exposed-check-inconclusive");
+    expect(result.findings.some((f) => f.code !== "exposed-check-inconclusive" && f.code.startsWith("exposed-"))).toBe(false);
+    // Baseline + homepage + plain-HTTP + OPTIONS ran; the path loop was skipped.
+    expect(probeCount).toBe(4);
   });
 
   it("honors the kill switch and runs no probe", async () => {

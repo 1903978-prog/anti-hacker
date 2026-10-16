@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { analyzeHeaders, analyzeCookies, analyzeTls } from "../server/scan/checks.js";
+import {
+  analyzeHeaders,
+  analyzeCookies,
+  analyzeTls,
+  analyzeHttpRedirect,
+  analyzeHttpMethods,
+} from "../server/scan/checks.js";
 import type { HttpResult, TlsResult } from "../server/scan/types.js";
 
 const bareHttp = (headers: Record<string, string> = {}, setCookies: string[] = []): HttpResult => ({
@@ -19,11 +25,12 @@ describe("header checks", () => {
 
   it("is quiet when headers are well set", () => {
     const http = bareHttp({
-      "strict-transport-security": "max-age=63072000",
+      "strict-transport-security": "max-age=63072000; includeSubDomains",
       "content-security-policy": "default-src 'self'; frame-ancestors 'none'",
       "x-content-type-options": "nosniff",
       "referrer-policy": "no-referrer",
       "permissions-policy": "geolocation=()",
+      "cross-origin-opener-policy": "same-origin",
     });
     expect(analyzeHeaders(http)).toHaveLength(0);
   });
@@ -31,6 +38,35 @@ describe("header checks", () => {
   it("flags software version disclosure", () => {
     const codes = analyzeHeaders(bareHttp({ server: "nginx/1.25.1" })).map((f) => f.code);
     expect(codes).toContain("version-disclosure");
+  });
+
+  it("flags a short HSTS max-age and missing includeSubDomains", () => {
+    const codes = analyzeHeaders(bareHttp({ "strict-transport-security": "max-age=3600" })).map(
+      (f) => f.code,
+    );
+    expect(codes).toContain("weak-hsts-max-age");
+    expect(codes).toContain("hsts-no-subdomains");
+  });
+
+  it("flags a weak CSP using unsafe-inline", () => {
+    const codes = analyzeHeaders(
+      bareHttp({ "content-security-policy": "default-src 'self' 'unsafe-inline'" }),
+    ).map((f) => f.code);
+    expect(codes).toContain("weak-csp");
+  });
+
+  it("flags missing COOP", () => {
+    expect(analyzeHeaders(bareHttp()).map((f) => f.code)).toContain("missing-coop");
+  });
+
+  it("flags wildcard CORS, and escalates with credentials", () => {
+    expect(analyzeHeaders(bareHttp({ "access-control-allow-origin": "*" })).map((f) => f.code)).toContain(
+      "cors-wildcard",
+    );
+    const withCreds = analyzeHeaders(
+      bareHttp({ "access-control-allow-origin": "*", "access-control-allow-credentials": "true" }),
+    ).map((f) => f.code);
+    expect(withCreds).toContain("cors-wildcard-credentials");
   });
 });
 
@@ -47,6 +83,49 @@ describe("cookie checks", () => {
 
   it("is quiet for a hardened cookie", () => {
     expect(analyzeCookies(["sid=x; Path=/; Secure; HttpOnly; SameSite=Lax"])).toHaveLength(0);
+  });
+
+  it("flags SameSite=None without Secure", () => {
+    const codes = analyzeCookies(["sid=x; Path=/; HttpOnly; SameSite=None"]).map((f) => f.code);
+    expect(codes).toContain("cookie-samesite-none-insecure");
+  });
+});
+
+describe("plain-HTTP redirect check", () => {
+  const http = (status: number, headers: Record<string, string> = {}): HttpResult => ({
+    status,
+    headers,
+    setCookies: [],
+  });
+
+  it("flags content served over plain HTTP", () => {
+    expect(analyzeHttpRedirect(http(200))?.code).toBe("no-https-redirect");
+  });
+
+  it("flags an HTTP redirect that does not target HTTPS", () => {
+    expect(analyzeHttpRedirect(http(301, { location: "http://example.com/" }))?.code).toBe(
+      "http-redirect-not-https",
+    );
+  });
+
+  it("is quiet when HTTP redirects to HTTPS", () => {
+    expect(analyzeHttpRedirect(http(301, { location: "https://example.com/" }))).toBeNull();
+  });
+});
+
+describe("HTTP methods check", () => {
+  it("flags TRACE and advertised write methods", () => {
+    const codes = analyzeHttpMethods("GET, POST, PUT, TRACE, OPTIONS").map((f) => f.code);
+    expect(codes).toContain("http-trace-enabled");
+    expect(codes).toContain("http-write-methods-advertised");
+  });
+
+  it("is quiet for a read-only method set", () => {
+    expect(analyzeHttpMethods("GET, HEAD, OPTIONS")).toHaveLength(0);
+  });
+
+  it("returns nothing when no Allow header is present", () => {
+    expect(analyzeHttpMethods(undefined)).toHaveLength(0);
   });
 });
 

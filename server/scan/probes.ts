@@ -7,9 +7,9 @@ import type { AuthAttemptResult, HttpResult, TlsResult } from "./types.js";
  * Neither mutates the target, and response bodies are discarded unread.
  */
 
-export async function httpProbe(url: string, timeoutMs: number): Promise<HttpResult> {
+export async function httpProbe(url: string, timeoutMs: number, method = "GET"): Promise<HttpResult> {
   const res = await fetch(url, {
-    method: "GET",
+    method,
     redirect: "manual",
     signal: AbortSignal.timeout(timeoutMs),
     headers: { "user-agent": "secval-passive/0.1 (+authorized self-scan)" },

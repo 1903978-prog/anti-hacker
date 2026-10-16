@@ -78,11 +78,12 @@ describe("passive scan (gated)", () => {
     const db = freshDb();
     await prove(db, "eendigo.com");
     const strong = fakeHttp({
-      "strict-transport-security": "max-age=63072000",
+      "strict-transport-security": "max-age=63072000; includeSubDomains",
       "content-security-policy": "default-src 'self'; frame-ancestors 'none'",
       "x-content-type-options": "nosniff",
       "referrer-policy": "no-referrer",
       "permissions-policy": "geolocation=()",
+      "cross-origin-opener-policy": "same-origin",
     });
     const result = await runPassiveScan(db, { actor: "op", target: "eendigo.com" }, deps(strong));
     expect(result.status).toBe("completed");

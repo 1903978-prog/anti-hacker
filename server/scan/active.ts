@@ -3,9 +3,18 @@ import type { DB } from "../db.js";
 import { requestApproval } from "../governance/policy.js";
 import { isEngaged } from "../governance/killswitch.js";
 import { appendAudit } from "../audit/log.js";
-import { SENSITIVE_PATHS, analyzeExposure, analyzeAuthLockout } from "./checks.js";
-import { httpProbe as realHttp, authProbe as realAuth } from "./probes.js";
-import type { AuthAttemptResult, AuthProbe, Finding, HttpProbe } from "./types.js";
+import {
+  SENSITIVE_PATHS,
+  analyzeExposure,
+  analyzeAuthLockout,
+  analyzeHeaders,
+  analyzeCookies,
+  analyzeTls,
+  analyzeHttpRedirect,
+  analyzeHttpMethods,
+} from "./checks.js";
+import { httpProbe as realHttp, tlsProbe as realTls, authProbe as realAuth } from "./probes.js";
+import type { AuthAttemptResult, AuthProbe, Finding, HttpProbe, TlsProbe } from "./types.js";
 import type { ScanResult } from "./passive.js";
 
 /** Hard ceiling on failed-login probes, regardless of the request budget. */
@@ -13,6 +22,7 @@ const MAX_LOGIN_ATTEMPTS = 5;
 
 export interface ActiveScanDeps {
   httpProbe?: HttpProbe;
+  tlsProbe?: TlsProbe;
   authProbe?: AuthProbe;
   /** Delay between requests (rate limiting); injectable so tests don't wait. */
   sleep?: (ms: number) => Promise<void>;
@@ -70,6 +80,7 @@ export async function runActiveScan(
   });
 
   const httpProbe = deps.httpProbe ?? realHttp;
+  const tlsProbe = deps.tlsProbe ?? realTls;
   const authProbe = deps.authProbe ?? realAuth;
   const sleep = deps.sleep ?? defaultSleep;
   const now = deps.now ?? (() => Date.now());
@@ -117,6 +128,46 @@ export async function runActiveScan(
         sent++;
         const f = analyzeExposure(p, res.status);
         if (f) findings.push(f);
+      }
+    }
+
+    // Homepage security posture: headers, cookies, and TLS (the same analysis
+    // the passive scanner runs), folded in so one active run is comprehensive.
+    if (isEngaged(db)) return abort(db, scanId, req.actor, host, "kill switch engaged mid-scan");
+    if (canSend()) {
+      await sleep(minGapMs);
+      if (canSend()) {
+        const home = await httpProbe(`https://${host}/`, limits.maxRuntimeMs);
+        sent++;
+        findings.push(...analyzeHeaders(home), ...analyzeCookies(home.setCookies));
+      }
+    }
+    if (canSend()) {
+      const tlsResult = await tlsProbe(host, limits.maxRuntimeMs);
+      sent++;
+      findings.push(...analyzeTls(tlsResult));
+    }
+
+    // Plain-HTTP handling: is content served over HTTP without an HTTPS upgrade?
+    if (isEngaged(db)) return abort(db, scanId, req.actor, host, "kill switch engaged mid-scan");
+    if (canSend()) {
+      await sleep(minGapMs);
+      if (canSend()) {
+        const httpResult = await httpProbe(`http://${host}/`, limits.maxRuntimeMs);
+        sent++;
+        const f = analyzeHttpRedirect(httpResult);
+        if (f) findings.push(f);
+      }
+    }
+
+    // Risky HTTP methods advertised via OPTIONS (OPTIONS is read-only/safe).
+    if (isEngaged(db)) return abort(db, scanId, req.actor, host, "kill switch engaged mid-scan");
+    if (canSend()) {
+      await sleep(minGapMs);
+      if (canSend()) {
+        const opt = await httpProbe(`https://${host}/`, limits.maxRuntimeMs, "OPTIONS");
+        sent++;
+        findings.push(...analyzeHttpMethods(opt.headers["allow"]));
       }
     }
 
