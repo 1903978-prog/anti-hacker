@@ -62,9 +62,8 @@ async function refreshAllowlist() {
         <td class="right">
           ${
             e.ownershipProven
-              ? ""
-              : `<button class="ghost" data-challenge="${esc(e.domain)}">Challenge</button>
-          <button class="ghost" data-verify="${esc(e.domain)}">Verify</button>`
+              ? `<button class="ghost" data-scan="${esc(e.domain)}">Scan</button>`
+              : `<button class="ghost" data-challenge="${esc(e.domain)}">Get code</button>`
           }
           <button class="ghost" data-remove="${esc(e.domain)}">Remove</button>
         </td>
@@ -86,7 +85,7 @@ el("addBtn").onclick = async () => {
 document.addEventListener("click", async (ev) => {
   const t = ev.target;
   if (t.dataset.challenge) {
-    // Show the token on the page (no pop-up) with a copy button.
+    // Show the code on the page (no pop-up), then check for it automatically.
     const domain = t.dataset.challenge;
     const { ok, body } = await api(`/api/allowlist/${domain}/challenge`, { method: "POST", body: "{}" });
     if (!ok) {
@@ -98,30 +97,18 @@ document.addEventListener("click", async (ev) => {
       <code id="proofToken">${esc(body.token)}</code>
       <button class="ghost" id="copyToken">Copy</button><br>
       Put it in a file at <code>https://${esc(domain)}/.well-known/secval-challenge.txt</code>
-      (or a DNS TXT record at <code>_secval-challenge.${esc(domain)}</code>), then press Verify.`;
+      (or a DNS TXT record at <code>_secval-challenge.${esc(domain)}</code>).
+      secval checks for it by itself and scans the site as soon as it finds it.
+      <div id="proofStatus"></div>`;
     el("copyToken").onclick = () => {
       navigator.clipboard?.writeText(body.token);
       el("copyToken").textContent = "Copied";
     };
-  } else if (t.dataset.verify) {
-    // No OK/Cancel choice: try the token file first, then the DNS record.
-    const domain = t.dataset.verify;
-    el("proofMsg").textContent = "Checking " + domain + "…";
-    let result = null;
-    for (const method of ["token-file", "dns-txt"]) {
-      const { body } = await api(`/api/allowlist/${domain}/verify`, {
-        method: "POST",
-        body: JSON.stringify({ method }),
-      });
-      // On failure, report the token-file reason (the usual method).
-      if (!result || body.verified) result = body;
-      if (body.verified) break;
-    }
-    el("proofMsg").textContent = result?.verified
-      ? domain + " is verified. You can scan it now."
-      : "Not verified yet: " + (result?.reason || "unknown reason");
-    refreshAllowlist();
-    refreshAudit();
+    setPending(domain, true);
+    watchProof(domain);
+  } else if (t.dataset.scan) {
+    el("scanUrl").value = t.dataset.scan;
+    runScan(t.dataset.scan);
   } else if (t.dataset.remove) {
     // Two clicks instead of a pop-up: the first arms the button.
     if (t.dataset.armed !== "1") {
@@ -135,11 +122,12 @@ document.addEventListener("click", async (ev) => {
   }
 });
 
-el("scanBtn").onclick = async () => {
-  const target = el("scanUrl").value.trim();
+el("scanBtn").onclick = () => runScan(el("scanUrl").value.trim());
+
+async function runScan(target) {
   if (!target) return;
   el("scanBtn").disabled = true;
-  el("scanMsg").textContent = "Requesting approval and scanning…";
+  el("scanMsg").textContent = "Scanning " + target + "…";
   el("findings").innerHTML = "";
   try {
     const { ok, status, body } = await api("/api/scan", { method: "POST", body: JSON.stringify({ target }) });
@@ -148,7 +136,7 @@ el("scanBtn").onclick = async () => {
     } else if (!ok) {
       el("scanMsg").textContent = "Scan could not complete: " + (body.reason || status);
     } else {
-      el("scanMsg").textContent = `Scan complete — ${body.findings.length} finding(s).`;
+      el("scanMsg").textContent = `Scan of ${target} complete — ${body.findings.length} finding(s).`;
       el("findings").innerHTML = renderFindings(body.findings);
     }
   } finally {
@@ -157,7 +145,70 @@ el("scanBtn").onclick = async () => {
     refreshScans();
     refreshAudit();
   }
-};
+}
+
+// --- Automatic proof checking ------------------------------------------------
+// After "Get code", the page keeps checking (file first, then DNS) until the
+// code is found, then scans. Domains waiting for proof are remembered in this
+// browser so checking resumes when the page is reopened. Verification itself
+// is done by the server's normal verify endpoint.
+const CHECK_EVERY_MS = 20_000;
+const CHECK_TIMES = 90; // about 30 minutes per visit
+const watching = new Set();
+
+function pendingDomains() {
+  try { return JSON.parse(localStorage.getItem("secval_pending") || "[]"); } catch { return []; }
+}
+function setPending(domain, on) {
+  const set = new Set(pendingDomains());
+  on ? set.add(domain) : set.delete(domain);
+  try { localStorage.setItem("secval_pending", JSON.stringify([...set])); } catch { /* not remembered */ }
+}
+
+async function verifyOnce(domain) {
+  let first = null;
+  for (const method of ["token-file", "dns-txt"]) {
+    const { body } = await api(`/api/allowlist/${domain}/verify`, {
+      method: "POST",
+      body: JSON.stringify({ method }),
+    });
+    if (body.verified) return { verified: true };
+    first ??= body;
+  }
+  return first ?? { verified: false };
+}
+
+async function watchProof(domain) {
+  if (watching.has(domain)) return;
+  watching.add(domain);
+  const say = (text) => {
+    const box = el("proofStatus") || el("proofMsg");
+    box.textContent = text;
+  };
+  try {
+    for (let i = 0; i < CHECK_TIMES; i++) {
+      say("Looking for the code on " + domain + "…");
+      const r = await verifyOnce(domain);
+      if (r.verified) {
+        setPending(domain, false);
+        el("proofMsg").textContent = domain + " is verified. Scanning it now.";
+        refreshAllowlist();
+        await runScan(domain);
+        return;
+      }
+      if (/no challenge issued|not on the allowlist/.test(r.reason || "")) {
+        setPending(domain, false);
+        say(domain + ": press Get code first.");
+        return;
+      }
+      say("Not found on " + domain + " yet. Checking again shortly.");
+      await new Promise((ok) => setTimeout(ok, CHECK_EVERY_MS));
+    }
+    say("Stopped checking " + domain + " for now. It resumes next time you open this page.");
+  } finally {
+    watching.delete(domain);
+  }
+}
 
 function renderFindings(findings) {
   if (!findings.length) return `<p class="note">No passive weaknesses found.</p>`;
@@ -222,6 +273,7 @@ el("tokenSave").onclick = () => {
 };
 
 showTokenBox();
+for (const d of pendingDomains()) watchProof(d);
 refreshKillSwitch();
 refreshAllowlist();
 refreshScans();
