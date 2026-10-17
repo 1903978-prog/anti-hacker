@@ -4,13 +4,14 @@
 function readStored() {
   try { return localStorage.getItem("secval_token"); } catch { return null; }
 }
+// The token is typed into a small box on the page (no pop-up). The box only
+// shows while no token is saved.
 function getToken() {
-  let t = readStored();
-  if (!t) {
-    t = window.prompt("Enter the secval API token (set on the server as SECVAL_API_TOKEN):") || "";
-    try { if (t) localStorage.setItem("secval_token", t); } catch { /* not remembered */ }
-  }
-  return t;
+  return readStored() || "";
+}
+function showTokenBox(message) {
+  el("tokenBox").hidden = !!readStored();
+  if (message) el("tokenMsg").textContent = message;
 }
 function clearToken() {
   try { localStorage.removeItem("secval_token"); } catch { /* nothing stored */ }
@@ -24,7 +25,7 @@ const api = (path, opts = {}) => {
     r.json().then((b) => {
       if (r.status === 401) {
         clearToken();
-        window.alert("The API token was missing or wrong. Please try again.");
+        showTokenBox("That secret token was missing or wrong. Paste it again.");
       }
       return { ok: r.ok, status: r.status, body: b };
     }),
@@ -122,11 +123,15 @@ document.addEventListener("click", async (ev) => {
     refreshAllowlist();
     refreshAudit();
   } else if (t.dataset.remove) {
-    if (window.confirm("Remove " + t.dataset.remove + "?")) {
-      await api(`/api/allowlist/${t.dataset.remove}`, { method: "DELETE" });
-      refreshAllowlist();
-      refreshAudit();
+    // Two clicks instead of a pop-up: the first arms the button.
+    if (t.dataset.armed !== "1") {
+      t.dataset.armed = "1";
+      t.textContent = "Click again to remove";
+      return;
     }
+    await api(`/api/allowlist/${t.dataset.remove}`, { method: "DELETE" });
+    refreshAllowlist();
+    refreshAudit();
   }
 });
 
@@ -207,6 +212,16 @@ el("runNowBtn").onclick = async () => {
   refreshAudit();
 };
 
+el("tokenSave").onclick = () => {
+  const v = el("tokenInput").value.trim();
+  if (!v) return;
+  try { localStorage.setItem("secval_token", v); } catch { /* not remembered */ }
+  el("tokenInput").value = "";
+  el("tokenMsg").textContent = "";
+  showTokenBox();
+};
+
+showTokenBox();
 refreshKillSwitch();
 refreshAllowlist();
 refreshScans();
