@@ -1,15 +1,19 @@
 // secval control-plane UI. State-changing calls send a bearer token (the
-// server's SECVAL_API_TOKEN); it is asked for once and kept in sessionStorage.
+// server's SECVAL_API_TOKEN); it is asked for once and remembered in this
+// browser (localStorage), so it is not asked again on every visit.
+function readStored() {
+  try { return localStorage.getItem("secval_token"); } catch { return null; }
+}
 function getToken() {
-  let t = sessionStorage.getItem("secval_token");
+  let t = readStored();
   if (!t) {
     t = window.prompt("Enter the secval API token (set on the server as SECVAL_API_TOKEN):") || "";
-    if (t) sessionStorage.setItem("secval_token", t);
+    try { if (t) localStorage.setItem("secval_token", t); } catch { /* not remembered */ }
   }
   return t;
 }
 function clearToken() {
-  sessionStorage.removeItem("secval_token");
+  try { localStorage.removeItem("secval_token"); } catch { /* nothing stored */ }
 }
 
 const api = (path, opts = {}) => {
@@ -81,22 +85,40 @@ el("addBtn").onclick = async () => {
 document.addEventListener("click", async (ev) => {
   const t = ev.target;
   if (t.dataset.challenge) {
-    const { body } = await api(`/api/allowlist/${t.dataset.challenge}/challenge`, { method: "POST", body: "{}" });
-    window.prompt(
-      "Place this token via a DNS TXT record at _secval-challenge." +
-        t.dataset.challenge +
-        "\nor at /.well-known/secval-challenge.txt, then click Verify.\n\nToken (copy):",
-      body.token,
-    );
+    // Show the token on the page (no pop-up) with a copy button.
+    const domain = t.dataset.challenge;
+    const { ok, body } = await api(`/api/allowlist/${domain}/challenge`, { method: "POST", body: "{}" });
+    if (!ok) {
+      el("proofMsg").textContent = "Could not create a code: " + (body.reason || body.error || "error");
+      return;
+    }
+    el("proofMsg").innerHTML = `
+      <strong>${esc(domain)}</strong> — your code:
+      <code id="proofToken">${esc(body.token)}</code>
+      <button class="ghost" id="copyToken">Copy</button><br>
+      Put it in a file at <code>https://${esc(domain)}/.well-known/secval-challenge.txt</code>
+      (or a DNS TXT record at <code>_secval-challenge.${esc(domain)}</code>), then press Verify.`;
+    el("copyToken").onclick = () => {
+      navigator.clipboard?.writeText(body.token);
+      el("copyToken").textContent = "Copied";
+    };
   } else if (t.dataset.verify) {
-    const method = window.confirm("OK = verify by DNS TXT record.\nCancel = verify by token file on the site.")
-      ? "dns-txt"
-      : "token-file";
-    const { body } = await api(`/api/allowlist/${t.dataset.verify}/verify`, {
-      method: "POST",
-      body: JSON.stringify({ method }),
-    });
-    window.alert(body.verified ? "Ownership verified." : "Not verified: " + body.reason);
+    // No OK/Cancel choice: try the token file first, then the DNS record.
+    const domain = t.dataset.verify;
+    el("proofMsg").textContent = "Checking " + domain + "…";
+    let result = null;
+    for (const method of ["token-file", "dns-txt"]) {
+      const { body } = await api(`/api/allowlist/${domain}/verify`, {
+        method: "POST",
+        body: JSON.stringify({ method }),
+      });
+      // On failure, report the token-file reason (the usual method).
+      if (!result || body.verified) result = body;
+      if (body.verified) break;
+    }
+    el("proofMsg").textContent = result?.verified
+      ? domain + " is verified. You can scan it now."
+      : "Not verified yet: " + (result?.reason || "unknown reason");
     refreshAllowlist();
     refreshAudit();
   } else if (t.dataset.remove) {
@@ -126,6 +148,7 @@ el("scanBtn").onclick = async () => {
     }
   } finally {
     el("scanBtn").disabled = false;
+    refreshAllowlist(); // keep the proven/unproven badges current
     refreshScans();
     refreshAudit();
   }
