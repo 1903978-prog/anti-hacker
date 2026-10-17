@@ -1,0 +1,13 @@
+# Litestream backup of secval's store to a Backblaze B2 bucket (S3-compatible).
+# Values come from Render environment variables; see scripts/start.sh.
+dbs:
+  - path: ${SECVAL_DB_PATH}
+    replicas:
+      - type: s3
+        bucket: ${LITESTREAM_BUCKET}
+        path: secval
+        endpoint: ${LITESTREAM_ENDPOINT}
+        region: ${LITESTREAM_REGION}
+        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+        force-path-style: true
