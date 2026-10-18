@@ -149,6 +149,7 @@ async function runScan(target) {
   } finally {
     el("scanBtn").disabled = false;
     refreshAllowlist(); // keep the proven/unproven badges current
+    refreshDashboard(); // a new scan changes the Security score
     refreshScans();
     refreshAudit();
   }
@@ -469,4 +470,4 @@ el("reportBtn").onclick = async () => {
 };
 
 refreshDashboard();
-setInterval(refreshDashboard, 60_000);
+setInterval(refreshDashboard, 60 * 60_000); // hourly; scans, checks and saved reports refresh it at once
