@@ -1,6 +1,6 @@
-// secval control-plane UI. State-changing calls send a bearer token (the
-// server's SECVAL_API_TOKEN); it is asked for once and remembered in this
-// browser (localStorage), so it is not asked again on every visit.
+// secval control-plane UI. Every API call sends a bearer token (the server's
+// SECVAL_API_TOKEN); it is asked for once and remembered in this browser
+// (localStorage), so it is not asked again on every visit.
 function readStored() {
   try { return localStorage.getItem("secval_token"); } catch { return null; }
 }
@@ -20,10 +20,10 @@ function clearToken() {
 const api = (path, opts = {}) => {
   const method = (opts.method || "GET").toUpperCase();
   const headers = { "content-type": "application/json", ...(opts.headers || {}) };
-  if (method !== "GET" && method !== "HEAD") headers["authorization"] = "Bearer " + getToken();
+  if (path.startsWith("/api/")) headers["authorization"] = "Bearer " + getToken();
   return fetch(path, { ...opts, headers }).then((r) =>
     r.json().then((b) => {
-      if (r.status === 401) {
+      if (r.status === 401 && getToken()) {
         clearToken();
         showTokenBox("That secret token was missing or wrong. Paste it again.");
       }
@@ -51,7 +51,8 @@ el("ksBtn").onclick = async () => {
 };
 
 async function refreshAllowlist() {
-  const { body } = await api("/api/allowlist");
+  const { ok, body } = await api("/api/allowlist");
+  if (!ok) return;
   const rows = body
     .map(
       (e) => `
@@ -224,7 +225,8 @@ function renderFindings(findings) {
 }
 
 async function refreshScans() {
-  const { body } = await api("/api/scans");
+  const { ok, body } = await api("/api/scans");
+  if (!ok) return;
   el("scansTable").querySelector("tbody").innerHTML = body.length
     ? body
         .map(
@@ -237,7 +239,8 @@ async function refreshScans() {
 }
 
 async function refreshAudit() {
-  const { body } = await api("/api/audit?limit=20");
+  const { ok, body } = await api("/api/audit?limit=20");
+  if (!ok) return;
   el("auditTable").querySelector("tbody").innerHTML = body
     .map(
       (a) => `
@@ -249,7 +252,8 @@ async function refreshAudit() {
 }
 
 async function refreshSchedule() {
-  const { body } = await api("/api/schedule");
+  const { ok, body } = await api("/api/schedule");
+  if (!ok) return;
   el("scheduleText").textContent =
     body.description + (body.lastRun ? ` · last run ${body.lastRun}` : " · not run yet");
 }
@@ -270,9 +274,15 @@ el("tokenSave").onclick = () => {
   el("tokenInput").value = "";
   el("tokenMsg").textContent = "";
   showTokenBox();
+  // The data is private, so load it now that the token is known.
+  refreshAllowlist();
+  refreshScans();
+  refreshAudit();
+  refreshSchedule();
+  refreshDashboard();
 };
 
-showTokenBox();
+showTokenBox(getToken() ? "" : "Paste your secret token to see your data.");
 for (const d of pendingDomains()) watchProof(d);
 refreshKillSwitch();
 refreshAllowlist();

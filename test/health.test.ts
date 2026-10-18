@@ -242,7 +242,7 @@ describe("dashboard API", () => {
     expect(saved.status).toBe(201);
     expect(saved.body.scores).toHaveLength(4);
 
-    const dash = await request(app).get("/api/dashboard");
+    const dash = await request(app).get("/api/dashboard").set("authorization", "Bearer t0ken");
     expect(dash.status).toBe(200);
     expect(dash.body.length).toBeGreaterThan(0);
   });

@@ -4,8 +4,8 @@ App: secval.onrender.com. Rated from the code (1903978-prog/anti-hacker, integra
 
 | Area | Score | Why |
 |---|---|---|
-| Security & Access Control | ~70 | Checked in code: every change needs the secret token (compared in constant time), rate limit of 120/min, strict headers and CSP, a fail-closed policy gate in front of every scan, an append-only audit trail and a kill switch. Held back: every read page (allowlist, audit trail, scans, dashboard) is open without login, so anyone with the address can read them. |
-| Data Protection & Privacy | ~70 | Scans keep only findings, never site data. Held back: the same open read pages expose the app list, scan results and scores. The token sits in browser storage. |
+| Security & Access Control | ~82 | Checked in code and tests: every API call, reads included, needs the secret token (compared in constant time; refused if none is configured), rate limit of 120/min, strict headers and CSP, a fail-closed policy gate in front of every scan, an append-only audit trail and a kill switch. Held back: one shared token instead of user accounts, and the rate limit trusts the forwarded address. |
+| Data Protection & Privacy | ~82 | Scans keep only findings, never site data. The allowlist, audit trail, scans and dashboard need the token, and API answers are marked not to be cached. Held back: the token sits in browser storage. |
 | Data Integrity & Consistency | ~75 | Input is validated (zod), multi-row writes use transactions, and database triggers block edits to the audit log. Held back: there are no schema migrations, so a new column on an existing table would not appear on an old database. |
 | Data Persistence & Recovery | ~35 | The free Render tier wipes the database on sleep or redeploy. The Litestream to Backblaze backup is coded and its 4 settings are in Render, but a backup and restore has never been verified. Ownership proofs were lost before. |
 | Functional Completeness | ~70 | Allowlist, ownership proof, passive and active scans, the weekly sweep and the health dashboard (table, paste box, infrastructure) all exist. Missing: automatic report loading, automatic usage data, user login. |

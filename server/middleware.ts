@@ -47,8 +47,15 @@ export interface RateLimitOptions {
  */
 export function rateLimit({ windowMs, max }: RateLimitOptions) {
   const hits = new Map<string, { count: number; resetAt: number }>();
+  let nextSweep = Date.now() + windowMs;
   return (req: Request, res: Response, next: NextFunction) => {
     const now = Date.now();
+    // Forget expired windows now and then, so a flood of addresses cannot
+    // grow the map without bound.
+    if (now >= nextSweep) {
+      for (const [k, e] of hits) if (now >= e.resetAt) hits.delete(k);
+      nextSweep = now + windowMs;
+    }
     const key = req.ip ?? "unknown";
     let entry = hits.get(key);
     if (!entry || now >= entry.resetAt) {
@@ -73,20 +80,19 @@ function constantTimeEqual(a: string, b: string): boolean {
 }
 
 /**
- * Requires a bearer API token for state-changing requests (POST/PUT/PATCH/
- * DELETE). Read-only requests (GET/HEAD) pass through. Fails closed: if no
- * token is configured, every state-changing request is refused, so the control
- * plane is never silently left open.
+ * Requires a bearer API token for every API request, reads included: the
+ * allowlist, audit trail, scan findings and dashboard are private too. Only
+ * CORS preflights (OPTIONS) pass through. Fails closed: if no token is
+ * configured, every request is refused, so the control plane is never silently
+ * left open.
  */
 export function apiAuth(token: string | undefined) {
   return (req: Request, res: Response, next: NextFunction) => {
-    if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") {
-      return next();
-    }
+    if (req.method === "OPTIONS") return next();
     if (!token) {
       return res
         .status(503)
-        .json({ error: "API token not configured; set SECVAL_API_TOKEN to enable changes" });
+        .json({ error: "API token not configured; set SECVAL_API_TOKEN to enable the API" });
     }
     const header = req.get("authorization") ?? "";
     const match = /^Bearer\s+(.+)$/i.exec(header);
@@ -94,6 +100,14 @@ export function apiAuth(token: string | undefined) {
     if (!provided || !constantTimeEqual(provided, token)) {
       return res.status(401).json({ error: "unauthorized" });
     }
+    next();
+  };
+}
+
+/** Stops browsers and proxies from keeping copies of private API answers. */
+export function noStore() {
+  return (_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader("Cache-Control", "no-store");
     next();
   };
 }

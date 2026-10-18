@@ -17,10 +17,21 @@ describe("http api", () => {
     expect(res.body.ok).toBe(true);
   });
 
-  it("serves the seeded allowlist (read, no token needed)", async () => {
-    const res = await request(app()).get("/api/allowlist");
+  it("serves the seeded allowlist with the token", async () => {
+    const res = await request(app()).get("/api/allowlist").set(auth);
     expect(res.status).toBe(200);
     expect(res.body.length).toBeGreaterThanOrEqual(5);
+    expect(res.headers["cache-control"]).toBe("no-store");
+  });
+
+  it("keeps every read page private without the token", async () => {
+    const a = app();
+    for (const path of ["/api/allowlist", "/api/audit", "/api/scans", "/api/dashboard", "/api/schedule"]) {
+      expect((await request(a).get(path)).status).toBe(401);
+      expect((await request(a).get(path).set({ authorization: "Bearer wrong" })).status).toBe(401);
+    }
+    // the public liveness check stays open for the uptime pinger
+    expect((await request(a).get("/health")).status).toBe(200);
   });
 
   it("refuses a preflight for an unproven target", async () => {
@@ -81,7 +92,7 @@ describe("control-plane hardening", () => {
     const noToken = createApp(openDb(":memory:"), { apiToken: undefined });
     const res = await request(noToken).post("/api/kill-switch/engage").send({});
     expect(res.status).toBe(503);
-    // reads still work
-    expect((await request(noToken).get("/api/allowlist")).status).toBe(200);
+    // reads are refused too
+    expect((await request(noToken).get("/api/allowlist")).status).toBe(503);
   });
 });

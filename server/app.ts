@@ -17,7 +17,7 @@ import { engage, isEngaged, release } from "./governance/killswitch.js";
 import { requestApproval, type ScanMode } from "./governance/policy.js";
 import { getFindings, listScans, runPassiveScan } from "./scan/passive.js";
 import { runActiveScan } from "./scan/active.js";
-import { apiAuth, rateLimit, securityHeaders } from "./middleware.js";
+import { apiAuth, noStore, rateLimit, securityHeaders } from "./middleware.js";
 import { dashboard } from "./health/score.js";
 import { guessApp, listEstimates, saveReport } from "./health/report.js";
 import { checkAllUptime } from "./health/uptime.js";
@@ -49,8 +49,9 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
   app.use(express.json({ limit: "32kb" }));
 
   // Control-plane protection: rate limit all API traffic, and require a bearer
-  // token for any state-changing request (scans, allowlist, kill switch, …).
+  // token for every API request, reads included (scans, allowlist, audit, …).
   app.use("/api", rateLimit({ windowMs: 60_000, max: 120 }));
+  app.use("/api", noStore());
   app.use("/api", apiAuth(apiToken));
 
   app.get("/health", (_req, res) => {
