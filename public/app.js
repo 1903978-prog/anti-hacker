@@ -9,9 +9,16 @@ function readStored() {
 function getToken() {
   return readStored() || "";
 }
+// The token box lives in the Settings menu. When a button needs the token and
+// it is missing or wrong, the page opens Settings with the reason shown.
 function showTokenBox(message) {
-  el("tokenBox").hidden = !!readStored();
-  if (message) el("tokenMsg").textContent = message;
+  const saved = !!readStored();
+  el("tokenBox").hidden = saved;
+  el("tokenSavedRow").hidden = !saved;
+  if (message) {
+    el("tokenMsg").textContent = message;
+    showTab("settings");
+  }
 }
 function clearToken() {
   try { localStorage.removeItem("secval_token"); } catch { /* nothing stored */ }
@@ -270,6 +277,28 @@ el("tokenSave").onclick = () => {
   el("tokenInput").value = "";
   el("tokenMsg").textContent = "";
   showTokenBox();
+};
+
+// --- Menus (tabs) -------------------------------------------------------------
+// Each menu is a section of this one page. The address (#health, #scans,
+// #settings) picks the menu, so links and reloads keep it; the last one used
+// is remembered in this browser.
+const TABS = ["health", "scans", "settings"];
+function showTab(name) {
+  const tab = TABS.includes(name) ? name : "health";
+  for (const sec of document.querySelectorAll("[data-panel]")) sec.hidden = sec.dataset.panel !== tab;
+  for (const a of document.querySelectorAll("nav.tabs a")) a.setAttribute("aria-selected", String(a.dataset.tab === tab));
+  try { localStorage.setItem("secval_tab", tab); } catch { /* not remembered */ }
+}
+function storedTab() {
+  try { return localStorage.getItem("secval_tab"); } catch { return null; }
+}
+window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
+showTab(location.hash.slice(1) || storedTab() || "health");
+
+el("tokenForget").onclick = () => {
+  clearToken();
+  showTokenBox("Token forgotten on this browser. Paste it again when you need it.");
 };
 
 showTokenBox();

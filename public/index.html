@@ -17,6 +17,7 @@
         }
       }
       * { box-sizing: border-box; }
+      [hidden] { display: none !important; }
       body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--text); }
       header { padding: 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
       header h1 { font-size: 18px; margin: 0; letter-spacing: .5px; }
@@ -45,6 +46,9 @@
       .dot.engaged { background: var(--danger); }
       code { background: var(--bg); padding: 1px 5px; border-radius: 5px; font-size: 13px; word-break: break-all; }
       .right { text-align: right; }
+      nav.tabs { display: flex; gap: 4px; padding: 0 16px; border-bottom: 1px solid var(--border); background: var(--surface); overflow-x: auto; position: sticky; top: 0; z-index: 5; }
+      nav.tabs a { padding: 12px 14px; color: var(--muted); text-decoration: none; font-weight: 600; font-size: 14px; white-space: nowrap; border-bottom: 2px solid transparent; }
+      nav.tabs a[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
       textarea { width: 100%; min-height: 110px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: 13px/1.4 ui-monospace, monospace; resize: vertical; margin-bottom: 8px; }
       .app { border-top: 1px solid var(--border); padding: 12px 0; }
       .app:first-of-type { border-top: 0; padding-top: 0; }
@@ -89,17 +93,14 @@
       <span class="sub">authorized security validation — your assets only</span>
       <span style="flex:1"></span>
       <span class="ks"><span id="ksDot" class="dot"></span><span id="ksLabel" class="muted">…</span></span>
-      <button id="ksBtn" class="ghost">…</button>
     </header>
+    <nav class="tabs" role="tablist">
+      <a href="#health" data-tab="health" role="tab">Health dashboard</a>
+      <a href="#scans" data-tab="scans" role="tab">Security scans</a>
+      <a href="#settings" data-tab="settings" role="tab">Settings</a>
+    </nav>
     <main>
-      <div class="card" id="tokenBox" hidden>
-        <h2>Secret token</h2>
-        <div class="row">
-          <input id="tokenInput" type="password" placeholder="paste your secval secret token" />
-          <button id="tokenSave">Save</button>
-        </div>
-        <div id="tokenMsg" class="note">Needed once. This browser remembers it.</div>
-      </div>
+      <section data-panel="health">
       <div class="card">
         <h2>Health dashboard</h2>
         <div class="note" style="margin:-6px 0 12px">
@@ -125,6 +126,9 @@
         <div id="reportMsg" class="note">Saved as estimates, with the date. secval picks the app for you; change it if it guessed wrong.</div>
       </div>
 
+      </section>
+
+      <section data-panel="scans" hidden>
       <div class="card">
         <h2>Run a passive scan</h2>
         <div class="row">
@@ -160,10 +164,37 @@
         <table id="scansTable"><tbody></tbody></table>
       </div>
 
+      </section>
+
+      <section data-panel="settings" hidden>
+      <div class="card">
+        <h2>Secret token</h2>
+        <div id="tokenBox" hidden>
+          <div class="row">
+            <input id="tokenInput" type="password" placeholder="paste your secval secret token" />
+            <button id="tokenSave">Save</button>
+          </div>
+        </div>
+        <div class="row" id="tokenSavedRow" style="align-items:center">
+          <span class="muted" style="flex:1">Saved in this browser.</span>
+          <button id="tokenForget" class="ghost">Forget it on this browser</button>
+        </div>
+        <div id="tokenMsg" class="note">Needed once for buttons that change things. This browser remembers it.</div>
+      </div>
+
+      <div class="card">
+        <h2>Kill switch</h2>
+        <div class="row" style="align-items:center">
+          <span class="note" style="flex:1;margin:0">Stops every scan and check at once. Press again to release.</span>
+          <button id="ksBtn" class="ghost">…</button>
+        </div>
+      </div>
+
       <div class="card">
         <h2>Audit trail <span class="muted">(append-only)</span></h2>
         <table id="auditTable"><tbody></tbody></table>
       </div>
+      </section>
     </main>
 
     <script src="/app.js" defer></script>
