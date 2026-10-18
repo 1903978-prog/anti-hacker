@@ -11,3 +11,7 @@ dbs:
         access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
         secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
         force-path-style: true
+        # Keep 7 days of history (default is 1) and take a fresh full copy
+        # daily, so a mistake can be rolled back a week. Tiny store; still free.
+        retention: 168h
+        snapshot-interval: 24h

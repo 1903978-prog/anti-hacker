@@ -28,6 +28,7 @@ export interface AppOptions {
   apiToken?: string;
 }
 import { DEFAULT_WEEKLY, getLastRun, runWeeklySweep } from "./schedule/weekly.js";
+import { backupMode, backupStatus, runRestoreDrill } from "./backup/drill.js";
 
 // Until a real auth layer exists, the actor is a fixed operator identity.
 // Every governance action is still attributed in the audit trail.
@@ -182,6 +183,19 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
     const host = req.params.host;
     if (!dashboardHosts(db).some((h) => h.host === host)) return badRequest(res, "unknown app");
     res.json(checkReport(db, host));
+  });
+
+  // --- Backup (status and restore drill) -------------------------------------
+  app.get("/api/backup", (_req, res) => {
+    res.json(backupStatus(db));
+  });
+
+  app.post("/api/backup/drill", async (_req, res) => {
+    if (backupMode() !== "on") {
+      res.status(409).json({ error: "Backup is not running, so there is nothing to test." });
+      return;
+    }
+    res.json(await runRestoreDrill(db, ACTOR));
   });
 
   // --- Schedule (weekly automatic sweep) ------------------------------------

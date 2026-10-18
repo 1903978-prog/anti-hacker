@@ -220,6 +220,15 @@
       </div>
 
       <div class="card">
+        <h2>Backup</h2>
+        <div class="row" style="align-items:center">
+          <span id="backupText" class="note" style="flex:1;margin:0">Loading…</span>
+          <button id="drillBtn" class="ghost">Test restore now</button>
+        </div>
+        <div class="note">secval copies its data to Backblaze all the time. Once a day it restores that copy into a scratch file and checks it, so you know the backup really works. You don't need to do anything.</div>
+      </div>
+
+      <div class="card">
         <h2>Sign out</h2>
         <div class="row" style="align-items:center">
           <span class="note" style="flex:1;margin:0">Signs this browser out. You'll need the secret token again to come back in.</span>

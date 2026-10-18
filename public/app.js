@@ -297,11 +297,39 @@ el("runNowBtn").onclick = async () => {
   refreshAudit();
 };
 
+const BACKUP_MODE = {
+  on: "Backup is running",
+  "restore-failed": "WARNING: the backup could not be read at start, so changes are not being backed up. A redeploy usually fixes it",
+  off: "Backup is not set up; data is lost when the free server sleeps",
+};
+async function refreshBackup() {
+  const { ok, body } = await api("/api/backup");
+  if (!ok) return;
+  const d = body.lastDrill;
+  const drill = !d
+    ? "no restore test yet (the first runs a few minutes after start)"
+    : (d.ok ? "last restore test passed" : "last restore test FAILED: " + d.detail) +
+      " on " + new Date(d.at).toLocaleString();
+  el("backupText").innerHTML =
+    `<span class="badge${body.healthy ? " ok" : ""}">${body.healthy ? "healthy" : "check"}</span> ` +
+    esc(BACKUP_MODE[body.mode] || body.mode) + " · " + esc(drill);
+  el("drillBtn").hidden = body.mode !== "on";
+}
+el("drillBtn").onclick = async () => {
+  el("drillBtn").disabled = true;
+  el("backupText").textContent = "Restoring the backup into a scratch file…";
+  await api("/api/backup/drill", { method: "POST", body: "{}" });
+  el("drillBtn").disabled = false;
+  refreshBackup();
+  refreshAudit();
+};
+
 function refreshAll() {
   refreshAllowlist();
   refreshScans();
   refreshAudit();
   refreshSchedule();
+  refreshBackup();
   refreshDashboard();
   if (currentTab === "tests") refreshTests();
 }
