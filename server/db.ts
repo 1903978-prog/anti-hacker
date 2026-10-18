@@ -74,6 +74,36 @@ export function initSchema(db: Database.Database): void {
       value TEXT NOT NULL
     );
 
+    -- Health dashboard: one row per uptime check of an app's home page.
+    CREATE TABLE IF NOT EXISTS uptime_checks (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      host       TEXT NOT NULL,
+      ts         TEXT NOT NULL,
+      ok         INTEGER NOT NULL,
+      status     INTEGER,
+      ms         INTEGER,
+      error      TEXT
+    );
+    CREATE INDEX IF NOT EXISTS uptime_checks_host_ts ON uptime_checks (host, ts);
+
+    -- Health dashboard: scores pasted in from reports (always estimates).
+    CREATE TABLE IF NOT EXISTS health_reports (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      host       TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      text       TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS health_scores (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      report_id  INTEGER NOT NULL REFERENCES health_reports(id),
+      host       TEXT NOT NULL,
+      area       TEXT NOT NULL,
+      label      TEXT NOT NULL,
+      score      INTEGER NOT NULL,
+      evidence   TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
     -- Enforce append-only on the audit trail at the database level: any
     -- UPDATE or DELETE is rejected, so the trail cannot be rewritten even by
     -- a bug elsewhere in the code.
