@@ -30,6 +30,12 @@ services:
         sync: false
       - key: LITESTREAM_SECRET_ACCESS_KEY
         sync: false
+      # New-finding alert e-mail (Resend). Without the key the sweep still runs
+      # and records "alert e-mail not configured" in the audit trail.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: ALERT_TO
+        value: livio.moretti@eendigo.com
     # To make data durable later, upgrade off free and uncomment:
     #   envVars: [{ key: DATA_DIR, value: /var/data }]
     #   disk: { name: secval-data, mountPath: /var/data, sizeGB: 1 }

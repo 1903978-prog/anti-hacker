@@ -67,7 +67,24 @@ every ownership-proven target in passive mode through the same policy gate.
 > For reliable timing, keep the service always-on or trigger
 > `POST /api/schedule/run-now` from an external scheduler (e.g. a Render cron).
 
+## New-finding alerts
+
+After every sweep (weekly or `run-now`), each scan is compared with the
+previous completed scan of the same site. Findings of level low, medium or
+high that were not there last time are sent in **one** e-mail (highest level
+first). Only the finding itself is sent, never data read from the site.
+
+| Setting | Meaning |
+| --- | --- |
+| `RESEND_API_KEY` | Resend key; without it nothing is sent and the audit trail records `alert.skipped` |
+| `ALERT_TO` | recipient (default `livio.moretti@eendigo.com`) |
+| `ALERT_FROM` | sender (default `notifications@operations.eendigo.com`) |
+
+A failed send never stops a sweep; it is recorded as `alert.failed`. Known
+limit: without Litestream the free-tier store resets, so after a reset every
+finding counts as new once.
+
 ## Next (ideas)
 
-Active (authenticated / deeper) scanning for active-eligible targets, richer
-passive checks, and notifications on new findings.
+Active (authenticated / deeper) scanning for active-eligible targets and
+richer passive checks.
