@@ -15,13 +15,17 @@ export function loadReportFiles(
   dir = join(process.cwd(), "reports"),
 ): Array<{ file: string; host: string | null; loaded: boolean; reason?: string }> {
   if (!existsSync(dir)) return [];
-  const hosts = dashboardHosts(db).map((h) => h.host);
+  const hosts = dashboardHosts(db);
   return readdirSync(dir)
     .filter((f) => f.endsWith("-health.md"))
     .sort()
     .map((file) => {
       const name = file.replace(/-health\.md$/, "");
-      const host = hosts.find((h) => h.split(".")[0]!.startsWith(name)) ?? null;
+      // Several rows can share a name (10bonds.com and 10bonds.fly.dev): an
+      // exact host wins, then a proven row (the live app), then any match.
+      const matches = hosts.filter((h) => h.host === name || h.host.split(".")[0]!.startsWith(name));
+      const host =
+        (matches.find((h) => h.host === name) ?? matches.find((h) => h.proven) ?? matches[0])?.host ?? null;
       if (!host) return { file, host, loaded: false, reason: "no matching app" };
       const text = readFileSync(join(dir, file), "utf8");
       const already = db

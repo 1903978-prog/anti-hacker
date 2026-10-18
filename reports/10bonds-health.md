@@ -12,7 +12,7 @@ I could not open the live site from here: this workspace's network blocks 10bond
 
 | # | Area | Score | Reason (evidence) |
 |---|---|---|---|
-| 1 | Security & Access Control | ~70 (estimate) | No logins or accounts yet, so little to attack. The site reads one table with a read-only database login (`db/setup.sql`, `lib/bonds.ts`). Paid fields (ISIN, rating, duration) are removed on the server before they reach a free user (`lib/tiers.ts`, tested). Slider values are clamped (`app/api/bonds/route.ts`). No `dangerouslySetInnerHTML`; `poweredByHeader: false`; the container runs as a non-root user. Gaps: no security headers set in code (no CSP, HSTS, frame or referrer rules; `next.config.mjs`); no rate limit on `/api/bonds`; `npm audit` shows 1 high issue (old postcss inside Next 15.5.28, mostly a build-time risk); the deploy workflow uses `superfly/flyctl-actions@master`, not a pinned version. Live headers not checked. |
+| 1 | Security & Access Control | ~75 (estimate) | Updated 18/10/2026 16:05 UTC. Browser safety headers now sent on every page (10bonds PR #6: CSP limited to the site's own address, HSTS, nosniff, no framing, referrer and permissions rules, cross-origin isolation); checked in a headless browser with no CSP errors. secval's passive scan of 10bonds.fly.dev before this change found 12 header findings; 10 should clear, the Server and Via headers come from Fly's proxy and stay. Since the first report the site gained accounts, sign-up with a robot check, Stripe and an admin page: those were not reviewed in depth here. Still open: CSP allows inline scripts (Next.js needs them), no rate limit seen on the bond search, `npm audit` high issue in Next's bundled postcss. Live headers not re-scanned yet. |
 | 2 | Data Protection & Privacy | ~85 (estimate) | The site stores no personal data: no accounts, no forms, no cookies, no analytics in the code. Gap: no privacy policy page yet (the disclaimer says it will come before paid plans open). |
 | 3 | Data Integrity & Consistency | ~75 (estimate) | Reads only bonds with a yield, a duration, a future maturity and currency EUR. Sample data is clearly labelled and only allowed in production when `ALLOW_SAMPLE_DATA=1`. The "yields as of" date is shown. Gaps: nothing warns if the daily copy stops updating (old yields would show quietly); no check that the table's columns still match. |
 | 4 | Data Persistence & Recovery | ~70 (estimate) | The site keeps no data of its own. Its one table is a copy that lm-op-model rebuilds every day, so recovery means re-running that copy. Not verified: Neon backups for this database and whether the daily copy is running. |
@@ -33,6 +33,6 @@ I could not open the live site from here: this workspace's network blocks 10bond
 
 ## 3 biggest gaps
 
-1. **No security headers** (CSP, HSTS, frame rules) and no request limit on the bond search.
+1. **New account and payment code not yet reviewed in depth** (sign-up, Stripe, admin page), and no request limit seen on the bond search. Security headers were added 18/10 (PR #6).
 2. **Quiet failure modes:** stale yields or a broken database link would not raise any alarm.
 3. **Deploys skip the tests** and use an unpinned deploy tool.

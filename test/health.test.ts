@@ -9,6 +9,7 @@ import { checkUptime, detectProvider } from "../server/health/uptime.js";
 import { dashboard, performanceScore, reliabilityScore } from "../server/health/score.js";
 import type { HttpProbe } from "../server/scan/types.js";
 import { loadReportFiles } from "../server/health/seed.js";
+import { addDomain } from "../server/ownership/allowlist.js";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -199,6 +200,16 @@ describe("report files", () => {
     const secval = dashboard(db).find((a) => a.host === "secval.onrender.com")!;
     expect(secval.proven).toBe(false);
     expect(secval.areas[0]!.estimate).toMatchObject({ score: 70, source: "estimate" });
+  });
+
+  it("puts a report on the proven row when two rows share its name", async () => {
+    const db = freshDb();
+    addDomain(db, "10bonds.fly.dev", "op");
+    const { token } = createChallenge(db, "10bonds.fly.dev", "op")!;
+    await verifyOwnership(db, "10bonds.fly.dev", "dns-txt", "op", { resolveTxt: async () => [[token]] });
+    const dir = mkdtempSync(join(tmpdir(), "reports-"));
+    writeFileSync(join(dir, "10bonds-health.md"), "Security & Access Control: 70 - headers");
+    expect(loadReportFiles(db, dir).filter((r) => r.loaded).map((r) => r.host)).toEqual(["10bonds.fly.dev"]);
   });
 
   it("never checks a report-only app", async () => {
