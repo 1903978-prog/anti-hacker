@@ -82,7 +82,8 @@ export function initSchema(db: Database.Database): void {
       ok         INTEGER NOT NULL,
       status     INTEGER,
       ms         INTEGER,
-      error      TEXT
+      error      TEXT,
+      provider   TEXT
     );
     CREATE INDEX IF NOT EXISTS uptime_checks_host_ts ON uptime_checks (host, ts);
 
@@ -101,6 +102,17 @@ export function initSchema(db: Database.Database): void {
       label      TEXT NOT NULL,
       score      INTEGER NOT NULL,
       evidence   TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    -- Health dashboard: infrastructure facts pasted in from reports.
+    CREATE TABLE IF NOT EXISTS health_infra (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      report_id  INTEGER NOT NULL REFERENCES health_reports(id),
+      host       TEXT NOT NULL,
+      key        TEXT NOT NULL,
+      label      TEXT NOT NULL,
+      value      TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
 

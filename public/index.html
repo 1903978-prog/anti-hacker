@@ -60,6 +60,7 @@
       .tag { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; padding: 1px 6px; border-radius: 10px; border: 1px solid var(--border); margin-left: 4px; vertical-align: middle; }
       .tag.measured { color: #1f9d55; border-color: #1f9d5566; }
       .tag.estimate { color: var(--medium); border-color: #d9832466; }
+      table.infra { margin-top: 6px; } table.infra td:first-child { width: 38%; }
       details { margin-top: 4px; } summary { cursor: pointer; color: var(--accent); font-size: 12px; }
       details ul { margin: 4px 0 0; padding-left: 16px; color: var(--muted); font-size: 12px; }
     </style>
@@ -97,7 +98,7 @@
 
       <div class="card">
         <h2>Paste a report</h2>
-        <textarea id="reportText" placeholder="Paste a rating from another session, e.g. a table with Area | Score | Why"></textarea>
+        <textarea id="reportText" placeholder="Paste a rating from another session: a table with Area | Score | Why, and lines like Database: Neon Postgres, Deploys via: GitHub to Fly, Usage: 300 GitHub minutes"></textarea>
         <div class="row">
           <select id="reportApp"></select>
           <button id="reportBtn">Save scores</button>

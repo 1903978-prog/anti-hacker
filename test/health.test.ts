@@ -4,8 +4,8 @@ import { freshDb } from "./helpers.js";
 import { createApp } from "../server/app.js";
 import { createChallenge, verifyOwnership } from "../server/ownership/proof.js";
 import { engage } from "../server/governance/killswitch.js";
-import { guessApp, parseReport, saveReport } from "../server/health/report.js";
-import { checkUptime } from "../server/health/uptime.js";
+import { guessApp, parseInfra, parseReport, saveReport } from "../server/health/report.js";
+import { checkUptime, detectProvider } from "../server/health/uptime.js";
 import { dashboard, performanceScore, reliabilityScore } from "../server/health/score.js";
 import type { HttpProbe } from "../server/scan/types.js";
 
@@ -89,6 +89,42 @@ describe("pasted reports", () => {
     expect(app.areas).toHaveLength(10);
     expect(app.areas.find((a) => a.key === "privacy")!.estimate).toBeNull();
     expect(app.overall).toBe(79);
+  });
+});
+
+describe("infrastructure facts", () => {
+  const INFRA_TEXT = [
+    "Database: Neon Postgres (compplan_prod)",
+    "Deploys via: GitHub push to Render",
+    "| DB name | compplan_prod |",
+    "Usage: 1,200 GitHub Actions minutes",
+    "Deployment & Operational Readiness: 88",
+  ].join("\n");
+
+  it("reads facts and keeps scores separate", () => {
+    expect(parseInfra(INFRA_TEXT).map((f) => [f.key, f.value])).toEqual([
+      ["db", "Neon Postgres (compplan_prod)"],
+      ["deploy", "GitHub push to Render"],
+      ["db", "compplan_prod"],
+      ["usage", "1,200 GitHub Actions minutes"],
+    ]);
+    expect(parseReport(INFRA_TEXT).map((s) => [s.area, s.score])).toEqual([["deploy", 88]]);
+  });
+
+  it("shows the host from the address and pasted facts as estimates", () => {
+    const db = freshDb();
+    saveReport(db, "lm-op-model.fly.dev", INFRA_TEXT, "op");
+    const app = dashboard(db).find((a) => a.host === "lm-op-model.fly.dev")!;
+    const get = (k: string) => app.infra.find((f) => f.key === k)!;
+    expect(get("hosting")).toMatchObject({ value: "Fly.io", source: "measured" });
+    expect(get("deploy")).toMatchObject({ value: "GitHub push to Render", source: "estimate" });
+    expect(get("repo")).toMatchObject({ value: null, source: null });
+  });
+
+  it("recognises the host from response headers", () => {
+    expect(detectProvider({ "fly-request-id": "x" })).toBe("Fly.io");
+    expect(detectProvider({ "rndr-id": "x" })).toBe("Render");
+    expect(detectProvider({})).toBeNull();
   });
 });
 

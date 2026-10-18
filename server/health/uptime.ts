@@ -15,6 +15,19 @@ export interface UptimeCheck {
   status: number | null;
   ms: number | null;
   error: string | null;
+  /** Hosting provider recognised from response headers, if any. */
+  provider: string | null;
+}
+
+/** Recognises the hosting provider from response headers (names only). */
+export function detectProvider(headers: Record<string, string>): string | null {
+  if (headers["fly-request-id"] || /fly/i.test(headers["server"] ?? "")) return "Fly.io";
+  if (headers["rndr-id"] || headers["x-render-origin-server"]) return "Render";
+  if (headers["x-vercel-id"]) return "Vercel";
+  if (headers["x-nf-request-id"]) return "Netlify";
+  if (headers["x-github-request-id"]) return "GitHub Pages";
+  if (headers["cf-ray"]) return "Cloudflare";
+  return null;
 }
 
 /**
@@ -43,6 +56,7 @@ export async function checkUptime(
       status: res.status,
       ms: Date.now() - started,
       error: null,
+      provider: detectProvider(res.headers),
     };
   } catch (err) {
     check = {
@@ -52,12 +66,13 @@ export async function checkUptime(
       status: null,
       ms: null,
       error: (err as Error).message.slice(0, 200),
+      provider: null,
     };
   }
 
   db.prepare(
-    `INSERT INTO uptime_checks (host, ts, ok, status, ms, error) VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(check.host, check.ts, check.ok ? 1 : 0, check.status, check.ms, check.error);
+    `INSERT INTO uptime_checks (host, ts, ok, status, ms, error, provider) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(check.host, check.ts, check.ok ? 1 : 0, check.status, check.ms, check.error, check.provider);
   return check;
 }
 
@@ -83,6 +98,7 @@ export function listUptime(db: DB, host: string, sinceIso: string): UptimeCheck[
     status: (r.status as number) ?? null,
     ms: (r.ms as number) ?? null,
     error: (r.error as string) ?? null,
+    provider: (r.provider as string) ?? null,
   }));
 }
 

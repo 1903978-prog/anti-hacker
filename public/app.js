@@ -309,6 +309,15 @@ function renderApp(a) {
     })
     .join("");
   const grid = empty ? areas : `<div class="areas">${areas}</div>`;
+  const infra = `<table class="infra"><tbody>${a.infra
+    .map(
+      (f) => `<tr><td class="muted">${esc(f.label)}</td><td>${
+        f.value
+          ? `${esc(f.value)} <span class="tag ${f.source}">${f.source}</span>`
+          : '<span class="muted">not known yet</span>'
+      }<div class="note" style="margin:0">${esc(f.note)}${f.at ? " " + day(f.at) : ""}</div></td></tr>`,
+    )
+    .join("")}</tbody></table>`;
   const other = a.other.length
     ? `<div class="note">Also in the last report: ${a.other
         .map((o) => `${esc(o.label)} ${o.score}`)
@@ -322,6 +331,7 @@ function renderApp(a) {
       <span class="muted">${a.reports} report(s) pasted</span>
     </div>
     ${grid}${other}
+    <details><summary>Infrastructure</summary>${infra}</details>
   </div>`;
 }
 
@@ -367,9 +377,10 @@ el("reportBtn").onclick = async () => {
     el("reportMsg").textContent = "Not saved: " + (body.error || "error");
     return;
   }
-  el("reportMsg").textContent = `Saved ${body.scores.length} score(s) for ${body.host}: ${body.scores
-    .map((s) => `${s.label} ${s.score}`)
-    .join(", ")}.`;
+  const facts = body.infra.length ? ` and ${body.infra.length} infrastructure fact(s)` : "";
+  el("reportMsg").textContent = `Saved ${body.scores.length} score(s)${facts} for ${body.host}${
+    body.scores.length ? ": " + body.scores.map((s) => `${s.label} ${s.score}`).join(", ") : ""
+  }.`;
   el("reportText").value = "";
   refreshDashboard();
   refreshAudit();

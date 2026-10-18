@@ -1,6 +1,6 @@
 import type { DB } from "../db.js";
 import { listAllowlist } from "../ownership/allowlist.js";
-import { AREAS, listEstimates, type StoredEstimate } from "./report.js";
+import { AREAS, INFRA, listEstimates, listInfra, type StoredEstimate } from "./report.js";
 import { listUptime, type UptimeCheck } from "./uptime.js";
 
 /**
@@ -22,11 +22,21 @@ export interface AreaScores {
   estimate: Score | null;
 }
 
+export interface InfraFact {
+  key: string;
+  label: string;
+  value: string | null;
+  source: "measured" | "estimate" | null;
+  at: string | null;
+  note: string;
+}
+
 export interface AppHealth {
   host: string;
   proven: boolean;
   overall: number | null;
   areas: AreaScores[];
+  infra: InfraFact[];
   /** Pasted areas that do not fit the ten fixed ones. */
   other: StoredEstimate[];
   reports: number;
@@ -114,6 +124,50 @@ export function performanceScore(checks7d: UptimeCheck[]): Score | null {
   };
 }
 
+/** Hosting provider from the app's address, when the address shows it. */
+export function providerFromDomain(host: string): string | null {
+  if (host.endsWith(".fly.dev")) return "Fly.io";
+  if (host.endsWith(".onrender.com")) return "Render";
+  if (host.endsWith(".vercel.app")) return "Vercel";
+  if (host.endsWith(".netlify.app")) return "Netlify";
+  if (host.endsWith(".github.io")) return "GitHub Pages";
+  return null;
+}
+
+function infraFacts(db: DB, host: string, checks7d: UptimeCheck[]): InfraFact[] {
+  const pasted = listInfra(db, host);
+  const seen = [...checks7d].reverse().find((c) => c.provider);
+  return INFRA.map((f) => {
+    if (f.key === "hosting") {
+      if (seen) {
+        return { key: f.key, label: f.label, value: seen.provider, source: "measured", at: seen.ts,
+          note: "Recognised from the app's own answer to secval's check." };
+      }
+      const byName = providerFromDomain(host);
+      if (byName) {
+        return { key: f.key, label: f.label, value: byName, source: "measured", at: null,
+          note: "Read from the app's web address." };
+      }
+    }
+    // Usage can have several lines (one per service); show all from the newest report.
+    const mine = pasted.filter((p) => p.key === f.key);
+    const newest = mine[0];
+    if (!newest) {
+      return { key: f.key, label: f.label, value: null, source: null, at: null,
+        note: "Paste a report that mentions it." };
+    }
+    const sameReport = mine.filter((p) => p.createdAt === newest.createdAt);
+    return {
+      key: f.key,
+      label: f.label,
+      value: sameReport.map((p) => (sameReport.length > 1 ? `${p.label}: ${p.value}` : p.value)).join("; "),
+      source: "estimate",
+      at: newest.createdAt,
+      note: "From a pasted report.",
+    };
+  });
+}
+
 /** Builds the whole dashboard: one entry per allowlisted app. */
 export function dashboard(db: DB, now: Date = new Date()): AppHealth[] {
   const since7d = new Date(now.getTime() - 7 * DAY).toISOString();
@@ -154,6 +208,7 @@ export function dashboard(db: DB, now: Date = new Date()): AppHealth[] {
       proven: e.ownershipProven,
       overall: best.length ? Math.round(best.reduce((a, b) => a + b, 0) / best.length) : null,
       areas,
+      infra: infraFacts(db, e.domain, checks7d),
       other: estimates.filter((s) => s.area === "other" && s.createdAt === newestReport),
       reports: new Set(estimates.map((s) => s.createdAt)).size,
     };

@@ -47,6 +47,66 @@ export function classifyArea(name: string): AreaKey | "other" {
   return "other";
 }
 
+/** Infrastructure facts a report can carry (text, not scores). */
+export const INFRA = [
+  { key: "hosting", label: "Hosted on" },
+  { key: "deploy", label: "Deploys via" },
+  { key: "db", label: "Database" },
+  { key: "repo", label: "Code repository" },
+  { key: "usage", label: "Resource use (last week)" },
+] as const;
+
+export type InfraKey = (typeof INFRA)[number]["key"];
+
+export interface ParsedInfra {
+  key: InfraKey;
+  label: string;
+  value: string;
+}
+
+/** Maps a report's line name to an infrastructure fact, if it is one. */
+export function classifyInfra(name: string): InfraKey | null {
+  const n = name.toLowerCase();
+  if (n.split(/\s+/).length > 5) return null;
+  if (/usage|resource|minutes|bandwidth|memory|\bcpu\b|\bcost|quota/.test(n)) return "usage";
+  if (/\bdb\b|database/.test(n)) return "db";
+  if (/\brepo/.test(n)) return "repo";
+  if (/deploy/.test(n)) return "deploy";
+  if (/\bhost(ing|ed)?\b|platform|provider/.test(n)) return "hosting";
+  return null;
+}
+
+/**
+ * Reads infrastructure facts ("Database: Neon Postgres", "| DB name | ... |").
+ * A line whose name is also a scored area (e.g. "Deployment & Operational
+ * Readiness: 88") is a score, not a fact, when its value starts with a number.
+ */
+export function parseInfra(text: string): ParsedInfra[] {
+  const out: ParsedInfra[] = [];
+  for (const raw of text.slice(0, MAX_REPORT_CHARS).split(/\r?\n/)) {
+    const line = raw.trim();
+    let name: string | undefined;
+    let value: string | undefined;
+    if (line.startsWith("|")) {
+      const cells = line.replace(/^\||\|$/g, "").split("|").map(clean);
+      if (cells.length < 2 || /^:?-+:?$/.test(cells[0] ?? "")) continue;
+      name = cells[0];
+      value = cells.slice(1).filter(Boolean).join(" · ");
+    } else {
+      const m = /^[-*\s]*([^:]{2,40}):\s*(.+)$/.exec(clean(line));
+      if (!m) continue;
+      [, name, value] = m;
+    }
+    if (!name || !value) continue;
+    const key = classifyInfra(name);
+    if (!key) continue;
+    const isArea = classifyArea(name) !== "other";
+    if (isArea && /^~?\s*\d{1,3}(?!\d)/.test(value)) continue;
+    out.push({ key, label: clean(name), value: value.slice(0, 300) });
+  }
+  return out;
+}
+
 const clean = (s: string) => s.replace(/\*\*|__|`/g, "").trim();
 
 /**
@@ -77,6 +137,8 @@ export function parseReport(text: string): ParsedScore[] {
 
     const num = /~?\s*(\d{1,3})(?!\d)/.exec(scoreText ?? "");
     if (!name || !num) continue;
+    // Infra facts like "Usage: 1,200 minutes" are not scores.
+    if (classifyInfra(name) && classifyArea(name) === "other") continue;
     const score = Number(num[1]);
     if (score < 0 || score > 100) continue;
     out.push({ area: classifyArea(name), label: clean(name), score, evidence: clean(why) });
@@ -106,6 +168,7 @@ export interface SavedReport {
   reportId: number;
   host: string;
   scores: ParsedScore[];
+  infra: ParsedInfra[];
 }
 
 /** Saves a pasted report and its scores. Returns null if nothing could be read. */
@@ -120,7 +183,8 @@ export function saveReport(
     return { error: "pick an app from your allowlist" };
   }
   const scores = parseReport(text);
-  if (!scores.length) return { error: "no scores found in that text" };
+  const infra = parseInfra(text);
+  if (!scores.length && !infra.length) return { error: "no scores or infrastructure facts found in that text" };
 
   const now = new Date().toISOString();
   const tx = db.transaction(() => {
@@ -133,6 +197,10 @@ export function saveReport(
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
     for (const s of scores) ins.run(reportId, host, s.area, s.label, s.score, s.evidence, now);
+    const insInfra = db.prepare(
+      `INSERT INTO health_infra (report_id, host, key, label, value, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+    );
+    for (const f of infra) insInfra.run(reportId, host, f.key, f.label, f.value, now);
     return reportId;
   });
   const reportId = tx();
@@ -141,9 +209,9 @@ export function saveReport(
     action: "health.report",
     target: host,
     decision: "info",
-    detail: { reportId, scores: scores.length },
+    detail: { reportId, scores: scores.length, infra: infra.length },
   });
-  return { reportId, host, scores };
+  return { reportId, host, scores, infra };
 }
 
 export interface StoredEstimate {
@@ -164,6 +232,26 @@ export function listEstimates(db: DB, host: string): StoredEstimate[] {
     label: r.label as string,
     score: Number(r.score),
     evidence: r.evidence as string,
+    createdAt: r.created_at as string,
+  }));
+}
+
+export interface StoredInfra {
+  key: string;
+  label: string;
+  value: string;
+  createdAt: string;
+}
+
+/** Every pasted infrastructure fact for a host, newest first. */
+export function listInfra(db: DB, host: string): StoredInfra[] {
+  const rows = db
+    .prepare(`SELECT * FROM health_infra WHERE host = ? ORDER BY created_at DESC, id`)
+    .all(host) as Array<Record<string, unknown>>;
+  return rows.map((r) => ({
+    key: r.key as string,
+    label: r.label as string,
+    value: r.value as string,
     createdAt: r.created_at as string,
   }));
 }
