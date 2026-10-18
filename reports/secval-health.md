@@ -12,7 +12,7 @@ App: secval.onrender.com. Rated from the code (1903978-prog/anti-hacker, integra
 | User Experience & Interface | ~72 | One page with no pop-ups. The dashboard table was checked at desktop and phone width (390 px) with sample data. Held back: one long page, and the phone needs sideways scrolling for the table. |
 | Performance & Scalability | ~60 | One instance with SQLite and an in-memory rate limit. That's fine for one user. Free-tier cold starts are slow (time not measured). |
 | Reliability & Error Handling | ~60 | Scheduler and uptime errors are caught so they never crash the server. Held back: the timers run inside the app, so when the free tier sleeps the weekly scan and uptime checks stop. The UptimeRobot pinger that keeps it awake is not verified. |
-| Code Quality & Maintainability | ~82 (estimate) | Type check is clean, 127 of 127 tests pass locally (the health scores for reliability, speed and hosting now have their own tests; branch claude/code-quality, 18/10/2026, not shipped), and the modules are small, each with one job. |
+| Code Quality & Maintainability | ~82 (estimate) | Type check is clean, 127 of 127 tests pass locally (the health scores for reliability, speed and hosting now have their own tests; shipped 18/10/2026), and the modules are small, each with one job. |
 | Deployment & Operational Readiness | ~45 | No CI runs (PR #6 had 0 checks). There are two GitHub copies, and Render builds from the old one, so changes have to be copied by hand. |
 
 Hosted on: Render (free plan)
