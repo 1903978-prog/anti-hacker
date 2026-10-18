@@ -2,6 +2,7 @@ import { openDb } from "./db.js";
 import { createApp } from "./app.js";
 import { startScheduler } from "./schedule/weekly.js";
 import { startUptimeChecker } from "./health/uptime.js";
+import { loadReportFiles } from "./health/seed.js";
 
 const db = openDb();
 const app = createApp(db, { apiToken: process.env.SECVAL_API_TOKEN });
@@ -19,6 +20,11 @@ if (!process.env.SECVAL_API_TOKEN) {
 startScheduler(db);
 // Health dashboard: check each proven app's home page every 30 minutes.
 startUptimeChecker(db);
+// Health reports kept in the repo (reports/*-health.md) appear as estimates.
+for (const r of loadReportFiles(db)) {
+  // eslint-disable-next-line no-console
+  console.log(`secval: report ${r.file} -> ${r.host ?? "?"}: ${r.loaded ? "loaded" : r.reason}`);
+}
 
 app.listen(port, () => {
   // eslint-disable-next-line no-console
