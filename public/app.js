@@ -13,6 +13,19 @@ function showTokenBox(message) {
   el("tokenBox").hidden = !!readStored();
   if (message) el("tokenMsg").textContent = message;
 }
+// A request was refused for a missing or wrong token: forget the bad one,
+// show the token box with the reason, and bring it into view.
+function askForToken() {
+  const WRONG = "That secret token was wrong. Paste it again.";
+  const hadToken = !!getToken();
+  clearToken();
+  // Other requests refused right after keep the "wrong" reason on screen.
+  const keep = el("tokenMsg").textContent === WRONG;
+  showTokenBox(hadToken || keep ? WRONG : "Paste your secret token here first, then try again.");
+  el("tokenBox").scrollIntoView({ behavior: "smooth", block: "center" });
+  el("tokenInput").focus({ preventScroll: true });
+}
+const NEED_TOKEN = "Needs your secret token: paste it in the box at the top, then press again.";
 function clearToken() {
   try { localStorage.removeItem("secval_token"); } catch { /* nothing stored */ }
 }
@@ -23,10 +36,7 @@ const api = (path, opts = {}) => {
   if (path.startsWith("/api/")) headers["authorization"] = "Bearer " + getToken();
   return fetch(path, { ...opts, headers }).then((r) =>
     r.json().then((b) => {
-      if (r.status === 401 && getToken()) {
-        clearToken();
-        showTokenBox("That secret token was missing or wrong. Paste it again.");
-      }
+      if (r.status === 401) askForToken();
       return { ok: r.ok, status: r.status, body: b };
     }),
   );
@@ -132,7 +142,9 @@ async function runScan(target) {
   el("findings").innerHTML = "";
   try {
     const { ok, status, body } = await api("/api/scan", { method: "POST", body: JSON.stringify({ target }) });
-    if (status === 403) {
+    if (status === 401) {
+      el("scanMsg").textContent = NEED_TOKEN;
+    } else if (status === 403) {
       el("scanMsg").textContent = "Blocked by policy: " + body.reason;
     } else if (!ok) {
       el("scanMsg").textContent = "Scan could not complete: " + (body.reason || status);
@@ -260,7 +272,12 @@ async function refreshSchedule() {
 el("runNowBtn").onclick = async () => {
   el("runNowBtn").disabled = true;
   el("scheduleMsg").textContent = "Scanning all proven sites…";
-  const { body } = await api("/api/schedule/run-now", { method: "POST", body: "{}" });
+  const { ok, status, body } = await api("/api/schedule/run-now", { method: "POST", body: "{}" });
+  el("runNowBtn").disabled = false;
+  if (!ok) {
+    el("scheduleMsg").textContent = status === 401 ? NEED_TOKEN : "Could not run: " + (body.error || status);
+    return;
+  }
   el("scheduleMsg").textContent = `Done — scanned ${body.scanned} site(s), ${body.skipped} skipped (ownership not proven), ${body.totalFindings} finding(s).`;
   el("runNowBtn").disabled = false;
   refreshScans();
@@ -274,6 +291,8 @@ el("tokenSave").onclick = () => {
   el("tokenInput").value = "";
   el("tokenMsg").textContent = "";
   showTokenBox();
+  // Clear any "needs your token" messages left from before.
+  for (const id of ["scanMsg", "scheduleMsg"]) el(id).textContent = "";
   // The data is private, so load it now that the token is known.
   refreshAllowlist();
   refreshScans();
