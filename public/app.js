@@ -1,46 +1,54 @@
-// secval control-plane UI. Every API call sends a bearer token (the server's
-// SECVAL_API_TOKEN); it is asked for once and remembered in this browser
-// (localStorage), so it is not asked again on every visit.
-function readStored() {
-  try { return localStorage.getItem("secval_token"); } catch { return null; }
-}
-// The token is typed into a small box on the page (no pop-up). The box only
-// shows while no token is saved.
-function getToken() {
-  return readStored() || "";
-}
-function showTokenBox(message) {
-  el("tokenBox").hidden = !!readStored();
-  if (message) el("tokenMsg").textContent = message;
-}
-// A request was refused for a missing or wrong token: forget the bad one,
-// show the token box with the reason, and bring it into view.
-function askForToken() {
-  const WRONG = "That secret token was wrong. Paste it again.";
-  const hadToken = !!getToken();
-  clearToken();
-  // Other requests refused right after keep the "wrong" reason on screen.
-  const keep = el("tokenMsg").textContent === WRONG;
-  showTokenBox(hadToken || keep ? WRONG : "Paste your secret token here first, then try again.");
+// secval control-plane UI. The secret token (the server's SECVAL_API_TOKEN)
+// is typed once into a small box on the page (no pop-up). The server swaps it
+// for a sign-in cookie that page scripts cannot read, so the token itself is
+// never stored in this browser. Every API call carries that cookie.
+let signedIn = false;
+const NEED_TOKEN = "Needs your secret token: paste it in the box at the top, then press again.";
+
+// A request was refused: show the token box with the reason and bring it into
+// view. A "wrong token" reason stays on screen over the generic one.
+const WRONG = "That secret token was wrong. Paste it again.";
+function askForToken(message) {
+  signedIn = false;
+  el("tokenBox").hidden = false;
+  if (message || el("tokenMsg").textContent !== WRONG) {
+    el("tokenMsg").textContent = message || "Paste your secret token to see your data.";
+  }
   el("tokenBox").scrollIntoView({ behavior: "smooth", block: "center" });
   el("tokenInput").focus({ preventScroll: true });
 }
-const NEED_TOKEN = "Needs your secret token: paste it in the box at the top, then press again.";
-function clearToken() {
-  try { localStorage.removeItem("secval_token"); } catch { /* nothing stored */ }
-}
 
 const api = (path, opts = {}) => {
-  const method = (opts.method || "GET").toUpperCase();
   const headers = { "content-type": "application/json", ...(opts.headers || {}) };
-  if (path.startsWith("/api/")) headers["authorization"] = "Bearer " + getToken();
-  return fetch(path, { ...opts, headers }).then((r) =>
+  return fetch(path, { ...opts, headers, credentials: "same-origin" }).then((r) =>
     r.json().then((b) => {
       if (r.status === 401) askForToken();
+      else if (r.ok && path.startsWith("/api/")) signedIn = true;
       return { ok: r.ok, status: r.status, body: b };
     }),
   );
 };
+
+// Sends the token once; on success the server sets the sign-in cookie.
+async function signIn(token) {
+  const r = await fetch("/api/session", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify({ token }),
+  });
+  return r.status;
+}
+
+// Earlier versions kept the token in browser storage. Use it once to sign in,
+// then delete it, so nobody has to paste it again.
+async function migrateOldToken() {
+  let old = null;
+  try { old = localStorage.getItem("secval_token"); } catch { /* none */ }
+  if (!old) return;
+  try { localStorage.removeItem("secval_token"); } catch { /* nothing stored */ }
+  await signIn(old);
+}
 const el = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 
@@ -284,30 +292,43 @@ el("runNowBtn").onclick = async () => {
   refreshAudit();
 };
 
-el("tokenSave").onclick = () => {
-  const v = el("tokenInput").value.trim();
-  if (!v) return;
-  try { localStorage.setItem("secval_token", v); } catch { /* not remembered */ }
-  el("tokenInput").value = "";
-  el("tokenMsg").textContent = "";
-  showTokenBox();
-  // Clear any "needs your token" messages left from before.
-  for (const id of ["scanMsg", "scheduleMsg"]) el(id).textContent = "";
-  // The data is private, so load it now that the token is known.
+function refreshAll() {
   refreshAllowlist();
   refreshScans();
   refreshAudit();
   refreshSchedule();
   refreshDashboard();
+}
+
+el("tokenSave").onclick = async () => {
+  const v = el("tokenInput").value.trim();
+  if (!v) return;
+  el("tokenSave").disabled = true;
+  const status = await signIn(v);
+  el("tokenSave").disabled = false;
+  if (status === 429) return askForToken("Too many wrong tries. Wait a minute, then paste it again.");
+  if (status !== 200) return askForToken(WRONG);
+  el("tokenInput").value = "";
+  el("tokenMsg").textContent = "";
+  el("tokenBox").hidden = true;
+  // Clear any "needs your token" messages left from before.
+  for (const id of ["scanMsg", "scheduleMsg"]) el(id).textContent = "";
+  // The data is private, so load it now that the page is signed in.
+  refreshAll();
 };
 
-showTokenBox(getToken() ? "" : "Paste your secret token to see your data.");
-for (const d of pendingDomains()) watchProof(d);
+el("signOut").onclick = async () => {
+  await api("/api/session/end", { method: "POST", body: "{}" });
+  location.reload();
+};
+
 refreshKillSwitch();
-refreshAllowlist();
-refreshScans();
-refreshAudit();
-refreshSchedule();
+// Runs after the rest of this script, so everything below is defined.
+(async () => {
+  await migrateOldToken();
+  for (const d of pendingDomains()) watchProof(d);
+  refreshAll();
+})();
 
 // --- Health dashboard --------------------------------------------------------
 // One table row per app, one column per criterion. A cell shows the measured
@@ -442,7 +463,7 @@ el("reportText").addEventListener("input", () => {
   clearTimeout(guessTimer);
   guessTimer = setTimeout(async () => {
     const text = el("reportText").value;
-    if (!text.trim() || !getToken()) return;
+    if (!text.trim() || !signedIn) return;
     const { ok, body } = await api("/api/dashboard/guess", { method: "POST", body: JSON.stringify({ text }) });
     if (ok && body.host) el("reportApp").value = body.host;
   }, 400);
@@ -468,5 +489,4 @@ el("reportBtn").onclick = async () => {
   refreshAudit();
 };
 
-refreshDashboard();
 setInterval(refreshDashboard, 60_000);

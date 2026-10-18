@@ -17,13 +17,13 @@ import { engage, isEngaged, release } from "./governance/killswitch.js";
 import { requestApproval, type ScanMode } from "./governance/policy.js";
 import { getFindings, listScans, runPassiveScan } from "./scan/passive.js";
 import { runActiveScan } from "./scan/active.js";
-import { apiAuth, noStore, rateLimit, securityHeaders } from "./middleware.js";
+import { apiAuth, failedAuthLimiter, noStore, rateLimit, securityHeaders, sessionRoutes } from "./middleware.js";
 import { dashboard } from "./health/score.js";
 import { guessApp, listEstimates, saveReport } from "./health/report.js";
 import { checkAllUptime } from "./health/uptime.js";
 
 export interface AppOptions {
-  /** Bearer token required for state-changing API requests. */
+  /** Secret token required for every API request (bearer header or sign-in cookie). */
   apiToken?: string;
 }
 import { DEFAULT_WEEKLY, getLastRun, runWeeklySweep } from "./schedule/weekly.js";
@@ -52,7 +52,9 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
   // token for every API request, reads included (scans, allowlist, audit, …).
   app.use("/api", rateLimit({ windowMs: 60_000, max: 120 }));
   app.use("/api", noStore());
-  app.use("/api", apiAuth(apiToken));
+  const wrongTokens = failedAuthLimiter({ windowMs: 60_000, max: 10 });
+  app.use("/api", sessionRoutes(apiToken, wrongTokens));
+  app.use("/api", apiAuth(apiToken, wrongTokens));
 
   app.get("/health", (_req, res) => {
     res.json({ ok: true, killSwitch: isEngaged(db) ? "engaged" : "released" });

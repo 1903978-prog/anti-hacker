@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Request, Response, NextFunction } from "express";
 
 /**
@@ -79,14 +79,102 @@ function constantTimeEqual(a: string, b: string): boolean {
   return timingSafeEqual(ab, bb);
 }
 
+export const SESSION_COOKIE = "secval_session";
+const SESSION_DAYS = 180;
+
 /**
- * Requires a bearer API token for every API request, reads included: the
- * allowlist, audit trail, scan findings and dashboard are private too. Only
- * CORS preflights (OPTIONS) pass through. Fails closed: if no token is
- * configured, every request is refused, so the control plane is never silently
- * left open.
+ * The browser session value: derived from the API token, so it survives a
+ * restart (the free tier sleeps) and stops working the moment the token is
+ * changed. The token itself never leaves the server after sign-in.
  */
-export function apiAuth(token: string | undefined) {
+export function sessionValue(token: string): string {
+  return createHmac("sha256", token).update("secval-session-v1").digest("base64url");
+}
+
+function readCookie(req: Request, name: string): string {
+  for (const part of (req.get("cookie") ?? "").split(";")) {
+    const i = part.indexOf("=");
+    if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
+  }
+  return "";
+}
+
+/**
+ * Counts wrong tokens across all callers (the caller's address can be faked,
+ * so it is not used). Past the limit, further wrong tokens get 429; a correct
+ * token always gets through, so guessing cannot lock the owner out.
+ */
+export function failedAuthLimiter({ windowMs, max }: RateLimitOptions) {
+  let count = 0;
+  let resetAt = 0;
+  return {
+    blocked(now = Date.now()): boolean {
+      if (now >= resetAt) {
+        count = 0;
+        resetAt = now + windowMs;
+      }
+      return count >= max;
+    },
+    fail(now = Date.now()): void {
+      if (now >= resetAt) {
+        count = 0;
+        resetAt = now + windowMs;
+      }
+      count++;
+    },
+  };
+}
+export type FailedAuthLimiter = ReturnType<typeof failedAuthLimiter>;
+
+function tooManyTries(res: Response): Response {
+  res.setHeader("Retry-After", "60");
+  return res.status(429).json({ error: "too many wrong tokens; wait a minute" });
+}
+
+/**
+ * Sign-in for the web page: swaps the secret token for an HttpOnly cookie, so
+ * no script on the page can read it. POST /session checks the token; POST
+ * /session/end signs out. Mounted under /api, before apiAuth.
+ */
+export function sessionRoutes(token: string | undefined, limiter: FailedAuthLimiter) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (req.method !== "POST") return next();
+    if (req.path === "/session/end") {
+      res.setHeader("Set-Cookie", `${SESSION_COOKIE}=; Path=/api; HttpOnly; Secure; SameSite=Strict; Max-Age=0`);
+      return res.json({ signedIn: false });
+    }
+    if (req.path !== "/session") return next();
+    if (!token) {
+      return res
+        .status(503)
+        .json({ error: "API token not configured; set SECVAL_API_TOKEN to enable the API" });
+    }
+    const provided = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+    const ok = !!provided && constantTimeEqual(provided, token);
+    if (!ok) {
+      if (limiter.blocked()) return tooManyTries(res);
+      limiter.fail();
+      return res.status(401).json({ error: "wrong token" });
+    }
+    res.setHeader(
+      "Set-Cookie",
+      `${SESSION_COOKIE}=${sessionValue(token)}; Path=/api; HttpOnly; Secure; SameSite=Strict; Max-Age=${SESSION_DAYS * 86400}`,
+    );
+    res.json({ signedIn: true });
+  };
+}
+
+/**
+ * Requires the API token for every API request, reads included: the allowlist,
+ * audit trail, scan findings and dashboard are private too. Accepts either a
+ * bearer token (scripts) or the sign-in cookie (the web page). A cookie-signed
+ * change must come from secval's own page (Origin check), on top of the
+ * cookie's SameSite=Strict. Only CORS preflights (OPTIONS) pass through. Fails
+ * closed: if no token is configured, every request is refused, so the control
+ * plane is never silently left open.
+ */
+export function apiAuth(token: string | undefined, limiter?: FailedAuthLimiter) {
+  const session = token ? sessionValue(token) : "";
   return (req: Request, res: Response, next: NextFunction) => {
     if (req.method === "OPTIONS") return next();
     if (!token) {
@@ -97,11 +185,33 @@ export function apiAuth(token: string | undefined) {
     const header = req.get("authorization") ?? "";
     const match = /^Bearer\s+(.+)$/i.exec(header);
     const provided = match?.[1]?.trim() ?? "";
-    if (!provided || !constantTimeEqual(provided, token)) {
-      return res.status(401).json({ error: "unauthorized" });
+    if (provided && constantTimeEqual(provided, token)) return next();
+    const cookie = readCookie(req, SESSION_COOKIE);
+    if (!provided && cookie && constantTimeEqual(cookie, session)) {
+      const origin = req.get("origin");
+      const changes = req.method !== "GET" && req.method !== "HEAD";
+      // Render's proxy keeps the Host header; X-Forwarded-Host is accepted too
+      // in case a proxy rewrites it. A browser cannot set either cross-site.
+      const own = [req.get("host"), req.get("x-forwarded-host")];
+      if (changes && origin && !own.some((h) => sameHost(origin, h))) {
+        return res.status(403).json({ error: "cross-site request refused" });
+      }
+      return next();
     }
-    next();
+    if (provided || cookie) {
+      if (limiter?.blocked()) return tooManyTries(res);
+      limiter?.fail();
+    }
+    return res.status(401).json({ error: "unauthorized" });
   };
+}
+
+function sameHost(origin: string, host: string | undefined): boolean {
+  try {
+    return !!host && new URL(origin).host === host;
+  } catch {
+    return false;
+  }
 }
 
 /** Stops browsers and proxies from keeping copies of private API answers. */

@@ -88,6 +88,47 @@ describe("control-plane hardening", () => {
     expect(res.status).toBe(401);
   });
 
+  it("signs a browser in with an HttpOnly cookie instead of storing the token", async () => {
+    const a = app();
+    expect((await request(a).post("/api/session").send({ token: "nope" })).status).toBe(401);
+    const login = await request(a).post("/api/session").send({ token: TOKEN });
+    expect(login.status).toBe(200);
+    const cookie = String(login.headers["set-cookie"]);
+    expect(cookie).toMatch(/HttpOnly/);
+    expect(cookie).toMatch(/Secure/);
+    expect(cookie).toMatch(/SameSite=Strict/);
+    expect(cookie).not.toContain(TOKEN);
+    const session = cookie.split(";")[0] ?? "";
+    expect((await request(a).get("/api/allowlist").set("Cookie", session)).status).toBe(200);
+    // a change from secval's own page works; one from another site is refused
+    const host = "secval.example";
+    const own = await request(a)
+      .post("/api/kill-switch/release")
+      .set({ Cookie: session, Host: host, Origin: `https://${host}` })
+      .send({});
+    expect(own.status).toBe(200);
+    const foreign = await request(a)
+      .post("/api/kill-switch/engage")
+      .set({ Cookie: session, Host: host, Origin: "https://evil.example" })
+      .send({});
+    expect(foreign.status).toBe(403);
+    // a forged or old cookie does not work
+    expect((await request(a).get("/api/allowlist").set("Cookie", "secval_session=forged")).status).toBe(401);
+    const out = await request(a).post("/api/session/end").send({});
+    expect(String(out.headers["set-cookie"])).toMatch(/Max-Age=0/);
+  });
+
+  it("slows down token guessing without locking out the right token", async () => {
+    const a = app();
+    for (let i = 0; i < 10; i++) {
+      expect((await request(a).post("/api/session").send({ token: "guess" + i })).status).toBe(401);
+    }
+    expect((await request(a).post("/api/session").send({ token: "guess-more" })).status).toBe(429);
+    expect((await request(a).get("/api/allowlist").set({ authorization: "Bearer guess" })).status).toBe(429);
+    expect((await request(a).post("/api/session").send({ token: TOKEN })).status).toBe(200);
+    expect((await request(a).get("/api/allowlist").set(auth)).status).toBe(200);
+  });
+
   it("fails closed when no token is configured", async () => {
     const noToken = createApp(openDb(":memory:"), { apiToken: undefined });
     const res = await request(noToken).post("/api/kill-switch/engage").send({});
