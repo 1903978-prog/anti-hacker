@@ -25,7 +25,7 @@ export const AREAS = [
   { key: "privacy", label: "Data Protection & Privacy" },
   { key: "integrity", label: "Data Integrity & Consistency" },
   { key: "persistence", label: "Data Persistence & Recovery" },
-  { key: "functional", label: "Functional Completeness" },
+  { key: "database", label: "Database Design & Structure" },
   { key: "ux", label: "User Experience & Interface" },
   { key: "performance", label: "Performance & Scalability" },
   { key: "reliability", label: "Reliability & Error Handling" },
@@ -49,11 +49,12 @@ const MAX_REPORT_CHARS = 20_000;
 /** Maps a report's area name to a dashboard area. Specific words win over "data". */
 export function classifyArea(name: string): AreaKey | "other" {
   const n = name.toLowerCase();
+  // Only a rated database line ("Database Design: 70"); a plain "Database:" is an infra fact.
+  if (/database (design|quality|structure|practice)|data model|schema design/.test(n)) return "database";
   if (/privacy|protection/.test(n)) return "privacy";
   if (/secur|access|auth/.test(n)) return "security";
   if (/persist|recover|backup/.test(n)) return "persistence";
   if (/integrit|consisten/.test(n)) return "integrity";
-  if (/function|feature|complete/.test(n)) return "functional";
   if (/user exp|interface|\bux\b|\bui\b|usabil/.test(n)) return "ux";
   if (/perform|scal|speed/.test(n)) return "performance";
   if (/reliab|error|solid|stabil|robust|uptime/.test(n)) return "reliability";

@@ -267,7 +267,7 @@ export const AREA_ADVICE: Record<(typeof AREAS)[number]["key"], string> = {
   privacy: "Keep secrets out of the code, encrypt backups with separate keys, and store only the personal data you need.",
   integrity: "Add database rules (unique, not-null, foreign keys) and tests that check the data stays consistent.",
   persistence: "Back up the database daily, test a restore regularly, and make sure files users upload are backed up too.",
-  functional: "List the app's main tasks and check each one works end to end, with a test where possible.",
+  database: "Keep one master database, store each fact once, link records with foreign keys, version schema changes, and index the main lookups (see reports/database-checklist.md).",
   ux: "Check the main pages on a phone and a computer; make errors clear and buttons easy to find.",
   performance: "Measure page load times, speed up the slowest pages and queries, and avoid the free tier going to sleep.",
   reliability: "Fix failing test runs, catch errors so one bad request can't crash the app, and alert on downtime.",

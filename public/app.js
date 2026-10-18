@@ -347,6 +347,21 @@ function scoreHtml(s, main) {
     : `<div class="alt">${s.score} <span class="tag ${s.source}">${s.source}</span></div>${ev}`;
 }
 
+// The Database criterion's checklist (same as reports/database-checklist.md).
+const DB_RULES = `<details class="note"><summary>How the Database score is worked out</summary>
+<p>Ten rules, 10 points each (10 = done, 5 = partly, 0 = missing).</p><ol>${[
+  "One master database: all business data in one place, copies are only copies.",
+  "No duplicated data: each fact stored once.",
+  "Links between records: foreign keys the database enforces.",
+  "Unique IDs and rules: primary keys, unique and not-null rules.",
+  "Versioned schema changes: tracked migrations, never by hand.",
+  "Backups and proven restores: automatic, off-server, restore tested.",
+  "Indexes on main lookups.",
+  "Sensitive data protected: passwords hashed, personal data minimal or masked.",
+  "No secrets in code: database passwords come from settings.",
+  "Clear naming and a documented schema.",
+].map((r) => `<li>${r}</li>`).join("")}</ol></details>`;
+
 function renderApp(a) {
   const empty = !a.areas.some((ar) => ar.measured || ar.estimate);
   const areas = empty
@@ -382,7 +397,7 @@ function renderApp(a) {
       ${a.proven ? "" : '<span class="badge">unproven: no measured checks</span>'}
       <span class="muted">${a.reports} report(s) pasted</span>
     </div>
-    ${grid}${other}
+    ${grid}${other}${DB_RULES}
     <h3 class="sub3">Infrastructure</h3>${infra}
   </div>`;
 }
@@ -390,7 +405,7 @@ function renderApp(a) {
 // Short column names; the full criterion name is the column's tooltip.
 const SHORT = {
   security: "Security", privacy: "Privacy", integrity: "Integrity", persistence: "Backup & recovery",
-  functional: "Features", ux: "UX", performance: "Speed", reliability: "Reliability",
+  database: "Database", ux: "UX", performance: "Speed", reliability: "Reliability",
   code: "Code", deploy: "Deploy & ops",
 };
 let dashData = [];

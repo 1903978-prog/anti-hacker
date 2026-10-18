@@ -199,7 +199,11 @@ export function dashboard(db: DB, now: Date = new Date()): AppHealth[] {
         score: newest.score,
         source: "estimate",
         at: newest.createdAt,
-        evidence: [`From a pasted report (${newest.label}).`, newest.evidence].filter(Boolean),
+        // The Database row lists one rating per checklist rule, split by "; ".
+        evidence: [
+          `From a pasted report (${newest.label}).`,
+          ...(key === "database" ? newest.evidence.split(/;\s+(?=\d{1,2} )/) : [newest.evidence]),
+        ].filter(Boolean),
       };
     };
 

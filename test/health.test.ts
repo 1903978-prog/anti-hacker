@@ -41,7 +41,7 @@ describe("pasted reports", () => {
     expect(s.map((x) => [x.area, x.score])).toEqual([
       ["security", 82],
       ["integrity", 80],
-      ["functional", 78],
+      ["other", 78],
       ["reliability", 76],
     ]);
     expect(s[0]!.evidence).toContain("wrong-password lockout");
@@ -60,7 +60,7 @@ describe("pasted reports", () => {
       "Data Protection & Privacy: 80",
       "Data Integrity & Consistency: 81",
       "Data Persistence & Recovery: 82",
-      "Functional Completeness: 83",
+      "Database Design & Structure: 83",
       "User Experience & Interface: 84",
       "Performance & Scalability: 85",
       "Reliability & Error Handling: 86",
@@ -68,9 +68,27 @@ describe("pasted reports", () => {
       "Deployment & Operational Readiness: 88",
     ].join("\n");
     expect(parseReport(text).map((s) => s.area)).toEqual([
-      "security", "privacy", "integrity", "persistence", "functional",
+      "security", "privacy", "integrity", "persistence", "database",
       "ux", "performance", "reliability", "code", "deploy",
     ]);
+  });
+
+  it("rates the Database criterion but keeps a plain 'Database:' line as a fact", () => {
+    const text = [
+      "Database: 98 tables in Neon",
+      "| # | Criterion | Score | Reason |",
+      "|---|---|---|---|",
+      "| 5 | Database Design & Structure | 60 | 1 One master database: 10/10 (one Postgres); 2 No duplicated data: 5/10 (two client tables) |",
+    ].join("\n");
+    expect(parseReport(text).map((s) => [s.area, s.score])).toEqual([["database", 60]]);
+    const db = freshDb();
+    saveReport(db, "compplan.onrender.com", text, "op");
+    const app = dashboard(db).find((a) => a.host === "compplan.onrender.com")!;
+    expect(app.areas.find((a) => a.key === "database")!.estimate!.evidence).toEqual([
+      "From a pasted report (Database Design & Structure).",
+      "1 One master database: 10/10 (one Postgres)",
+      "2 No duplicated data: 5/10 (two client tables) ",
+    ].map((e) => e.trim()));
   });
 
   it("guesses the app from the text", () => {
