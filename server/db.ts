@@ -1,12 +1,13 @@
 import Database from "better-sqlite3";
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { runMigrations } from "./migrations.js";
 
 /**
  * Opens the SQLite store and ensures the schema exists. The store holds the
  * ownership allowlist, append-only audit trail, scan records, and app state
- * (e.g. the kill switch). Schema is self-initializing so no migration step is
- * needed on deploy.
+ * (e.g. the kill switch). initSchema() is the baseline; later changes are
+ * tracked migrations in migrations.ts, applied automatically on open.
  */
 export function openDb(dbPath?: string): Database.Database {
   const resolved =
@@ -127,6 +128,7 @@ export function initSchema(db: Database.Database): void {
       BEFORE DELETE ON audit_log
       BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
   `);
+  runMigrations(db);
 }
 
 export type DB = Database.Database;
