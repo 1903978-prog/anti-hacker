@@ -41,13 +41,18 @@ async function signIn(token) {
 }
 
 // Earlier versions kept the token in browser storage. Use it once to sign in,
-// then delete it, so nobody has to paste it again.
+// then delete it, so nobody has to paste it again. It is only deleted once the
+// server has answered (signed in, or the token is wrong); if the server is
+// waking up or mid-deploy, it is kept and tried again on the next visit.
 async function migrateOldToken() {
   let old = null;
   try { old = localStorage.getItem("secval_token"); } catch { /* none */ }
   if (!old) return;
-  try { localStorage.removeItem("secval_token"); } catch { /* nothing stored */ }
-  await signIn(old);
+  let status = 0;
+  try { status = await signIn(old); } catch { /* network error: try next visit */ }
+  if (status === 200 || status === 401) {
+    try { localStorage.removeItem("secval_token"); } catch { /* nothing stored */ }
+  }
 }
 const el = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));

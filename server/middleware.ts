@@ -91,6 +91,13 @@ export function sessionValue(token: string): string {
   return createHmac("sha256", token).update("secval-session-v1").digest("base64url");
 }
 
+function setSessionCookie(res: Response, value: string): void {
+  res.setHeader(
+    "Set-Cookie",
+    `${SESSION_COOKIE}=${value}; Path=/api; HttpOnly; Secure; SameSite=Strict; Max-Age=${SESSION_DAYS * 86400}`,
+  );
+}
+
 function readCookie(req: Request, name: string): string {
   for (const part of (req.get("cookie") ?? "").split(";")) {
     const i = part.indexOf("=");
@@ -156,10 +163,7 @@ export function sessionRoutes(token: string | undefined, limiter: FailedAuthLimi
       limiter.fail();
       return res.status(401).json({ error: "wrong token" });
     }
-    res.setHeader(
-      "Set-Cookie",
-      `${SESSION_COOKIE}=${sessionValue(token)}; Path=/api; HttpOnly; Secure; SameSite=Strict; Max-Age=${SESSION_DAYS * 86400}`,
-    );
+    setSessionCookie(res, sessionValue(token));
     res.json({ signedIn: true });
   };
 }
@@ -196,6 +200,8 @@ export function apiAuth(token: string | undefined, limiter?: FailedAuthLimiter) 
       if (changes && origin && !own.some((h) => sameHost(origin, h))) {
         return res.status(403).json({ error: "cross-site request refused" });
       }
+      // Each visit pushes the expiry forward, so regular use never signs out.
+      setSessionCookie(res, session);
       return next();
     }
     if (provided || cookie) {

@@ -99,7 +99,11 @@ describe("control-plane hardening", () => {
     expect(cookie).toMatch(/SameSite=Strict/);
     expect(cookie).not.toContain(TOKEN);
     const session = cookie.split(";")[0] ?? "";
-    expect((await request(a).get("/api/allowlist").set("Cookie", session)).status).toBe(200);
+    const read = await request(a).get("/api/allowlist").set("Cookie", session);
+    expect(read.status).toBe(200);
+    // each use renews the sign-in, and a restarted server still accepts it
+    expect(String(read.headers["set-cookie"])).toMatch(/Max-Age=15552000/);
+    expect((await request(app()).get("/api/allowlist").set("Cookie", session)).status).toBe(200);
     // a change from secval's own page works; one from another site is refused
     const host = "secval.example";
     const own = await request(a)
