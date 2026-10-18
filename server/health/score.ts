@@ -1,6 +1,6 @@
 import type { DB } from "../db.js";
 import { listAllowlist } from "../ownership/allowlist.js";
-import { AREAS, INFRA, listEstimates, listInfra, type StoredEstimate } from "./report.js";
+import { AREAS, INFRA, listEstimates, listInfra, shipperFrom, type StoredEstimate } from "./report.js";
 import { listUptime, type UptimeCheck } from "./uptime.js";
 
 /**
@@ -147,6 +147,17 @@ function infraFacts(db: DB, host: string, checks7d: UptimeCheck[]): InfraFact[] 
       if (byName) {
         return { key: f.key, label: f.label, value: byName, source: "measured", at: null,
           note: "Read from the app's web address." };
+      }
+    }
+    if (f.key === "shipper") {
+      // Prefer an explicit "Who ships it" line; else read it from "Deploys via".
+      const own = pasted.find((p) => p.key === "shipper");
+      const deploy = pasted.find((p) => p.key === "deploy");
+      const src = own ?? deploy;
+      const who = src ? shipperFrom(src.value) : null;
+      if (src && who) {
+        return { key: f.key, label: f.label, value: who, source: "estimate", at: src.createdAt,
+          note: `From a pasted report ("${src.value}").` };
       }
     }
     // Usage can have several lines (one per service); show all from the newest report.

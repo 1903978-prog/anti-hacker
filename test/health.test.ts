@@ -4,7 +4,7 @@ import { freshDb } from "./helpers.js";
 import { createApp } from "../server/app.js";
 import { createChallenge, verifyOwnership } from "../server/ownership/proof.js";
 import { engage } from "../server/governance/killswitch.js";
-import { guessApp, parseInfra, parseReport, saveReport } from "../server/health/report.js";
+import { guessApp, parseInfra, parseReport, saveReport, shipperFrom } from "../server/health/report.js";
 import { checkUptime, detectProvider } from "../server/health/uptime.js";
 import { dashboard, performanceScore, reliabilityScore } from "../server/health/score.js";
 import type { HttpProbe } from "../server/scan/types.js";
@@ -119,6 +119,15 @@ describe("infrastructure facts", () => {
     expect(get("hosting")).toMatchObject({ value: "Fly.io", source: "measured" });
     expect(get("deploy")).toMatchObject({ value: "GitHub push to Render", source: "estimate" });
     expect(get("repo")).toMatchObject({ value: null, source: null });
+    expect(get("shipper")).toMatchObject({ value: "Render (builds on Render)", source: "estimate" });
+  });
+
+  it("names who ships it", () => {
+    expect(shipperFrom("GitHub Actions workflow runs flyctl deploy")).toBe("GitHub Actions (uses GitHub minutes)");
+    expect(shipperFrom("fly deploy from laptop")).toBe("Fly (builds on Fly)");
+    expect(shipperFrom("Render auto-deploy on push")).toBe("Render (builds on Render)");
+    expect(shipperFrom("by hand")).toBeNull();
+    expect(parseInfra("Who ships it: GitHub Actions")[0]).toMatchObject({ key: "shipper" });
   });
 
   it("recognises the host from response headers", () => {

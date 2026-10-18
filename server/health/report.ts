@@ -51,6 +51,7 @@ export function classifyArea(name: string): AreaKey | "other" {
 export const INFRA = [
   { key: "hosting", label: "Hosted on" },
   { key: "deploy", label: "Deploys via" },
+  { key: "shipper", label: "Who ships it" },
   { key: "db", label: "Database" },
   { key: "repo", label: "Code repository" },
   { key: "usage", label: "Resource use (last week)" },
@@ -71,6 +72,7 @@ export function classifyInfra(name: string): InfraKey | null {
   if (/usage|resource|minutes|bandwidth|memory|\bcpu\b|\bcost|quota/.test(n)) return "usage";
   if (/\bdb\b|database/.test(n)) return "db";
   if (/\brepo/.test(n)) return "repo";
+  if (/ship|\bbuild|\bci\b/.test(n)) return "shipper";
   if (/deploy/.test(n)) return "deploy";
   if (/\bhost(ing|ed)?\b|platform|provider/.test(n)) return "hosting";
   return null;
@@ -254,4 +256,16 @@ export function listInfra(db: DB, host: string): StoredInfra[] {
     value: r.value as string,
     createdAt: r.created_at as string,
   }));
+}
+
+/**
+ * Names who builds and ships an app, from any text about how it deploys:
+ * GitHub Actions (spends Actions minutes), Fly, or Render. Null if unclear.
+ */
+export function shipperFrom(text: string): string | null {
+  const t = text.toLowerCase();
+  if (/github actions|workflow|\bactions\b|\bgha\b/.test(t)) return "GitHub Actions (uses GitHub minutes)";
+  if (/\bfly\b|fly\.io|flyctl/.test(t)) return "Fly (builds on Fly)";
+  if (/render/.test(t)) return "Render (builds on Render)";
+  return null;
 }
