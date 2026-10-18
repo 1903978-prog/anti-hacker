@@ -2,6 +2,7 @@ import type { DB } from "../db.js";
 import { listAllowlist } from "../ownership/allowlist.js";
 import { runPassiveScan, type ScanResult } from "../scan/passive.js";
 import { appendAudit } from "../audit/log.js";
+import { newFindings, sendAlerts, type NewFinding, type AlertOutcome } from "../notify/alerts.js";
 
 /** The scan function the sweep uses; injectable for tests. */
 export type ScanFn = (db: DB, req: { actor: string; target: string }) => Promise<ScanResult>;
@@ -70,6 +71,10 @@ export interface SweepResult {
   scanned: number;
   skipped: number;
   totalFindings: number;
+  /** Findings not seen in the previous scan of the same site. */
+  newFindings: number;
+  /** What happened to the alert e-mail for those new findings. */
+  alert: AlertOutcome;
 }
 
 /**
@@ -80,6 +85,7 @@ export async function runWeeklySweep(
   db: DB,
   actor = "scheduler",
   scan: ScanFn = runPassiveScan,
+  alert: (db: DB, items: NewFinding[], actor: string) => Promise<AlertOutcome> = sendAlerts,
 ): Promise<SweepResult> {
   const targets = listAllowlist(db).filter((e) => e.ownershipProven);
   const all = listAllowlist(db);
@@ -92,21 +98,32 @@ export async function runWeeklySweep(
 
   let scanned = 0;
   let totalFindings = 0;
+  const fresh: NewFinding[] = [];
   for (const t of targets) {
     const result = await scan(db, { actor, target: t.domain });
     if (result.status === "completed") {
       scanned++;
       totalFindings += result.findings.length;
+      fresh.push(
+        ...newFindings(db, { host: result.host ?? t.domain, scanId: result.scanId, findings: result.findings }),
+      );
     }
   }
+  const alertOutcome = await alert(db, fresh, actor);
 
   appendAudit(db, {
     actor,
     action: "schedule.sweep_complete",
     decision: "info",
-    detail: { scanned, totalFindings },
+    detail: { scanned, totalFindings, newFindings: fresh.length, alert: alertOutcome },
   });
-  return { scanned, skipped: all.length - targets.length, totalFindings };
+  return {
+    scanned,
+    skipped: all.length - targets.length,
+    totalFindings,
+    newFindings: fresh.length,
+    alert: alertOutcome,
+  };
 }
 
 export function getLastRun(db: DB): string | null {
