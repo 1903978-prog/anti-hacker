@@ -17,9 +17,10 @@ import { engage, isEngaged, release } from "./governance/killswitch.js";
 import { requestApproval, type ScanMode } from "./governance/policy.js";
 import { getFindings, listScans, runPassiveScan } from "./scan/passive.js";
 import { runActiveScan } from "./scan/active.js";
+import { checkReport } from "./scan/catalogue.js";
 import { apiAuth, failedAuthLimiter, noStore, rateLimit, securityHeaders, sessionRoutes } from "./middleware.js";
 import { dashboard } from "./health/score.js";
-import { guessApp, listEstimates, saveReport } from "./health/report.js";
+import { dashboardHosts, guessApp, listEstimates, saveReport } from "./health/report.js";
 import { checkAllUptime } from "./health/uptime.js";
 
 export interface AppOptions {
@@ -170,6 +171,17 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
 
   app.get("/api/scans/:id/findings", (req, res) => {
     res.json(getFindings(db, req.params.id));
+  });
+
+  // --- All tests: every check per app, pass / fail / not run (read-only) ---
+  app.get("/api/tests", (_req, res) => {
+    res.json(dashboardHosts(db).map((h) => h.host));
+  });
+
+  app.get("/api/tests/:host", (req, res) => {
+    const host = req.params.host;
+    if (!dashboardHosts(db).some((h) => h.host === host)) return badRequest(res, "unknown app");
+    res.json(checkReport(db, host));
   });
 
   // --- Schedule (weekly automatic sweep) ------------------------------------

@@ -298,6 +298,7 @@ function refreshAll() {
   refreshAudit();
   refreshSchedule();
   refreshDashboard();
+  if (currentTab === "tests") refreshTests();
 }
 
 el("tokenSave").onclick = async () => {
@@ -489,4 +490,145 @@ el("reportBtn").onclick = async () => {
   refreshAudit();
 };
 
-setInterval(refreshDashboard, 60_000);
+setInterval(refreshDashboard, 60 * 60_000); // hourly; scans, checks and saved reports refresh it at once
+
+// --- Menus (tabs) -------------------------------------------------------------
+// Each menu is a section of this one page. The address (#health, #scans,
+// #tests, #settings) picks the menu, so links and reloads keep it; the last one
+// used is remembered in this browser. The token box sits above the menus, so it
+// shows whichever menu is open.
+const TABS = ["health", "scans", "tests", "settings"];
+let currentTab = "health";
+function showTab(name) {
+  const tab = TABS.includes(name) ? name : "health";
+  currentTab = tab;
+  for (const sec of document.querySelectorAll("[data-panel]")) sec.hidden = sec.dataset.panel !== tab;
+  for (const a of document.querySelectorAll("nav.tabs a")) a.setAttribute("aria-selected", String(a.dataset.tab === tab));
+  try { localStorage.setItem("secval_tab", tab); } catch { /* not remembered */ }
+  if (tab === "tests" && signedIn) refreshTests();
+}
+function storedTab() {
+  try { return localStorage.getItem("secval_tab"); } catch { return null; }
+}
+window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
+
+// --- All tests ---------------------------------------------------------------
+// Every check secval runs on the chosen app, with a green tick for pass, a red
+// cross for fail (and what to do about it), and grey for checks not run yet.
+let testsData = null;
+let testsFilter = "all";
+
+async function loadTestApps() {
+  const { ok, body } = await api("/api/tests");
+  if (!ok) return;
+  const sel = el("testsApp");
+  const keep = sel.value || storedTestsApp();
+  sel.innerHTML = body.map((h) => `<option>${esc(h)}</option>`).join("");
+  if (keep && body.includes(keep)) sel.value = keep;
+}
+function storedTestsApp() {
+  try { return localStorage.getItem("secval_tests_app"); } catch { return null; }
+}
+
+async function refreshTests() {
+  if (!el("testsApp").options.length) await loadTestApps();
+  const host = el("testsApp").value;
+  if (!host) {
+    el("testsList").textContent = signedIn ? "No apps yet. Add one in Security scans." : NEED_TOKEN;
+    return;
+  }
+  const { ok, status, body } = await api("/api/tests/" + encodeURIComponent(host));
+  if (!ok) {
+    el("testsList").textContent = status === 401 ? NEED_TOKEN : "Could not load tests: " + (body.error || "error");
+    return;
+  }
+  testsData = body;
+  renderTests();
+}
+
+function renderTests() {
+  const d = testsData;
+  if (!d) return;
+  const when = d.lastScan ? `Last scan ${day(d.lastScan.finishedAt)} (${esc(d.lastScan.mode)})` : "Not scanned yet";
+  const rep = d.reportDate ? ` · health report ${day(d.reportDate)}` : "";
+  el("testsSummary").innerHTML =
+    `<span class="p"><b>${d.passed}</b>passed</span><span class="f"><b>${d.failed}</b>failed</span>` +
+    `<span class="n"><b>${d.notRun}</b>not run</span><span class="muted" style="align-self:center">of ${d.total} tests · ${when}${rep}</span>`;
+  const rows = d.checks.filter((c) => testsFilter === "all" || c.status === testsFilter);
+  // Failed first within each group, worst severity first.
+  const sevRank = { high: 0, medium: 1, low: 2, info: 3 };
+  const stRank = { fail: 0, pass: 1, "not-run": 2 };
+  const groups = [];
+  for (const c of rows) {
+    let g = groups.find((x) => x.label === c.groupLabel);
+    if (!g) groups.push((g = { label: c.groupLabel, items: [] }));
+    g.items.push(c);
+  }
+  const icon = { pass: "✓", fail: "✕", "not-run": "–" };
+  el("testsList").innerHTML = groups.length
+    ? groups
+        .map((g) => {
+          const items = g.items
+            .sort((a, b) => stRank[a.status] - stRank[b.status] || sevRank[a.severity] - sevRank[b.severity])
+            .map(
+              (c) => `<div class="trow">
+                <span class="ticon ${c.status}" aria-label="${c.status}">${icon[c.status]}</span>
+                <div class="tbody">
+                  <div class="tt">${esc(c.title)}${c.status === "fail" && c.group !== "health" ? ` <span class="sev ${c.severity}">${c.severity}</span>` : ""}</div>
+                  ${c.advice ? `<div class="tadv ${c.status}">${c.status === "fail" ? "<strong>Fix:</strong> " : ""}${esc(c.advice)}</div>` : ""}
+                  ${c.detail ? `<details><summary>details</summary><div class="tdet">${esc(c.detail)}</div></details>` : ""}
+                </div>
+              </div>`,
+            )
+            .join("");
+          const fails = g.items.filter((c) => c.status === "fail").length;
+          return `<h3 class="tgroup">${esc(g.label)} (${g.items.length}${fails ? `, ${fails} failed` : ""})</h3>${items}`;
+        })
+        .join("")
+    : `<div class="muted">Nothing to show here.</div>`;
+}
+
+el("testsApp").onchange = () => {
+  try { localStorage.setItem("secval_tests_app", el("testsApp").value); } catch { /* not remembered */ }
+  refreshTests();
+};
+for (const b of document.querySelectorAll("[data-tfilter]")) {
+  b.onclick = () => {
+    testsFilter = b.dataset.tfilter;
+    for (const x of document.querySelectorAll("[data-tfilter]")) x.setAttribute("aria-pressed", String(x === b));
+    renderTests();
+  };
+}
+// Runs the fullest scan the safety rules allow: an active scan when the app is
+// cleared for it, otherwise a passive scan. The policy engine decides either way.
+el("testsRunBtn").onclick = async () => {
+  const target = el("testsApp").value;
+  if (!target) return;
+  el("testsRunBtn").disabled = true;
+  el("testsMsg").textContent = "Running all tests on " + target + "…";
+  try {
+    let r = await api("/api/scan/active", { method: "POST", body: JSON.stringify({ target }) });
+    let kind = "full";
+    if (r.status === 403) {
+      r = await api("/api/scan", { method: "POST", body: JSON.stringify({ target }) });
+      kind = "basic";
+    }
+    if (r.status === 401) el("testsMsg").textContent = NEED_TOKEN;
+    else if (r.status === 403) el("testsMsg").textContent = "Blocked by the safety rules: " + r.body.reason;
+    else if (!r.ok) el("testsMsg").textContent = "Scan could not finish: " + (r.body.reason || r.body.error || r.status);
+    else
+      el("testsMsg").textContent =
+        kind === "full"
+          ? "Done: full scan finished."
+          : "Done: basic scan finished. The other checks need the app cleared for active scans.";
+  } finally {
+    el("testsRunBtn").disabled = false;
+    refreshTests();
+    refreshScans();
+    refreshDashboard();
+    refreshAudit();
+  }
+};
+
+showTab(location.hash.slice(1) || storedTab() || "health");
+

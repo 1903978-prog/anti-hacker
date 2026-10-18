@@ -17,6 +17,7 @@
         }
       }
       * { box-sizing: border-box; }
+      [hidden] { display: none !important; }
       body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--text); }
       header { padding: 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
       header h1 { font-size: 18px; margin: 0; letter-spacing: .5px; }
@@ -45,6 +46,9 @@
       .dot.engaged { background: var(--danger); }
       code { background: var(--bg); padding: 1px 5px; border-radius: 5px; font-size: 13px; word-break: break-all; }
       .right { text-align: right; }
+      nav.tabs { display: flex; gap: 4px; padding: 0 16px; border-bottom: 1px solid var(--border); background: var(--surface); overflow-x: auto; position: sticky; top: 0; z-index: 5; }
+      nav.tabs a { padding: 12px 14px; color: var(--muted); text-decoration: none; font-weight: 600; font-size: 14px; white-space: nowrap; border-bottom: 2px solid transparent; }
+      nav.tabs a[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
       textarea { width: 100%; min-height: 110px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: 13px/1.4 ui-monospace, monospace; resize: vertical; margin-bottom: 8px; }
       .app { border-top: 1px solid var(--border); padding: 12px 0; }
       .app:first-of-type { border-top: 0; padding-top: 0; }
@@ -81,6 +85,20 @@
       table.infra { margin-top: 6px; } table.infra td:first-child { width: 38%; }
       details { margin-top: 4px; } summary { cursor: pointer; color: var(--accent); font-size: 12px; }
       details ul { margin: 4px 0 0; padding-left: 16px; color: var(--muted); font-size: 12px; }
+      .tsum { display: flex; gap: 14px; flex-wrap: wrap; margin: 12px 0 10px; font-size: 14px; }
+      .tsum b { font-size: 20px; margin-right: 4px; }
+      .tsum .p { color: #1f9d55; } .tsum .f { color: var(--high); } .tsum .n { color: var(--muted); }
+      .tfilter { margin-bottom: 8px; } .tfilter button { padding: 6px 12px; font-size: 13px; }
+      .tfilter button[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+      h3.tgroup { font-size: 13px; color: var(--muted); margin: 16px 0 4px; text-transform: uppercase; letter-spacing: .4px; }
+      .trow { display: flex; gap: 10px; align-items: flex-start; padding: 8px 2px; border-bottom: 1px solid var(--border); }
+      .ticon { flex: 0 0 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 13px; margin-top: 1px; }
+      .ticon.pass { background: #1f9d55; } .ticon.fail { background: #d23b3b; } .ticon.not-run { background: var(--border); color: var(--muted); }
+      .tbody { flex: 1; min-width: 0; font-size: 14px; }
+      .tbody .tt { font-weight: 600; overflow-wrap: anywhere; }
+      .tbody .tadv { margin-top: 2px; }
+      .tbody .tadv.fail { color: var(--text); } .tbody .tadv.not-run { color: var(--muted); font-size: 13px; }
+      .tbody .tdet { margin-top: 4px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
     </style>
   </head>
   <body>
@@ -89,9 +107,13 @@
       <span class="sub">authorized security validation — your assets only</span>
       <span style="flex:1"></span>
       <span class="ks"><span id="ksDot" class="dot"></span><span id="ksLabel" class="muted">…</span></span>
-      <button id="ksBtn" class="ghost">…</button>
-      <button id="signOut" class="ghost" title="Sign this browser out">Sign out</button>
     </header>
+    <nav class="tabs" role="tablist">
+      <a href="#health" data-tab="health" role="tab">Health dashboard</a>
+      <a href="#scans" data-tab="scans" role="tab">Security scans</a>
+      <a href="#tests" data-tab="tests" role="tab">All tests</a>
+      <a href="#settings" data-tab="settings" role="tab">Settings</a>
+    </nav>
     <main>
       <div class="card" id="tokenBox" hidden>
         <h2>Secret token</h2>
@@ -101,12 +123,14 @@
         </div>
         <div id="tokenMsg" class="note">Needed once. This browser stays signed in.</div>
       </div>
+
+      <section data-panel="health">
       <div class="card">
         <h2>Health dashboard</h2>
         <div class="note" style="margin:-6px 0 12px">
           <strong>M</strong> = measured (secval checked it). <strong>E</strong> = estimate (from an app health report).
           – = no evidence yet. Green 85%+, amber 65–84%, red below 65%.
-          Click an app or a score for the reasons and infrastructure. Updates every minute.
+          Click an app or a score for the reasons and infrastructure. Refreshes by itself every hour, and right away after a scan, a check or a saved report.
         </div>
         <div id="dash" class="muted">Loading…</div>
         <div id="dashDetail"></div>
@@ -126,6 +150,9 @@
         <div id="reportMsg" class="note">Saved as estimates, with the date. secval picks the app for you; change it if it guessed wrong.</div>
       </div>
 
+      </section>
+
+      <section data-panel="scans" hidden>
       <div class="card">
         <h2>Run a passive scan</h2>
         <div class="row">
@@ -161,10 +188,50 @@
         <table id="scansTable"><tbody></tbody></table>
       </div>
 
+      </section>
+
+      <section data-panel="tests" hidden>
+      <div class="card">
+        <h2>All tests</h2>
+        <div class="row" style="align-items:center">
+          <select id="testsApp" aria-label="App"></select>
+          <button id="testsRunBtn">Run all tests now</button>
+        </div>
+        <div id="testsMsg" class="note"></div>
+        <div id="testsSummary" class="tsum"></div>
+        <div class="row tfilter" role="group" aria-label="Show">
+          <button class="ghost" data-tfilter="all" aria-pressed="true">All</button>
+          <button class="ghost" data-tfilter="fail" aria-pressed="false">Failed</button>
+          <button class="ghost" data-tfilter="pass" aria-pressed="false">Passed</button>
+          <button class="ghost" data-tfilter="not-run" aria-pressed="false">Not run</button>
+        </div>
+        <div id="testsList" class="muted">Loading…</div>
+        <div class="note">Security checks come from secval's own scans. "App health report" rows are estimates from the app's health report; 85 or more is a pass. Tap a row for the details.</div>
+      </div>
+      </section>
+
+      <section data-panel="settings" hidden>
+      <div class="card">
+        <h2>Kill switch</h2>
+        <div class="row" style="align-items:center">
+          <span class="note" style="flex:1;margin:0">Stops every scan and check at once. Press again to release.</span>
+          <button id="ksBtn" class="ghost">…</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Sign out</h2>
+        <div class="row" style="align-items:center">
+          <span class="note" style="flex:1;margin:0">Signs this browser out. You'll need the secret token again to come back in.</span>
+          <button id="signOut" class="ghost">Sign out</button>
+        </div>
+      </div>
+
       <div class="card">
         <h2>Audit trail <span class="muted">(append-only)</span></h2>
         <table id="auditTable"><tbody></tbody></table>
       </div>
+      </section>
     </main>
 
     <script src="/app.js" defer></script>
