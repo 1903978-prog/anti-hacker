@@ -18,6 +18,9 @@ import { requestApproval, type ScanMode } from "./governance/policy.js";
 import { getFindings, listScans, runPassiveScan } from "./scan/passive.js";
 import { runActiveScan } from "./scan/active.js";
 import { apiAuth, rateLimit, securityHeaders } from "./middleware.js";
+import { dashboard } from "./health/score.js";
+import { guessApp, listEstimates, saveReport } from "./health/report.js";
+import { checkAllUptime } from "./health/uptime.js";
 
 export interface AppOptions {
   /** Bearer token required for state-changing API requests. */
@@ -178,6 +181,34 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
   app.post("/api/schedule/run-now", async (_req, res) => {
     const result = await runWeeklySweep(db, ACTOR);
     res.json(result);
+  });
+
+  // --- Health dashboard -----------------------------------------------------
+  app.get("/api/dashboard", (_req, res) => {
+    res.json(dashboard(db));
+  });
+
+  app.get("/api/dashboard/history/:host", (req, res) => {
+    res.json(listEstimates(db, req.params.host));
+  });
+
+  app.post("/api/dashboard/guess", (req, res) => {
+    const body = z.object({ text: z.string().max(20_000) }).safeParse(req.body);
+    if (!body.success) return badRequest(res, body.error.message);
+    res.json({ host: guessApp(db, body.data.text) });
+  });
+
+  app.post("/api/dashboard/report", (req, res) => {
+    const body = z.object({ app: z.string(), text: z.string().max(20_000) }).safeParse(req.body);
+    if (!body.success) return badRequest(res, body.error.message);
+    const result = saveReport(db, body.data.app, body.data.text, ACTOR);
+    if ("error" in result) return badRequest(res, result.error);
+    res.status(201).json(result);
+  });
+
+  app.post("/api/dashboard/check-now", async (_req, res) => {
+    const checks = await checkAllUptime(db);
+    res.json({ checked: checks.length });
   });
 
   // --- Static UI ------------------------------------------------------------

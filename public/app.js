@@ -279,3 +279,112 @@ refreshAllowlist();
 refreshScans();
 refreshAudit();
 refreshSchedule();
+
+// --- Health dashboard --------------------------------------------------------
+// One block per app; each area shows its measured score (secval checked it)
+// and/or its latest pasted estimate, with the evidence behind each number.
+const tone = (n) => (n >= 85 ? "good" : n >= 65 ? "mid" : "bad");
+const day = (iso) => esc(String(iso || "").slice(0, 10));
+
+function scoreHtml(s, main) {
+  const ev = `<details><summary>why</summary><ul>${s.evidence
+    .map((e) => `<li>${esc(e)}</li>`)
+    .join("")}<li>${day(s.at)}</li></ul></details>`;
+  return main
+    ? `<div class="num ${tone(s.score)}">${s.score}<span class="tag ${s.source}">${s.source}</span></div>${ev}`
+    : `<div class="alt">${s.score} <span class="tag ${s.source}">${s.source}</span></div>${ev}`;
+}
+
+function renderApp(a) {
+  const empty = !a.areas.some((ar) => ar.measured || ar.estimate);
+  const areas = empty
+    ? '<div class="note">No evidence yet. Prove ownership for measured checks, or paste a report.</div>'
+    : a.areas
+    .map((ar) => {
+      const main = ar.measured || ar.estimate;
+      const second = ar.measured && ar.estimate ? scoreHtml(ar.estimate, false) : "";
+      return `<div class="area"><div class="name">${esc(ar.label)}</div>${
+        main ? scoreHtml(main, true) + second : '<div class="alt">no evidence yet</div>'
+      }</div>`;
+    })
+    .join("");
+  const grid = empty ? areas : `<div class="areas">${areas}</div>`;
+  const infra = `<table class="infra"><tbody>${a.infra
+    .map(
+      (f) => `<tr><td class="muted">${esc(f.label)}</td><td>${
+        f.value
+          ? `${esc(f.value)} <span class="tag ${f.source}">${f.source}</span>`
+          : '<span class="muted">not known yet</span>'
+      }<div class="note" style="margin:0">${esc(f.note)}${f.at ? " " + day(f.at) : ""}</div></td></tr>`,
+    )
+    .join("")}</tbody></table>`;
+  const other = a.other.length
+    ? `<div class="note">Also in the last report: ${a.other
+        .map((o) => `${esc(o.label)} ${o.score}`)
+        .join(", ")}</div>`
+    : "";
+  return `<div class="app">
+    <div class="apphead">
+      <code>${esc(a.host)}</code>
+      ${a.overall !== null ? `<span class="overall ${tone(a.overall)}">${a.overall}</span><span class="muted">overall</span>` : ""}
+      ${a.proven ? "" : '<span class="badge">unproven: no measured checks</span>'}
+      <span class="muted">${a.reports} report(s) pasted</span>
+    </div>
+    ${grid}${other}
+    <details><summary>Infrastructure</summary>${infra}</details>
+  </div>`;
+}
+
+async function refreshDashboard() {
+  const { ok, body } = await api("/api/dashboard");
+  if (!ok) return;
+  el("dash").innerHTML = body.map(renderApp).join("") || "No apps on the allowlist yet.";
+  el("dash").className = "";
+  const sel = el("reportApp");
+  const current = sel.value;
+  sel.innerHTML = body.map((a) => `<option value="${esc(a.host)}">${esc(a.host)}</option>`).join("");
+  if (current) sel.value = current;
+}
+
+el("checkNowBtn").onclick = async () => {
+  el("checkNowBtn").disabled = true;
+  el("dashMsg").textContent = "Checking all proven apps…";
+  const { ok, body } = await api("/api/dashboard/check-now", { method: "POST", body: "{}" });
+  el("dashMsg").textContent = ok ? `Checked ${body.checked} app(s).` : "Could not check: " + (body.error || "error");
+  el("checkNowBtn").disabled = false;
+  refreshDashboard();
+};
+
+let guessTimer;
+el("reportText").addEventListener("input", () => {
+  clearTimeout(guessTimer);
+  guessTimer = setTimeout(async () => {
+    const text = el("reportText").value;
+    if (!text.trim() || !getToken()) return;
+    const { ok, body } = await api("/api/dashboard/guess", { method: "POST", body: JSON.stringify({ text }) });
+    if (ok && body.host) el("reportApp").value = body.host;
+  }, 400);
+});
+
+el("reportBtn").onclick = async () => {
+  const text = el("reportText").value;
+  if (!text.trim()) return;
+  const { ok, body } = await api("/api/dashboard/report", {
+    method: "POST",
+    body: JSON.stringify({ app: el("reportApp").value, text }),
+  });
+  if (!ok) {
+    el("reportMsg").textContent = "Not saved: " + (body.error || "error");
+    return;
+  }
+  const facts = body.infra.length ? ` and ${body.infra.length} infrastructure fact(s)` : "";
+  el("reportMsg").textContent = `Saved ${body.scores.length} score(s)${facts} for ${body.host}${
+    body.scores.length ? ": " + body.scores.map((s) => `${s.label} ${s.score}`).join(", ") : ""
+  }.`;
+  el("reportText").value = "";
+  refreshDashboard();
+  refreshAudit();
+};
+
+refreshDashboard();
+setInterval(refreshDashboard, 60_000);
