@@ -21,15 +21,15 @@ I could not open the live site from here: this workspace's network blocks 10bond
 | 7 | Performance & Scalability | ~70 (estimate) | Bond list cached in memory for 1 hour; ranking is done in memory on a small list. Gap: the machine stops when idle (`min_machines_running = 0` in `fly.toml`), so the first visitor after a quiet spell waits for a cold start. Not measured live. |
 | 8 | Reliability & Error Handling | ~65 (estimate) | A database failure gives a friendly "try again later" message (503). Gaps: the health check never touches the database, so a broken database connection would not be flagged; when the 1-hour cache runs out and the database fails, the site shows an error instead of the last good list; one machine only (`--ha=false`). |
 | 9 | Code Quality & Maintainability | ~80 (estimate) | Small and tidy (about 1,000 lines), strict TypeScript with 0 errors, 13 tests passing (ranking, ratings, paid-field hiding, issuer clean-up), clear comments. Gaps: no tests for the web route or the page; no lint step. |
-| 10 | Deployment & Operational Readiness | ~65 (estimate) | Every push to `main` deploys to Fly automatically (`.github/workflows/deploy.yml`) and stops safely if the Fly token is missing. Gaps: tests do not run before a deploy; deploy action not pinned; no rollback step; one machine. Whether 10bonds.com points at this Fly app was not checked. |
+| 10 | Deployment & Operational Readiness | ~65 (estimate) | Every push to `main` deploys to Fly automatically (`.github/workflows/deploy.yml`) and stops safely if the Fly token is missing. Gaps: tests do not run before a deploy; deploy action not pinned; no rollback step; one machine. 10bonds.com is not connected to anything (checked 18/10 15:05 UTC). |
 
 ## Infrastructure (from the code; not checked live)
 
-- **Live URL:** https://10bonds.com (per Livio). The code's default address is https://10bonds.fly.dev.
+- **Live URL:** https://10bonds.fly.dev. The name 10bonds.com does not exist on the internet (Livio's browser: DNS_PROBE_FINISHED_NXDOMAIN, 18/10 15:05 UTC).
 - **Host:** Fly.io, app `10bonds`, region cdg (Paris), one shared machine with 512 MB that stops when idle. Source: fly.toml.
 - **Database:** its own Neon Postgres, one table `public_bonds`, read with the `tenbonds_reader` login. Filled daily by lm-op-model.
 - **GitHub:** repo `1903978-prog/10bonds` (public), branch `main`; pushing to `main` deploys.
-- **Secval ownership:** 10bonds.com is on secval's list but not proven yet, so no measured scan has run.
+- **Secval ownership:** not proven yet, so no measured scan has run. 10bonds.com cannot be proven (the name does not exist); 10bonds.fly.dev serves the proof file and needs its own row and code in secval.
 
 ## 3 biggest gaps
 
