@@ -21,7 +21,7 @@
       header { padding: 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
       header h1 { font-size: 18px; margin: 0; letter-spacing: .5px; }
       header .sub { color: var(--muted); font-size: 13px; }
-      main { max-width: 820px; margin: 0 auto; padding: 16px; }
+      main { max-width: 1040px; margin: 0 auto; padding: 16px; }
       .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
       .card h2 { font-size: 15px; margin: 0 0 12px; }
       .row { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -60,6 +60,24 @@
       .tag { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; padding: 1px 6px; border-radius: 10px; border: 1px solid var(--border); margin-left: 4px; vertical-align: middle; }
       .tag.measured { color: #1f9d55; border-color: #1f9d5566; }
       .tag.estimate { color: var(--medium); border-color: #d9832466; }
+      .tablewrap { overflow-x: auto; margin: 0 -4px; }
+      table.dash { border-collapse: separate; border-spacing: 3px; font-size: 13px; min-width: 760px; }
+      table.dash th { font-size: 11px; font-weight: 600; text-align: center; padding: 4px; border: 0; vertical-align: bottom; }
+      table.dash th.appname { text-align: left; position: sticky; left: 0; background: var(--surface); z-index: 1; min-width: 120px; }
+      table.dash td.cell { min-width: 62px; text-align: center; font-weight: 700; padding: 8px 4px; border: 0; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+      table.dash td.cell sup { font-size: 9px; font-weight: 600; margin-left: 1px; opacity: .8; }
+      td.cell.good { background: #1f9d5524; color: #137a40; }
+      td.cell.mid { background: #d9832428; color: #a85f10; }
+      td.cell.bad { background: #d23b3b24; color: #b02a2a; }
+      td.cell.none { background: var(--bg); color: var(--muted); font-weight: 400; cursor: default; }
+      td.cell.estimate { outline: 1px dashed currentColor; outline-offset: -3px; }
+      td.overallc { font-size: 14px; }
+      @media (prefers-color-scheme: dark) {
+        td.cell.good { color: #4fd18a; } td.cell.mid { color: #f0a54a; } td.cell.bad { color: #ff7a7a; }
+      }
+      button.link { background: none; border: 0; padding: 0; color: var(--accent); font: 600 12px ui-monospace, monospace; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+      #dashDetail:not(:empty) { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+      h3.sub3 { font-size: 13px; margin: 12px 0 0; }
       table.infra { margin-top: 6px; } table.infra td:first-child { width: 38%; }
       details { margin-top: 4px; } summary { cursor: pointer; color: var(--accent); font-size: 12px; }
       details ul { margin: 4px 0 0; padding-left: 16px; color: var(--muted); font-size: 12px; }
@@ -85,11 +103,12 @@
       <div class="card">
         <h2>Health dashboard</h2>
         <div class="note" style="margin:-6px 0 12px">
-          <span class="tag measured">measured</span> secval checked it itself.
-          <span class="tag estimate">estimate</span> from a report you pasted.
-          Blank means no evidence yet. Updates every minute.
+          <strong>M</strong> = measured (secval checked it). <strong>E</strong> = estimate (from a report you pasted).
+          – = no evidence yet. Green 85%+, amber 65–84%, red below 65%.
+          Click an app or a score for the reasons and infrastructure. Updates every minute.
         </div>
         <div id="dash" class="muted">Loading…</div>
+        <div id="dashDetail"></div>
         <div class="row" style="margin-top:8px;align-items:center">
           <span id="dashMsg" class="note" style="flex:1;margin:0"></span>
           <button id="checkNowBtn" class="ghost">Check all apps now</button>

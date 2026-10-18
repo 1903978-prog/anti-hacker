@@ -281,8 +281,9 @@ refreshAudit();
 refreshSchedule();
 
 // --- Health dashboard --------------------------------------------------------
-// One block per app; each area shows its measured score (secval checked it)
-// and/or its latest pasted estimate, with the evidence behind each number.
+// One table row per app, one column per criterion. A cell shows the measured
+// score (secval checked it) when there is one, else the latest pasted
+// estimate. Clicking an app or a cell opens its evidence and infrastructure.
 const tone = (n) => (n >= 85 ? "good" : n >= 65 ? "mid" : "bad");
 const day = (iso) => esc(String(iso || "").slice(0, 10));
 
@@ -331,15 +332,67 @@ function renderApp(a) {
       <span class="muted">${a.reports} report(s) pasted</span>
     </div>
     ${grid}${other}
-    <details><summary>Infrastructure</summary>${infra}</details>
+    <h3 class="sub3">Infrastructure</h3>${infra}
   </div>`;
 }
+
+// Short column names; the full criterion name is the column's tooltip.
+const SHORT = {
+  security: "Security", privacy: "Privacy", integrity: "Integrity", persistence: "Backup & recovery",
+  functional: "Features", ux: "UX", performance: "Speed", reliability: "Reliability",
+  code: "Code", deploy: "Deploy & ops",
+};
+let dashData = [];
+let openHost = null;
+
+function cellHtml(a, ar) {
+  const s = ar.measured || ar.estimate;
+  if (!s) return `<td class="cell none" title="${esc(ar.label)}: no evidence yet">–</td>`;
+  const mark = s.source === "measured" ? "M" : "E";
+  const tip = `${ar.label}: ${s.score}% (${s.source}, ${String(s.at || "").slice(0, 10)})\n${s.evidence.join("\n")}`;
+  return `<td class="cell ${tone(s.score)} ${s.source}" title="${esc(tip)}" data-open="${esc(a.host)}">${s.score}%<sup>${mark}</sup></td>`;
+}
+
+function renderTable(apps) {
+  if (!apps.length) return "No apps on the allowlist yet.";
+  const head = apps[0].areas
+    .map((ar) => `<th title="${esc(ar.label)}">${esc(SHORT[ar.key] || ar.label)}</th>`)
+    .join("");
+  const rows = apps
+    .map(
+      (a) => `<tr>
+        <th class="appname"><button class="link" data-open="${esc(a.host)}">${esc(a.host)}</button></th>
+        ${a.overall === null ? '<td class="cell none">–</td>' : `<td class="cell ${tone(a.overall)} overallc">${a.overall}%</td>`}
+        ${a.areas.map((ar) => cellHtml(a, ar)).join("")}
+      </tr>`,
+    )
+    .join("");
+  return `<div class="tablewrap"><table class="dash"><thead><tr><th class="appname">App</th><th>Overall</th>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function renderDetail() {
+  const a = dashData.find((x) => x.host === openHost);
+  el("dashDetail").innerHTML = a
+    ? `<div class="row" style="align-items:center"><strong style="flex:1">Details: ${esc(a.host)}</strong><button class="ghost" id="closeDetail">Close</button></div>${renderApp(a)}`
+    : "";
+  if (a) el("closeDetail").onclick = () => { openHost = null; renderDetail(); };
+}
+
+document.addEventListener("click", (ev) => {
+  const host = ev.target.closest?.("[data-open]")?.dataset.open;
+  if (!host) return;
+  openHost = openHost === host ? null : host;
+  renderDetail();
+  if (openHost) el("dashDetail").scrollIntoView({ behavior: "smooth", block: "start" });
+});
 
 async function refreshDashboard() {
   const { ok, body } = await api("/api/dashboard");
   if (!ok) return;
-  el("dash").innerHTML = body.map(renderApp).join("") || "No apps on the allowlist yet.";
+  dashData = body;
+  el("dash").innerHTML = renderTable(body);
   el("dash").className = "";
+  renderDetail();
   const sel = el("reportApp");
   const current = sel.value;
   sel.innerHTML = body.map((a) => `<option value="${esc(a.host)}">${esc(a.host)}</option>`).join("");
