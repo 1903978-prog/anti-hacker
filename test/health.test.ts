@@ -8,6 +8,10 @@ import { guessApp, parseInfra, parseReport, saveReport, shipperFrom } from "../s
 import { checkUptime, detectProvider } from "../server/health/uptime.js";
 import { dashboard, performanceScore, reliabilityScore } from "../server/health/score.js";
 import type { HttpProbe } from "../server/scan/types.js";
+import { loadReportFiles } from "../server/health/seed.js";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 const COMPPLAN_REPORT = `Scoring compplan (the app we just shipped).
 
@@ -101,11 +105,10 @@ describe("infrastructure facts", () => {
     "Deployment & Operational Readiness: 88",
   ].join("\n");
 
-  it("reads facts and keeps scores separate", () => {
+  it("reads facts (first per kind) and keeps scores separate", () => {
     expect(parseInfra(INFRA_TEXT).map((f) => [f.key, f.value])).toEqual([
       ["db", "Neon Postgres (compplan_prod)"],
       ["deploy", "GitHub push to Render"],
-      ["db", "compplan_prod"],
       ["usage", "1,200 GitHub Actions minutes"],
     ]);
     expect(parseReport(INFRA_TEXT).map((s) => [s.area, s.score])).toEqual([["deploy", 88]]);
@@ -134,6 +137,58 @@ describe("infrastructure facts", () => {
     expect(detectProvider({ "fly-request-id": "x" })).toBe("Fly.io");
     expect(detectProvider({ "rndr-id": "x" })).toBe("Render");
     expect(detectProvider({})).toBeNull();
+  });
+});
+
+describe("report files", () => {
+  it("reads numbered score tables and ignores other tables", () => {
+    const text = [
+      "| # | Criterion | Score | Reason |",
+      "|---|---|---|---|",
+      "| 1 | Security & Access Control | 75 | lockout tested |",
+      "| 5 | Functional Completeness | — | not verified |",
+      "| 7 | Performance & Scalability | (blank) | not verified |",
+      "",
+      "| Workflow | Runs | Minutes | Conclusions |",
+      "|---|---|---|---|",
+      "| Daily DB Backup | 7 | 7.7 | 7 ok |",
+      "| Nightly CI | 2 | 5.8 | 1 ok |",
+      "",
+      "Security: 40",
+    ].join("\n");
+    expect(parseReport(text).map((s) => [s.area, s.score])).toEqual([["security", 75]]);
+    expect(parseInfra(text)).toEqual([]);
+  });
+
+  it("names the shipper by the first service mentioned", () => {
+    expect(shipperFrom("Render itself on merge (no GitHub workflow deploys)")).toBe("Render (builds on Render)");
+    expect(shipperFrom("a session dispatches fly-deploy-slim.yml")).toBe("GitHub Actions (uses GitHub minutes)");
+  });
+
+  it("loads the repo's report files once, including secval's own row", () => {
+    const db = freshDb();
+    const dir = mkdtempSync(join(tmpdir(), "reports-"));
+    writeFileSync(join(dir, "compplan-health.md"), COMPPLAN_REPORT);
+    writeFileSync(join(dir, "secval-health.md"), "Security & Access Control: 70 - token on writes");
+    writeFileSync(join(dir, "unknown-health.md"), "Security: 50");
+    const first = loadReportFiles(db, dir);
+    expect(first.filter((r) => r.loaded).map((r) => r.host)).toEqual([
+      "compplan.onrender.com",
+      "secval.onrender.com",
+    ]);
+    expect(loadReportFiles(db, dir).some((r) => r.loaded)).toBe(false);
+
+    const secval = dashboard(db).find((a) => a.host === "secval.onrender.com")!;
+    expect(secval.proven).toBe(false);
+    expect(secval.areas[0]!.estimate).toMatchObject({ score: 70, source: "estimate" });
+  });
+
+  it("never checks a report-only app", async () => {
+    const db = freshDb();
+    let called = false;
+    const probe: HttpProbe = async (...a) => ((called = true), okProbe(...a));
+    expect(await checkUptime(db, "secval.onrender.com", "t", probe)).toBeNull();
+    expect(called).toBe(false);
   });
 });
 

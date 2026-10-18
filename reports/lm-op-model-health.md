@@ -1,0 +1,38 @@
+# lm-op-model — health report
+
+**App:** lm-op-model (personal ops / bond-portfolio cockpit) · **Date:** 18/10/2026 · **Commit examined:** `origin/master` = `49921eb4` (merge of PR #668, 2026-10-18 05:19 +0200); `origin/integration` = same tip (0 commits ahead).
+**Evidence available:** the repo at that commit (`git show origin/master:<path>`), the GitHub Actions API (runs, jobs, one failed-job log), open issues. **Not available:** the live site (`lm-op-model.fly.dev` is refused by this sandbox's proxy: `curl /api/version` → `connect_rejected`), Fly metrics, Neon, billing. Nothing below is a live-site measurement.
+
+## Scores
+
+| # | Criterion | Score | Reason (evidence) |
+|---|---|---|---|
+| 1 | Security & Access Control | 75 | `server/auth.ts`: login refuses all access with 503 if `APP_PASSWORD` unset (l.350-354), constant-time compare (l.80), per-IP failure counter → 429 (l.86, 341-344), cookies `httpOnly`, `secure` in prod, `sameSite=lax` (l.289-291); lockout has a DB test (`server/authLoginLockout.dbIntegration.test.ts`); service-token allowlist `server/serviceTokenScope.ts` + test; CSP builder `server/lib/securityMiddleware.ts` + tests. Open issue #322 (19 routes 500 on a non-numeric id). Not pen-tested here. |
+| 2 | Data Protection & Privacy | 70 | Backups encrypted (`server/lib/backupCrypto.ts` + test); secrets read via env only. Known, accepted PII (name, address, tax ID) still in git history (CLAUDE.md "Known PII", decided by owner). Production secret handling not verifiable. |
+| 3 | Data Integrity & Consistency | 65 | 588 `*.test.ts(x)` files at master, 99 of them DB-integration tests; schema-drift and additive-only rules exist in tooling. But the nightly CI on master failed on 17/10 (run 39012375062, step "Unit + invariant tests (vitest)"), and no CI run exists on the current tip `49921eb4` (last green: dispatch on integration `31be97a6`, 17/10 16:11; 71 files changed since). |
+| 4 | Data Persistence & Recovery | 70 | Weekly Dropbox backup: last run 12/10 success, 05/10 success, 28/09 failure. DR restore drill: failed 23/09, 01/10 and 16/10 17:36, then **succeeded** 16/10 17:45 (run 38942189090) — the first success ever. A new daily "central backup machine" workflow ran 6× since 11/10, all success. Issues #625, #660, #623 still open. Single success, so recovery is proven once, not repeatedly. |
+| 5 | Functional Completeness | | not verified — no live or local run of the app in this review. |
+| 6 | UX & Interface | | not verified — no browser check run here. (The one recorded UX defect: Flights page blank at 390px on 17/10, caught by the page check — deploy log of run 39049311041.) |
+| 7 | Performance & Scalability | 50 | One `shared-cpu-1x` machine, 1 GB (`fly.toml` l.98, 115), in-process locks valid only for one machine (CLAUDE.md). Recorded outages from CPU-bound work on 12/10 and 14/10 (CLAUDE.md incident sections; fix: heavy work moved to a worker). No load test here. |
+| 8 | Reliability & Error Handling | 60 | Restart policy `on-failure`, 10 retries (`fly.toml` l.128-130); health window + auto-rollback scripts exist (`script/health-window.mjs`, `script/rollback-on-smoke-failure.mjs`) and the rollback **fired and worked** on 17/10 (deploy of `4c443e9b` failed page check, rolled back to `705b86e7`, re-smoke passed — deploy log of run 39049311041). Fly Deploy since 11/10: 26 success, 4 failure, 17 skipped. |
+| 9 | Code Quality & Maintainability | 55 | Typecheck gate exists (`script/typecheck-gate.mjs`), but `*.test.ts` are excluded from tsc (open issue #372). 302 commits on master since 11/10 (very high churn); CLAUDE.md is extremely long and partly self-contradicting (ship rules superseded several times). |
+| 10 | Deployment & Operational Readiness | 55 | Normal path is now `fly-deploy-slim.yml` (manual dispatch, `flyctl deploy --remote-only --detach`, 15-min timeout, no checks in the job) with smoke/health window run from a session; the full `fly-deploy.yml` (smoke, page check, read-out, 10-min health window, rollback) is manual fallback only. All 7 slim runs succeeded (latest: `49921eb4`, run 39093213942, 03:19 UTC 18/10) but the post-deploy checks of those deploys are **not visible in Actions**, so whether `49921eb4` is serving and healthy is not verified. |
+
+**Overall: 62.5 / 100** — average of the 8 scored criteria (5 and 6 not scored).
+
+## Infrastructure
+
+- **Live URL:** https://lm-op-model.fly.dev (not reachable from this sandbox).
+- **Host:** Fly.io app `lm-op-model`, region `cdg` (Paris), VM `shared-cpu-1x`, `memory = "1gb"`, `min_machines_running = 1`, `auto_stop_machines = "off"`, restart on-failure ×10 (`fly.toml` l.22-23, 62-64, 98, 115, 128-130). `SCHEDULERS_ENABLED=false`, `SKIP_BOOT_MIGRATIONS=true`; app switches to a least-privilege DB role after boot (l.30-40).
+- **Database:** PostgreSQL on Neon (pooled `DATABASE_URL` + direct `MIGRATION_LOCK_DATABASE_URL`, SETUP.md l.13-14). Database name: not in the repo, not verified. A separate Neon project holds the public bond-facts copy (SETUP.md l.28).
+- **Repo / branches:** github.com/1903978-prog/lm-op-model; `master` is what deploys, `integration` accumulates (currently equal).
+- **Who deploys and how:** a Claude session dispatches `fly-deploy-slim.yml` (workflow_dispatch only, input `sha` or image ref; builds on Fly's remote builder, `--detach`); session then runs smoke test + 10-min health window from outside Actions. `fly-deploy.yml` = manual fallback (workflow_dispatch; schedule removed 16/10). `ci.yml` = nightly `cron: '30 2 * * *'` + manual. Cron workflows (healthz watchdog, daily maintenance/metric/invoice, weekly deadlines/backup, monthly DR drill, daily central backup) drive scheduled work.
+- **Plan/tier:** Fly plan not stated in the repo; fly.toml comments state cdg memory prices (+$4.39/month for 512 MB→1 GB, as noted there). Not verified against billing.
+- **Actions usage since 2026-10-11 (246 runs, wall-clock run_started_at→updated_at, NOT billed minutes; billing is not readable from here):** Fly Deploy 47 runs / 388 min · CI 45 / 303 · Fly Deploy (slim) 7 / 45 · Docker build check 13 / 19 · Read production status 5 / 12 · healthz watchdog 35 / 11 · Seed 4 / 5 · central backup machine 6 / 3 · DR drill 2 / 3 · Notify on failure 57 / 2 · invoice fetch 7 / 2 · daily maintenance 7 / 1 · metric snapshot 7 / 1 · others <1. **Total ≈ 804 min wall-clock in ~7 days.**
+- **Fly resource usage:** not visible (no production Fly access from this session).
+
+## The 3 biggest gaps
+
+1. **The shipped commit is not proven green or healthy.** No CI run exists on `49921eb4`; the last nightly on master failed (run 39012375062, vitest step); the last green run is on `31be97a6`, 71 files earlier. The slim deploy job only confirms a Fly release was created (`--detach`); its smoke/health-window results live in a session, not in Actions, and the live site cannot be reached from here.
+2. **Recovery has been proven once.** DR restore drill: 3 failures then 1 success (16/10 run 38942189090); last Dropbox backup 12/10 (nearly a week old at review time); issues #623/#625/#660 still open, so the record of failures is not reconciled. The new daily central backup is days old (6 runs).
+3. **Single small machine with a history of CPU-bound outages.** `shared-cpu-1x` 1 GB, one machine, in-process concurrency guards valid only for one machine; outages on 12/10 and 14/10 (CLAUDE.md incidents) and a broken page reached production on 17/10 (rolled back automatically). Combined with ~300 master commits in a week, the change rate outruns the evidence that each release is healthy.

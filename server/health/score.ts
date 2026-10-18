@@ -1,6 +1,5 @@
 import type { DB } from "../db.js";
-import { listAllowlist } from "../ownership/allowlist.js";
-import { AREAS, INFRA, listEstimates, listInfra, shipperFrom, type StoredEstimate } from "./report.js";
+import { AREAS, INFRA, dashboardHosts, listEstimates, listInfra, shipperFrom, type StoredEstimate } from "./report.js";
 import { listUptime, type UptimeCheck } from "./uptime.js";
 
 /**
@@ -183,7 +182,8 @@ function infraFacts(db: DB, host: string, checks7d: UptimeCheck[]): InfraFact[] 
 export function dashboard(db: DB, now: Date = new Date()): AppHealth[] {
   const since7d = new Date(now.getTime() - 7 * DAY).toISOString();
 
-  return listAllowlist(db).map((e) => {
+  return dashboardHosts(db).map((h) => {
+    const e = { domain: h.host, ownershipProven: h.proven };
     const checks7d = listUptime(db, e.domain, since7d);
     const measured: Record<string, Score | null> = {
       security: securityScore(db, e.domain),

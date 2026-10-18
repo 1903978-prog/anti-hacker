@@ -3,6 +3,22 @@ import { toHostname } from "../util/host.js";
 import { listAllowlist } from "../ownership/allowlist.js";
 import { appendAudit } from "../audit/log.js";
 
+/**
+ * Apps shown on the dashboard that are not on the scan allowlist (so they
+ * are never scanned or checked, only rated from reports). secval itself is
+ * here so it can rate itself without becoming a scan target.
+ */
+export const REPORT_ONLY_APPS = ["secval.onrender.com"] as const;
+
+/** Every app the dashboard shows: the allowlist plus report-only apps. */
+export function dashboardHosts(db: DB): Array<{ host: string; proven: boolean }> {
+  const list = listAllowlist(db).map((e) => ({ host: e.domain, proven: e.ownershipProven }));
+  for (const host of REPORT_ONLY_APPS) {
+    if (!list.some((e) => e.host === host)) list.push({ host, proven: false });
+  }
+  return list;
+}
+
 /** The dashboard's fixed areas (Livio's 10 criteria), in display order. */
 export const AREAS = [
   { key: "security", label: "Security & Access Control" },
@@ -72,7 +88,7 @@ export function classifyInfra(name: string): InfraKey | null {
   if (/usage|resource|minutes|bandwidth|memory|\bcpu\b|\bcost|quota/.test(n)) return "usage";
   if (/\bdb\b|database/.test(n)) return "db";
   if (/\brepo/.test(n)) return "repo";
-  if (/ship|\bbuild|\bci\b/.test(n)) return "shipper";
+  if (/ship/.test(n)) return "shipper";
   if (/deploy/.test(n)) return "deploy";
   if (/\bhost(ing|ed)?\b|platform|provider/.test(n)) return "hosting";
   return null;
@@ -85,12 +101,24 @@ export function classifyInfra(name: string): InfraKey | null {
  */
 export function parseInfra(text: string): ParsedInfra[] {
   const out: ParsedInfra[] = [];
+  let prevWasTable = false;
+  let factTable = false;
   for (const raw of text.slice(0, MAX_REPORT_CHARS).split(/\r?\n/)) {
     const line = raw.trim();
     let name: string | undefined;
     let value: string | undefined;
-    if (line.startsWith("|")) {
-      const cells = line.replace(/^\||\|$/g, "").split("|").map(clean);
+    const isTable = line.startsWith("|");
+    // Only small tables without a score column hold facts ("| DB name | x |").
+    if (isTable && !prevWasTable) {
+      prevWasTable = true;
+      const cols = rowCells(line).length;
+      factTable = !/score|rating/i.test(line) && cols <= 3;
+      if (!factTable || cols < 2) continue;
+    }
+    prevWasTable = isTable;
+    if (isTable) {
+      if (!factTable) continue;
+      const cells = rowCells(line);
       if (cells.length < 2 || /^:?-+:?$/.test(cells[0] ?? "")) continue;
       name = cells[0];
       value = cells.slice(1).filter(Boolean).join(" · ");
@@ -104,12 +132,20 @@ export function parseInfra(text: string): ParsedInfra[] {
     if (!key) continue;
     const isArea = classifyArea(name) !== "other";
     if (isArea && /^~?\s*\d{1,3}(?!\d)/.test(value)) continue;
+    // One fact per key, except usage, which may list several services.
+    if (key !== "usage" && out.some((f) => f.key === key)) continue;
     out.push({ key, label: clean(name), value: value.slice(0, 300) });
   }
   return out;
 }
 
 const clean = (s: string) => s.replace(/\*\*|__|`/g, "").trim();
+
+/** A table row's cells, without a leading row-number column ("| 1 | ..." or "| # | ..."). */
+function rowCells(line: string): string[] {
+  const cells = line.replace(/^\||\|$/g, "").split("|").map(clean);
+  return /^(#|\d{1,2}\.?)$/.test(cells[0] ?? "") ? cells.slice(1) : cells;
+}
 
 /**
  * Reads scores out of a pasted report. Understands markdown tables
@@ -118,14 +154,27 @@ const clean = (s: string) => s.replace(/\*\*|__|`/g, "").trim();
  */
 export function parseReport(text: string): ParsedScore[] {
   const out: ParsedScore[] = [];
+  const seen = new Set<string>();
+  let prevWasTable = false;
+  let scoreTable = false;
   for (const raw of text.slice(0, MAX_REPORT_CHARS).split(/\r?\n/)) {
     const line = raw.trim();
     let name: string | undefined;
     let scoreText: string | undefined;
     let why = "";
 
-    if (line.startsWith("|")) {
-      const cells = line.replace(/^\||\|$/g, "").split("|").map(clean);
+    const isTable = line.startsWith("|");
+    // A table's first row is its header; only tables with a "Score" column hold scores.
+    if (isTable && !prevWasTable) {
+      prevWasTable = true;
+      scoreTable = /score|rating/i.test(line);
+      continue;
+    }
+    prevWasTable = isTable;
+
+    if (isTable) {
+      if (!scoreTable) continue;
+      const cells = rowCells(line);
       if (cells.length < 2 || /^:?-+:?$/.test(cells[0] ?? "")) continue;
       [name, scoreText] = cells;
       why = cells.slice(2).join(" ");
@@ -137,13 +186,18 @@ export function parseReport(text: string): ParsedScore[] {
       [, name, scoreText, why = ""] = m;
     }
 
-    const num = /~?\s*(\d{1,3})(?!\d)/.exec(scoreText ?? "");
+    // The score cell must start with the number ("~82", "82%", "82/100").
+    const num = /^~?\s*(\d{1,3})(?![\d.,])/.exec(scoreText ?? "");
     if (!name || !num) continue;
     // Infra facts like "Usage: 1,200 minutes" are not scores.
     if (classifyInfra(name) && classifyArea(name) === "other") continue;
     const score = Number(num[1]);
     if (score < 0 || score > 100) continue;
-    out.push({ area: classifyArea(name), label: clean(name), score, evidence: clean(why) });
+    const area = classifyArea(name);
+    // The first score for an area wins; later mentions are commentary.
+    if (area !== "other" && seen.has(area)) continue;
+    seen.add(area);
+    out.push({ area, label: clean(name), score, evidence: clean(why) });
   }
   return out;
 }
@@ -155,7 +209,7 @@ export function parseReport(text: string): ParsedScore[] {
 export function guessApp(db: DB, text: string): string | null {
   const lower = text.toLowerCase();
   let best: { host: string; count: number } | null = null;
-  for (const e of listAllowlist(db)) {
+  for (const e of dashboardHosts(db).map((h) => ({ domain: h.host }))) {
     const full = e.domain.split(".")[0]!;
     const short = full.split("-")[0]!;
     // A very short prefix (e.g. "lm") would match ordinary words.
@@ -181,7 +235,7 @@ export function saveReport(
   actor: string,
 ): SavedReport | { error: string } {
   const host = toHostname(appTarget);
-  if (!host || !listAllowlist(db).some((e) => e.domain === host)) {
+  if (!host || !dashboardHosts(db).some((e) => e.host === host)) {
     return { error: "pick an app from your allowlist" };
   }
   const scores = parseReport(text);
@@ -264,8 +318,17 @@ export function listInfra(db: DB, host: string): StoredInfra[] {
  */
 export function shipperFrom(text: string): string | null {
   const t = text.toLowerCase();
-  if (/github actions|workflow|\bactions\b|\bgha\b/.test(t)) return "GitHub Actions (uses GitHub minutes)";
-  if (/\bfly\b|fly\.io|flyctl/.test(t)) return "Fly (builds on Fly)";
-  if (/render/.test(t)) return "Render (builds on Render)";
-  return null;
+  // The service named first is the one doing the shipping; a workflow file
+  // (e.g. "fly-deploy.yml") means GitHub Actions, even if it names Fly.
+  const candidates: Array<[RegExp, string]> = [
+    [/github actions|workflow|[\w-]+\.ya?ml\b|\bgha\b/, "GitHub Actions (uses GitHub minutes)"],
+    [/\bfly\b|fly\.io|flyctl/, "Fly (builds on Fly)"],
+    [/render/, "Render (builds on Render)"],
+  ];
+  let best: { at: number; who: string } | null = null;
+  for (const [re, who] of candidates) {
+    const m = re.exec(t);
+    if (m && (!best || m.index < best.at)) best = { at: m.index, who };
+  }
+  return best?.who ?? null;
 }
