@@ -65,8 +65,9 @@ const esc = (s) => String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<"
 async function refreshKillSwitch() {
   const { body } = await api("/health");
   const engaged = body.killSwitch === "engaged";
-  el("ksDot").className = "dot" + (engaged ? " engaged" : "");
-  el("ksLabel").textContent = engaged ? "kill switch ENGAGED" : "operational";
+  const storeBad = body.store && body.store.ok === false;
+  el("ksLabel").textContent = engaged ? "kill switch ENGAGED" : storeBad ? "store check FAILED" : "operational";
+  el("ksDot").className = "dot" + (engaged || storeBad ? " engaged" : "");
   el("ksBtn").textContent = engaged ? "Release" : "Engage kill switch";
   el("ksBtn").className = engaged ? "ghost" : "danger";
   el("ksBtn").dataset.engaged = engaged;

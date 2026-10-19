@@ -30,6 +30,7 @@ export interface AppOptions {
 }
 import { DEFAULT_WEEKLY, getLastRun, runWeeklySweep } from "./schedule/weekly.js";
 import { backupMode, backupStatus, runRestoreDrill } from "./backup/drill.js";
+import { lastIntegrity, refreshIntegrity } from "./integrity.js";
 
 // Until a real auth layer exists, the actor is a fixed operator identity.
 // Every governance action is still attributed in the audit trail.
@@ -59,8 +60,25 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
   app.use("/api", sessionRoutes(apiToken, wrongTokens));
   app.use("/api", apiAuth(apiToken, wrongTokens));
 
+  // Public liveness check (for the uptime pinger): always 200 while the
+  // server runs. `store` is the last integrity check of the database (yes/no
+  // and counts only, never data).
   app.get("/health", (_req, res) => {
-    res.json({ ok: true, killSwitch: isEngaged(db) ? "engaged" : "released" });
+    const s = lastIntegrity(db);
+    res.json({
+      ok: true,
+      killSwitch: isEngaged(db) ? "engaged" : "released",
+      store: { ok: s.ok, checkedAt: s.at, schemaVersion: s.schemaVersion, brokenLinks: s.brokenLinks },
+    });
+  });
+
+  // Store check for a monitor: 200 when the database is intact, 503 when not.
+  // Re-runs the check at most once a minute (read-only), so a flood of
+  // requests cannot keep the store busy.
+  app.get("/health/store", (_req, res) => {
+    const prev = lastIntegrity(db);
+    const s = Date.now() - Date.parse(prev.at) > 60_000 ? refreshIntegrity(db) : prev;
+    res.status(s.ok ? 200 : 503).json(s);
   });
 
   // --- Allowlist management -------------------------------------------------
