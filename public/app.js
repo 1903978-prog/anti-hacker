@@ -395,11 +395,41 @@ const DB_RULES = `<details class="note"><summary>How the Database score is worke
   "Clear naming and a documented schema.",
 ].map((r) => `<li>${r}</li>`).join("")}</ol></details>`;
 
+// The SEO and GEO checklists (same as reports/seo-checklist.md and geo-checklist.md).
+const rulesNote = (title, rules) => `<details class="note"><summary>${title}</summary>
+<p>Ten rules, 10 points each (10 = done, 5 = partly, 0 = missing). Rated for 10bonds and eendigo only, and not counted in the overall score.</p><ol>${rules
+  .map((r) => `<li>${r}</li>`).join("")}</ol></details>`;
+const SEO_RULES = rulesNote("How the SEO score is worked out", [
+  "Google and Bing can read the site: robots.txt allows them, no stray noindex, one canonical address.",
+  "Sitemap sent to Google Search Console and Bing Webmaster Tools.",
+  "Pages indexed: most sitemap pages are in Google's and Bing's index.",
+  "No crawl errors: no broken pages, server errors or redirect chains.",
+  "Titles and descriptions: unique, the right length, with the main search words.",
+  "Content covers the topics people search for, with enough depth.",
+  "Structured data (schema.org) that Google can read.",
+  "Fast and phone-friendly (Core Web Vitals).",
+  "Backlinks: other relevant websites link to the site.",
+  "Found in search: the site shows on page 1 for its target searches.",
+]);
+const GEO_RULES = rulesNote("How the GEO score is worked out", [
+  "AI crawlers allowed: robots.txt lets ChatGPT, Claude, Perplexity, Copilot and Google read the public pages.",
+  "llms.txt: a short guide to the site for AI assistants.",
+  "Readable without JavaScript: the main text is in the page itself.",
+  "Answer-first content: pages start with a short direct answer, question headings, FAQs.",
+  "Clear identity: Organization data and links to the official profiles.",
+  "Trust signals: named authors, sources and dates on the facts.",
+  "Mentioned on other trusted sites (press, directories, LinkedIn, Wikipedia).",
+  "In Bing's and Google's index (ChatGPT and Copilot search through Bing, AI Overviews through Google).",
+  "Cited in AI answers to the test questions.",
+  "Kept fresh: content updated within the last 12 months.",
+]);
+
 function renderApp(a) {
   const empty = !a.areas.some((ar) => ar.measured || ar.estimate);
   const areas = empty
     ? '<div class="note">No evidence yet. Prove ownership for measured checks, or paste a report.</div>'
     : a.areas
+    .filter((ar) => ar.applies !== false)
     .map((ar) => {
       const main = ar.measured || ar.estimate;
       const second = ar.measured && ar.estimate ? scoreHtml(ar.estimate, false) : "";
@@ -430,7 +460,7 @@ function renderApp(a) {
       ${a.proven ? "" : '<span class="badge">unproven: no measured checks</span>'}
       <span class="muted">${a.reports} report(s) pasted</span>
     </div>
-    ${grid}${other}${DB_RULES}
+    ${grid}${other}${DB_RULES}${a.areas.some((ar) => ar.key === "seo" && ar.applies) ? SEO_RULES + GEO_RULES : ""}
     <h3 class="sub3">Infrastructure</h3>${infra}
   </div>`;
 }
@@ -439,12 +469,13 @@ function renderApp(a) {
 const SHORT = {
   security: "Security", privacy: "Privacy", integrity: "Integrity", persistence: "Backup & recovery",
   database: "Database", ux: "UX", performance: "Speed", reliability: "Reliability",
-  code: "Code", deploy: "Deploy & ops",
+  code: "Code", deploy: "Deploy & ops", seo: "SEO", geo: "GEO",
 };
 let dashData = [];
 let openHost = null;
 
 function cellHtml(a, ar) {
+  if (ar.applies === false) return `<td class="cell none" title="${esc(ar.label)}: not rated for this app">-</td>`;
   const s = ar.measured || ar.estimate;
   if (!s) return `<td class="cell none" title="${esc(ar.label)}: no evidence yet">–</td>`;
   const mark = s.source === "measured" ? "M" : "E";

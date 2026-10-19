@@ -1,6 +1,6 @@
 import type { DB } from "../db.js";
 import { toHostname } from "../util/host.js";
-import { AREAS } from "../health/report.js";
+import { AREAS, appliesTo } from "../health/report.js";
 import { SENSITIVE_PATHS } from "./checks.js";
 import type { Severity } from "./types.js";
 
@@ -273,6 +273,8 @@ export const AREA_ADVICE: Record<(typeof AREAS)[number]["key"], string> = {
   reliability: "Fix failing test runs, catch errors so one bad request can't crash the app, and alert on downtime.",
   code: "Split very large files into smaller ones, fix all type errors, and add tests for the main features.",
   deploy: "Deploy automatically after tests pass, keep a one-click rollback, and write down the host settings.",
+  seo: "Get every page indexed in Google and Bing, fix crawl errors, write titles and content for the searches you want, and earn links (see reports/seo-checklist.md).",
+  geo: "Let AI crawlers in, publish llms.txt, write clear answer-first pages with sources, and get mentioned on trusted sites (see reports/geo-checklist.md).",
 };
 
 function latestReportDate(db: DB, host: string): string | null {
@@ -293,7 +295,7 @@ function healthRows(db: DB, host: string): CheckRow[] {
       `SELECT area, score, evidence FROM health_scores WHERE host = ? ORDER BY created_at DESC, id DESC`,
     )
     .all(host) as Array<{ area: string; score: number; evidence: string }>;
-  return AREAS.map((a) => {
+  return AREAS.filter((a) => appliesTo(a.key, host)).map((a) => {
     const base = {
       code: `health-${a.key}`,
       group: "health" as const,

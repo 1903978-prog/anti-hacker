@@ -109,7 +109,8 @@ describe("pasted reports", () => {
     const sec = app.areas.find((a) => a.key === "security")!;
     expect(sec.measured).toBeNull();
     expect(sec.estimate).toMatchObject({ score: 82, source: "estimate" });
-    expect(app.areas).toHaveLength(10);
+    expect(app.areas).toHaveLength(12);
+    expect(app.areas.find((a) => a.key === "seo")).toMatchObject({ applies: false, estimate: null });
     expect(app.areas.find((a) => a.key === "privacy")!.estimate).toBeNull();
     expect(app.overall).toBe(79);
   });
@@ -210,6 +211,29 @@ describe("report files", () => {
     const dir = mkdtempSync(join(tmpdir(), "reports-"));
     writeFileSync(join(dir, "10bonds-health.md"), "Security & Access Control: 70 - headers");
     expect(loadReportFiles(db, dir).filter((r) => r.loaded).map((r) => r.host)).toEqual(["10bonds.fly.dev"]);
+  });
+
+  it("rates SEO and GEO only for 10bonds and eendigo, outside the overall", () => {
+    const db = freshDb();
+    const dir = mkdtempSync(join(tmpdir(), "reports-"));
+    const seo = [
+      "| Area | Score | Reason |",
+      "|---|---|---|",
+      "| SEO (Google & Bing search) | 55 | 1 Crawl: 10/10 (ok); 2 Sitemap: 5/10 (partly) |",
+      "| GEO (AI assistants' answers) | 45 | 1 AI crawlers allowed: 10/10 (ok) |",
+    ].join("\n");
+    writeFileSync(join(dir, "eendigo-health.md"), "Security & Access Control: 80 - headers");
+    writeFileSync(join(dir, "eendigo-seo.md"), seo);
+    writeFileSync(join(dir, "compplan-seo.md"), seo);
+    loadReportFiles(db, dir);
+    const een = dashboard(db).find((a) => a.host === "eendigo.com")!;
+    const s = een.areas.find((a) => a.key === "seo")!;
+    expect(s).toMatchObject({ applies: true, estimate: { score: 55, source: "estimate" } });
+    expect(s.estimate!.evidence).toHaveLength(3); // source line + one per rule
+    expect(een.areas.find((a) => a.key === "geo")!.estimate!.score).toBe(45);
+    expect(een.overall).toBe(80); // SEO and GEO not counted
+    const comp = dashboard(db).find((a) => a.host === "compplan.onrender.com")!;
+    expect(comp.areas.find((a) => a.key === "seo")).toMatchObject({ applies: false, estimate: null });
   });
 
   it("never checks a report-only app", async () => {

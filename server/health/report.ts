@@ -31,9 +31,29 @@ export const AREAS = [
   { key: "reliability", label: "Reliability & Error Handling" },
   { key: "code", label: "Code Quality & Maintainability" },
   { key: "deploy", label: "Deployment & Operational Readiness" },
+  { key: "seo", label: "SEO (Google & Bing search)" },
+  { key: "geo", label: "GEO (AI assistants' answers)" },
 ] as const;
 
 export type AreaKey = (typeof AREAS)[number]["key"];
+
+/**
+ * Areas rated only for some apps (Livio, 19/10/2026: SEO and GEO for the
+ * public websites 10bonds and eendigo). Other apps show "-" and these areas
+ * never count in their overall score.
+ */
+export const SCOPED_AREAS: Partial<Record<AreaKey, readonly string[]>> = {
+  seo: ["10bonds", "eendigo"],
+  geo: ["10bonds", "eendigo"],
+};
+
+/** Whether an area is rated for this app (matched on the first part of its address). */
+export function appliesTo(area: string, host: string): boolean {
+  const only = SCOPED_AREAS[area as AreaKey];
+  if (!only) return true;
+  const name = host.replace(/^www\./, "").split(".")[0]!;
+  return only.includes(name);
+}
 
 export interface ParsedScore {
   /** One of AREAS' keys, or "other" when the area name is not recognised. */
@@ -49,6 +69,9 @@ const MAX_REPORT_CHARS = 20_000;
 /** Maps a report's area name to a dashboard area. Specific words win over "data". */
 export function classifyArea(name: string): AreaKey | "other" {
   const n = name.toLowerCase();
+  // GEO first: its names mention access and search, which other areas use too.
+  if (/\bgeo\b|generative engine|ai (search|visibility|assistant|answer)/.test(n)) return "geo";
+  if (/\bseo\b|search engine/.test(n)) return "seo";
   // Only a rated database line ("Database Design: 70"); a plain "Database:" is an infra fact.
   if (/database (design|quality|structure|practice)|data model|schema design/.test(n)) return "database";
   if (/privacy|protection/.test(n)) return "privacy";

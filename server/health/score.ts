@@ -1,5 +1,5 @@
 import type { DB } from "../db.js";
-import { AREAS, INFRA, dashboardHosts, listEstimates, listInfra, shipperFrom, type StoredEstimate } from "./report.js";
+import { AREAS, INFRA, appliesTo, dashboardHosts, listEstimates, listInfra, shipperFrom, type StoredEstimate } from "./report.js";
 import { listUptime, type UptimeCheck } from "./uptime.js";
 
 /**
@@ -17,6 +17,8 @@ export interface Score {
 export interface AreaScores {
   key: string;
   label: string;
+  /** False when this area is not rated for this app (shown as "-"). */
+  applies: boolean;
   measured: Score | null;
   estimate: Score | null;
 }
@@ -42,6 +44,10 @@ export interface AppHealth {
 }
 
 const DAY = 24 * 60 * 60_000;
+/** Areas rated from a 10-rule checklist; their evidence lists one rating per rule. */
+const CHECKLIST_AREAS = new Set(["database", "seo", "geo"]);
+/** Areas shown in the table but not counted in the overall score. */
+const OUTSIDE_OVERALL = new Set(["seo", "geo"]);
 const PENALTY = { high: 15, medium: 7, low: 3, info: 0 } as const;
 
 /** Security, from the latest completed scan's findings. */
@@ -199,25 +205,32 @@ export function dashboard(db: DB, now: Date = new Date()): AppHealth[] {
         score: newest.score,
         source: "estimate",
         at: newest.createdAt,
-        // The Database row lists one rating per checklist rule, split by "; ".
+        // Checklist rows (Database, SEO, GEO) list one rating per rule, split by "; ".
         evidence: [
           `From a pasted report (${newest.label}).`,
-          ...(key === "database" ? newest.evidence.split(/;\s+(?=\d{1,2} )/) : [newest.evidence]),
+          ...(CHECKLIST_AREAS.has(key) ? newest.evidence.split(/;\s+(?=\d{1,2} )/) : [newest.evidence]),
         ].filter(Boolean),
       };
     };
 
-    const areas = AREAS.map((a) => ({
-      key: a.key,
-      label: a.label,
-      measured: measured[a.key] ?? null,
-      estimate: latestEstimate(a.key),
-    }));
+    const areas = AREAS.map((a) => {
+      const applies = appliesTo(a.key, e.domain);
+      return {
+        key: a.key,
+        label: a.label,
+        applies,
+        measured: applies ? measured[a.key] ?? null : null,
+        estimate: applies ? latestEstimate(a.key) : null,
+      };
+    });
     // Overall: average of each area's best-known score (measured wins).
+    // SEO and GEO are left out so every app's overall stays comparable.
     const best = areas
+      .filter((a) => !OUTSIDE_OVERALL.has(a.key))
       .map((a) => (a.measured ?? a.estimate)?.score)
       .filter((s): s is number => typeof s === "number");
-    const newestReport = estimates[0]?.createdAt;
+    // "Also in the last report" comes from the newest health report, not an SEO one.
+    const newestReport = estimates.find((s) => !OUTSIDE_OVERALL.has(s.area))?.createdAt;
     return {
       host: e.domain,
       proven: e.ownershipProven,
