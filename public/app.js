@@ -187,7 +187,8 @@ function pendingDomains() {
 }
 function setPending(domain, on) {
   const set = new Set(pendingDomains());
-  on ? set.add(domain) : set.delete(domain);
+  if (on) set.add(domain);
+  else set.delete(domain);
   try { localStorage.setItem("secval_pending", JSON.stringify([...set])); } catch { /* not remembered */ }
 }
 
