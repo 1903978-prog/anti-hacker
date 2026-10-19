@@ -57,3 +57,23 @@ copy is a backup.
   as text with no enforced link to `allowlist`. A link would need the
   allowlist table rebuilt, which touches the ownership code, so it is left
   as is.
+
+## Personal data
+
+secval is used by Livio alone, so it holds very little personal data. All of it:
+
+| What | Where | Why | How long |
+|---|---|---|---|
+| Alert e-mail address | `ALERT_TO` environment variable (Render); falls back to Livio's work address written in `server/notify/alerts.ts` | where new-finding alerts are sent | until the setting is changed |
+| Client IP address | server memory only, as the key of the `/api` rate limiter (`server/middleware.ts`); never written to the database or the audit log | stop abuse of the control plane | the current one-minute window; expired entries are dropped at the next sweep, everything on restart |
+| `audit_log.actor` | database | who did each action (append-only trail) | for ever (the trail can never be edited or deleted). Today it holds only role names (`operator`, `scheduler`, `uptime`), not a person's name or address |
+
+Findings hold only the fact that a weakness exists on one of Livio's own sites, never data read from the site.
+
+## Outside services
+
+| Service | What it receives | Why | Data-processing terms |
+|---|---|---|---|
+| Resend | each alert: the alert address, the sender, finding summaries (level, site, title, detail) | sending new-finding alerts | https://resend.com/legal/dpa |
+| Backblaze B2 | a continuous copy of the whole database via Litestream (`litestream.yml`): allowlist, audit log, scans, findings, health data; 7 days of history | backup and restore | https://www.backblaze.com/company/policy/dpa-for-eea-eu-residents |
+| Render | runs the server: holds the environment (alert address, keys), sees request IPs, keeps its own request and app logs | hosting | https://render.com/dpa |
