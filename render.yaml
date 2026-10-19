@@ -14,6 +14,9 @@ services:
     name: secval
     runtime: node
     plan: free
+    # Deploy a new commit on integration only after GitHub CI (type check,
+    # lint, tests, page check) has passed on it.
+    autoDeployTrigger: checksPass
     buildCommand: npm install && npm run build && bash scripts/get-litestream.sh
     startCommand: bash scripts/start.sh
     envVars:

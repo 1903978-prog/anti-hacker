@@ -1,0 +1,43 @@
+# CI: every push to integration and every pull request runs the type check,
+# ESLint, the full test suite and the browser page check (Playwright +
+# axe-core at 1440/390/360 px). Render is set to deploy only when these
+# checks pass (render.yaml: autoDeployTrigger: checksPass).
+#
+# Cost: the repo is private, so runs use the free GitHub Actions allowance
+# (2,000 minutes a month on GitHub Free). One run takes about 2-3 minutes.
+name: CI
+
+on:
+  push:
+    branches: [integration]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Type check
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Tests
+        run: npm test
+      - name: Install Chromium for the page check
+        run: npx playwright install --with-deps chromium
+      - name: Page check (no sideways scroll, no axe-core violations)
+        run: npm run test:page
