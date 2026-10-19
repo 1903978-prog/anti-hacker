@@ -8,12 +8,15 @@
       :root {
         --bg: #f6f7f9; --surface: #fff; --border: #e2e5ea; --text: #1a1d24;
         --muted: #697086; --accent: #2f6df6; --danger: #d23b3b;
-        --high: #d23b3b; --medium: #d98324; --low: #c0a000; --info: #697086;
+        --high: #c42f2f; --medium: #a35a0c; --low: #806a00; --info: #697086;
+        --btn: #2a5fd8; --btn-danger: #c42f2f; --good: #137a40;
       }
       @media (prefers-color-scheme: dark) {
         :root {
           --bg: #14171c; --surface: #1c2027; --border: #2b313b; --text: #e8eaed;
-          --muted: #9aa2b1; --accent: #5b8dff; --danger: #ef5a5a;
+          --muted: #9aa2b1; --accent: #7aa3ff; --danger: #ef5a5a;
+          --high: #ff7a7a; --medium: #f0a54a; --low: #e0c840; --info: #9aa2b1;
+          --btn: #2a5fd8; --btn-danger: #c42f2f; --good: #4fd18a;
         }
       }
       * { box-sizing: border-box; }
@@ -27,15 +30,15 @@
       .card h2 { font-size: 15px; margin: 0 0 12px; }
       .row { display: flex; gap: 8px; flex-wrap: wrap; }
       input, select { flex: 1; min-width: 160px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; }
-      button { padding: 9px 14px; border: 0; border-radius: 8px; background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
+      button { padding: 9px 14px; border: 0; border-radius: 8px; background: var(--btn); color: #fff; font: inherit; cursor: pointer; }
       button.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
-      button.danger { background: var(--danger); }
+      button.danger { background: var(--btn-danger); }
       button:disabled { opacity: .5; cursor: default; }
       table { width: 100%; border-collapse: collapse; font-size: 14px; }
-      th, td { text-align: left; padding: 7px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+      th, td { text-align: left; padding: 7px 6px; border-bottom: 1px solid var(--border); vertical-align: top; overflow-wrap: anywhere; }
       th { color: var(--muted); font-weight: 600; }
       .badge { display: inline-block; padding: 1px 7px; border-radius: 20px; font-size: 12px; border: 1px solid var(--border); color: var(--muted); }
-      .badge.ok { color: #1f9d55; border-color: #1f9d5544; }
+      .badge.ok { color: var(--good); border-color: #1f9d5544; }
       .sev { font-weight: 600; text-transform: uppercase; font-size: 11px; }
       .sev.high { color: var(--high); } .sev.medium { color: var(--medium); }
       .sev.low { color: var(--low); } .sev.info { color: var(--info); }
@@ -58,11 +61,11 @@
       .area { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
       .area .name { color: var(--muted); font-size: 12px; }
       .area .num { font-size: 20px; font-weight: 700; }
-      .area .num.good { color: #1f9d55; } .area .num.mid { color: var(--medium); } .area .num.bad { color: var(--high); }
+      .area .num.good { color: var(--good); } .area .num.mid { color: var(--medium); } .area .num.bad { color: var(--high); }
       .area .alt { font-size: 12px; color: var(--muted); }
-      .overall.good { color: #1f9d55; } .overall.mid { color: var(--medium); } .overall.bad { color: var(--high); }
+      .overall.good { color: var(--good); } .overall.mid { color: var(--medium); } .overall.bad { color: var(--high); }
       .tag { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; padding: 1px 6px; border-radius: 10px; border: 1px solid var(--border); margin-left: 4px; vertical-align: middle; }
-      .tag.measured { color: #1f9d55; border-color: #1f9d5566; }
+      .tag.measured { color: var(--good); border-color: #1f9d5566; }
       .tag.estimate { color: var(--medium); border-color: #d9832466; }
       .tablewrap { overflow-x: auto; margin: 0 -4px; }
       table.dash { border-collapse: separate; border-spacing: 3px; font-size: 13px; min-width: 760px; }
@@ -71,11 +74,21 @@
       table.dash td.cell { min-width: 62px; text-align: center; font-weight: 700; padding: 8px 4px; border: 0; border-radius: 6px; cursor: pointer; white-space: nowrap; }
       table.dash td.cell sup { font-size: 9px; font-weight: 600; margin-left: 1px; opacity: .8; }
       td.cell.good { background: #1f9d5524; color: #137a40; }
-      td.cell.mid { background: #d9832428; color: #a85f10; }
+      td.cell.mid { background: #d9832428; color: #8a4a08; }
       td.cell.bad { background: #d23b3b24; color: #b02a2a; }
       td.cell.none { background: var(--bg); color: var(--muted); font-weight: 400; cursor: default; }
       td.cell.estimate { outline: 1px dashed currentColor; outline-offset: -3px; }
       td.overallc { font-size: 14px; }
+      @media (max-width: 700px) {
+        .tablewrap { overflow-x: visible; margin: 0; }
+        table.dash, table.dash tbody { display: block; min-width: 0; }
+        table.dash thead { display: none; }
+        table.dash tr { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 4px; padding: 8px 0; border-top: 1px solid var(--border); }
+        table.dash tr:first-child { border-top: 0; }
+        table.dash th.appname { grid-column: 1 / -1; position: static; padding: 2px 0; }
+        table.dash td.cell { min-width: 0; }
+        table.dash td.cell::before { content: attr(data-label); display: block; font-size: 10px; font-weight: 600; opacity: .85; white-space: normal; }
+      }
       @media (prefers-color-scheme: dark) {
         td.cell.good { color: #4fd18a; } td.cell.mid { color: #f0a54a; } td.cell.bad { color: #ff7a7a; }
       }
@@ -87,9 +100,9 @@
       details ul { margin: 4px 0 0; padding-left: 16px; color: var(--muted); font-size: 12px; }
       .tsum { display: flex; gap: 14px; flex-wrap: wrap; margin: 12px 0 10px; font-size: 14px; }
       .tsum b { font-size: 20px; margin-right: 4px; }
-      .tsum .p { color: #1f9d55; } .tsum .f { color: var(--high); } .tsum .n { color: var(--muted); }
+      .tsum .p { color: var(--good); } .tsum .f { color: var(--high); } .tsum .n { color: var(--muted); }
       .tfilter { margin-bottom: 8px; } .tfilter button { padding: 6px 12px; font-size: 13px; }
-      .tfilter button[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+      .tfilter button[aria-pressed="true"] { background: var(--btn); color: #fff; border-color: var(--btn); }
       h3.tgroup { font-size: 13px; color: var(--muted); margin: 16px 0 4px; text-transform: uppercase; letter-spacing: .4px; }
       .trow { display: flex; gap: 10px; align-items: flex-start; padding: 8px 2px; border-bottom: 1px solid var(--border); }
       .ticon { flex: 0 0 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 13px; margin-top: 1px; }
@@ -144,7 +157,7 @@
         <h2>Paste a report</h2>
         <textarea id="reportText" placeholder="Paste a rating from another session: a table with Area | Score | Why, and lines like Database: Neon Postgres, Deploys via: GitHub to Fly, Usage: 300 GitHub minutes"></textarea>
         <div class="row">
-          <select id="reportApp"></select>
+          <select id="reportApp" aria-label="App"></select>
           <button id="reportBtn">Save scores</button>
         </div>
         <div id="reportMsg" class="note">Saved as estimates, with the date. secval picks the app for you; change it if it guessed wrong.</div>

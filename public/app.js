@@ -476,12 +476,13 @@ let dashData = [];
 let openHost = null;
 
 function cellHtml(a, ar) {
-  if (ar.applies === false) return `<td class="cell none" title="${esc(ar.label)}: not rated for this app">-</td>`;
+  const label = `data-label="${esc(SHORT[ar.key] || ar.label)}"`;
+  if (ar.applies === false) return `<td class="cell none" ${label} title="${esc(ar.label)}: not rated for this app">-</td>`;
   const s = ar.measured || ar.estimate;
-  if (!s) return `<td class="cell none" title="${esc(ar.label)}: no evidence yet">–</td>`;
+  if (!s) return `<td class="cell none" ${label} title="${esc(ar.label)}: no evidence yet">–</td>`;
   const mark = s.source === "measured" ? "M" : "E";
   const tip = `${ar.label}: ${s.score}% (${s.source}, ${String(s.at || "").slice(0, 10)})\n${s.evidence.join("\n")}`;
-  return `<td class="cell ${tone(s.score)} ${s.source}" title="${esc(tip)}" data-open="${esc(a.host)}">${s.score}%<sup>${mark}</sup></td>`;
+  return `<td class="cell ${tone(s.score)} ${s.source}" ${label} title="${esc(tip)}" data-open="${esc(a.host)}">${s.score}%<sup>${mark}</sup></td>`;
 }
 
 function renderTable(apps) {
@@ -493,7 +494,7 @@ function renderTable(apps) {
     .map(
       (a) => `<tr>
         <th class="appname"><button class="link" data-open="${esc(a.host)}">${esc(a.host)}</button></th>
-        ${a.overall === null ? '<td class="cell none">–</td>' : `<td class="cell ${tone(a.overall)} overallc">${a.overall}%</td>`}
+        ${a.overall === null ? '<td class="cell none" data-label="Overall">–</td>' : `<td class="cell ${tone(a.overall)} overallc" data-label="Overall">${a.overall}%</td>`}
         ${a.areas.map((ar) => cellHtml(a, ar)).join("")}
       </tr>`,
     )
