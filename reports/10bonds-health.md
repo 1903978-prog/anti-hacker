@@ -1,6 +1,6 @@
 # 10bonds health report
 
-Re-scored 19/10/2026 ~11:45 UTC for 10bonds PR #45 (branch `claude/health-90`, on top of `main` 99a7821). **All scores are estimates (E)** from the code plus checks run here; they assume PR #45 is merged and deployed. Measured cells on the dashboard (Security, Speed, Reliability) come from secval scans, not from this file.
+Re-scored 19/10/2026 ~11:45 UTC for 10bonds PR #45 (branch `claude/health-90`, on top of `main` 99a7821). **All scores are estimates (E)** from the code plus checks run here; PR #45 merged 19/10 ~11:43 UTC (main a2ad346). Measured cells on the dashboard (Security, Speed, Reliability) come from secval scans, not from this file.
 
 Checked here on PR #45 (19/10 ~11:40 UTC): `tsc` 0 errors; lint 0 errors (6 warnings); 222 unit and database tests pass (database tests on a real Postgres); production build OK; browser check of 17 public pages at 1440, 390 and 360 px (loads, title, heading, no script errors, no sideways scrolling, no serious WCAG A/AA problems by axe-core): all pass; nightly backup script tested end to end on a local Postgres (dump, encrypt, decrypt, restore, 22 of 22 tables match).
 
