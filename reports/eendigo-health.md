@@ -7,7 +7,7 @@ Written 19/10/2026 11:05 UTC from Cosmin's answers (relayed by Livio, 09:30 UTC)
 | # | Area | Score | Reason (evidence) |
 |---|---|---|---|
 | 1 | Security & Access Control | ~55 (estimate) | WordPress + Elementor Pro on Namecheap shared hosting (LiteSpeed). Admin login at /wp-admin is public. Unknown: two-factor login for admins, plugin/core update routine, login-attempt limits, security headers. secval scan pending. |
-| 2 | Data Protection & Privacy | ~55 (estimate) | Elementor Forms is installed, so contact-form entries (names, emails) may be stored in the database. Unknown: privacy page, how long form entries are kept, cookie banner. |
+| 2 | Data Protection & Privacy | ~45 (estimate) | Scored 19/10/2026 on the 10-rule checklist (reports/privacy-checklist.md), from a live read of the site: the privacy page (https://www.eendigo.com/privacy/, last changed 21/11/2023) says no personal data is collected, but the Join Us form collects resumes; it has no legal basis, retention, erasure or complaint right. No trackers seen; Google Fonts may load. Form entries kept in WordPress with no clean-up. Fix pack for Cosmin (new policy text, local fonts, 12-month clean-up of form entries): /mnt/project-files/eendigo/eendigo-privacy-pack.md, -> ~65 once done. |
 | 3 | Data Integrity & Consistency | ~70 (estimate) | Standard WordPress MySQL database; content edited by hand in Elementor. Low risk for a brochure site. |
 | 4 | Data Persistence & Recovery | ~25 (estimate) | No backup plugin on the site. Namecheap's own hosting backups not confirmed. No restore ever tested. |
 | 5 | Database Design & Structure | ~55 (estimate) | Standard WordPress schema (not ours to change). One database on the same hosting account. No backups confirmed, no restore tested. |
