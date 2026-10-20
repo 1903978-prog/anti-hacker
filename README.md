@@ -84,6 +84,23 @@ A failed send never stops a sweep; it is recorded as `alert.failed`. Known
 limit: without Litestream the free-tier store resets, so after a reset every
 finding counts as new once.
 
+## Usage tab
+
+`GET /api/usage` (and the **Usage** tab) shows this month's use of the free
+allowances: GitHub Actions minutes, storage and billed amount; Render
+bandwidth and services; Fly machines with an estimated monthly cost (Fly has
+no billing API); Backblaze free caps with a link (Backblaze has no usage API).
+Only GET calls are made; results are kept 15 minutes. A provider without a
+token shows "not connected".
+
+| Setting | Meaning |
+| --- | --- |
+| `GITHUB_USAGE_TOKEN` | fine-grained GitHub token with the account permission **Plan: read** only |
+| `GITHUB_USAGE_USER` | GitHub account (default `1903978-prog`) |
+| `RENDER_API_KEY` | Render API key (Render has no read-only keys; secval only reads with it) |
+| `FLY_API_TOKEN` | read-only Fly org token (`fly tokens create readonly`) |
+| `FLY_ORG` | Fly organization (default `personal`) |
+
 ## Next (ideas)
 
 Active (authenticated / deeper) scanning for active-eligible targets and
