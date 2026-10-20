@@ -22,6 +22,7 @@ import { apiAuth, failedAuthLimiter, noStore, rateLimit, securityHeaders, sessio
 import { dashboard } from "./health/score.js";
 import { dashboardHosts, guessApp, listEstimates, saveReport } from "./health/report.js";
 import { checkAllUptime } from "./health/uptime.js";
+import { allUsage } from "./usage/providers.js";
 
 export interface AppOptions {
   /** Secret token required for every API request (bearer header or sign-in cookie). */
@@ -238,6 +239,11 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
   app.post("/api/dashboard/check-now", async (_req, res) => {
     const checks = await checkAllUptime(db);
     res.json({ checked: checks.length });
+  });
+
+  // --- Usage counters (GitHub, Render, Fly, Backblaze; read-only) ----------
+  app.get("/api/usage", async (req, res) => {
+    res.json(await allUsage({ refresh: req.query.refresh === "1" }));
   });
 
   // --- Static UI ------------------------------------------------------------

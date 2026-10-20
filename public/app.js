@@ -333,6 +333,7 @@ function refreshAll() {
   refreshBackup();
   refreshDashboard();
   if (currentTab === "tests") refreshTests();
+  if (currentTab === "usage") refreshUsage();
 }
 
 el("tokenSave").onclick = async () => {
@@ -573,12 +574,68 @@ el("reportBtn").onclick = async () => {
 
 setInterval(refreshDashboard, 60 * 60_000); // hourly; scans, checks and saved reports refresh it at once
 
+// --- Usage counters ----------------------------------------------------------
+// GitHub, Render, Fly and Backblaze use against the free allowances. The server
+// reads them with read-only tokens and keeps the result for 15 minutes.
+const STATUS_BADGE = {
+  ok: '<span class="badge ok">connected</span>',
+  "not-connected": '<span class="badge">not connected</span>',
+  error: '<span class="badge sev high">error</span>',
+  info: '<span class="badge">no counters</span>',
+};
+const fmt = (n, unit) =>
+  unit === "USD" ? "$" + Number(n).toFixed(2) : Number(n).toLocaleString("en-US") + " " + unit;
+
+function meterHtml(m) {
+  const tag = m.estimate ? ' <span class="tag estimate">E</span>' : "";
+  if (m.used === null) {
+    return `<div class="umeter"><div class="ul"><span>${esc(m.label)}${tag}</span><span class="muted">not available</span></div>${m.note ? `<div class="note">${esc(m.note)}</div>` : ""}</div>`;
+  }
+  let bar = "";
+  let cls = "";
+  let value = esc(fmt(m.used, m.unit));
+  if (m.limit) {
+    const pct = Math.round((m.used / m.limit) * 100);
+    cls = pct >= 90 ? "bad" : pct >= 70 ? "mid" : "good";
+    value = `${esc(fmt(m.used, m.unit))} of ${esc(fmt(m.limit, m.unit))} (${pct}%)`;
+    bar = `<div class="ubar" aria-hidden="true"><span class="${cls}" style="width:${Math.min(100, pct)}%"></span></div>`;
+  } else if (m.unit === "USD") {
+    cls = m.used > 0 ? "mid" : "good";
+  }
+  return `<div class="umeter"><div class="ul"><span>${esc(m.label)}${tag}</span><span class="uv ${cls}">${value}</span></div>${bar}${m.note ? `<div class="note">${esc(m.note)}</div>` : ""}</div>`;
+}
+
+async function refreshUsage(force) {
+  const { ok, status, body } = await api("/api/usage" + (force ? "?refresh=1" : ""));
+  if (!ok) {
+    el("usageList").textContent = status === 401 ? NEED_TOKEN : "Could not load usage: " + (body.error || status);
+    return;
+  }
+  el("usageList").innerHTML = `<div class="ugrid">${body.providers
+    .map(
+      (p) => `<div class="uprov">
+        <h3>${esc(p.name)} ${STATUS_BADGE[p.status] || ""}</h3>
+        ${p.meters.map(meterHtml).join("")}
+        ${p.message ? `<div class="note">${esc(p.message)}</div>` : ""}
+        ${p.items.length ? `<ul>${p.items.map((i) => `<li>${esc(i.name)}: ${esc(i.detail)}</li>`).join("")}</ul>` : ""}
+        <div style="margin-top:8px"><a href="${esc(p.link)}" target="_blank" rel="noopener noreferrer">Open ${esc(p.name)} billing page</a></div>
+      </div>`,
+    )
+    .join("")}</div>`;
+  el("usageMsg").textContent = "Last checked " + new Date(body.cachedAt).toLocaleString();
+}
+el("usageRefresh").onclick = async () => {
+  el("usageRefresh").disabled = true;
+  el("usageMsg").textContent = "Checking…";
+  try { await refreshUsage(true); } finally { el("usageRefresh").disabled = false; }
+};
+
 // --- Menus (tabs) -------------------------------------------------------------
 // Each menu is a section of this one page. The address (#health, #scans,
-// #tests, #settings) picks the menu, so links and reloads keep it; the last one
+// #tests, #usage, #settings) picks the menu, so links and reloads keep it; the last one
 // used is remembered in this browser. The token box sits above the menus, so it
 // shows whichever menu is open.
-const TABS = ["health", "scans", "tests", "settings"];
+const TABS = ["health", "scans", "tests", "usage", "settings"];
 let currentTab = "health";
 function showTab(name) {
   const tab = TABS.includes(name) ? name : "health";
@@ -587,6 +644,7 @@ function showTab(name) {
   for (const a of document.querySelectorAll("nav.tabs a")) a.setAttribute("aria-selected", String(a.dataset.tab === tab));
   try { localStorage.setItem("secval_tab", tab); } catch { /* not remembered */ }
   if (tab === "tests" && signedIn) refreshTests();
+  if (tab === "usage" && signedIn) refreshUsage();
 }
 function storedTab() {
   try { return localStorage.getItem("secval_tab"); } catch { return null; }
