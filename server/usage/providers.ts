@@ -31,6 +31,41 @@ export interface UsageItem {
   detail: string;
 }
 
+/** One number on an app's usage card (e.g. "Actions minutes: 1,210 min"). */
+export interface RowMetric {
+  label: string;
+  value: number;
+  unit: string;
+  estimate?: boolean;
+}
+
+/** One repo, service or Fly app, and the app it belongs to. */
+export interface UsageRow {
+  /** Name at the provider (repo, service or Fly app). */
+  name: string;
+  /** Which of Livio's apps it is, or "other". */
+  app: string;
+  metrics: RowMetric[];
+  note?: string;
+}
+
+/** Livio's apps, and the names they go by at each provider. nexus comes before
+ *  eendigo so "nexus-eendigo" counts as nexus. */
+export const APPS: { key: string; aliases: string[] }[] = [
+  { key: "compplan", aliases: ["compplan"] },
+  { key: "lm-op-model", aliases: ["lm-op-model", "lm-op"] },
+  { key: "nexus", aliases: ["nexus"] },
+  { key: "10bonds", aliases: ["10bonds"] },
+  { key: "secval", aliases: ["secval", "anti-hacker"] },
+  { key: "eendigo", aliases: ["eendigo"] },
+];
+
+/** Which app a repo, service or Fly app name belongs to ("other" if none). */
+export function appFor(name: string): string {
+  const n = name.toLowerCase().replace(/^[^/]+\//, "");
+  return APPS.find((a) => a.aliases.some((x) => n.includes(x)))?.key ?? "other";
+}
+
 export interface ProviderUsage {
   id: "github" | "render" | "fly" | "backblaze";
   name: string;
@@ -38,6 +73,10 @@ export interface ProviderUsage {
   checkedAt: string;
   meters: Meter[];
   items: UsageItem[];
+  /** Usage split by repo / service / Fly app, each tagged with its app. */
+  rows: UsageRow[];
+  /** Why this provider cannot split usage by app, if it cannot. */
+  noSplit?: string;
   /** Short plain-language message (why not connected, what failed, a caveat). */
   message?: string;
   /** Where to see the provider's own numbers. */
@@ -115,6 +154,7 @@ export async function githubUsage(env: Env, f: Fetcher, now: Date): Promise<Prov
     checkedAt: now.toISOString(),
     meters: [],
     items: [],
+    rows: [],
     link: "https://github.com/settings/billing/usage",
   };
   const token = env.GITHUB_USAGE_TOKEN;
@@ -136,19 +176,26 @@ export async function githubUsage(env: Env, f: Fetcher, now: Date): Promise<Prov
     let minutes = 0;
     let billed = 0;
     let storageGbHours = 0;
-    const byRepo = new Map<string, number>();
+    const byRepo = new Map<string, { min: number; gbh: number; usd: number }>();
     for (const it of items) {
       const product = str(it.product).toLowerCase();
       const unit = str(it.unitType).toLowerCase();
+      const repo = str(it.repositoryName) || "(no repository)";
+      const r = byRepo.get(repo) ?? { min: 0, gbh: 0, usd: 0 };
+      byRepo.set(repo, r);
       billed += num(it.netAmount);
+      r.usd += num(it.netAmount);
       if (product === "actions" && unit.includes("minute")) {
         minutes += num(it.quantity);
-        const repo = str(it.repositoryName) || "(no repository)";
-        byRepo.set(repo, (byRepo.get(repo) ?? 0) + num(it.quantity));
+        r.min += num(it.quantity);
       }
-      if (unit.includes("gigabyte")) storageGbHours += num(it.quantity);
+      if (unit.includes("gigabyte")) {
+        storageGbHours += num(it.quantity);
+        r.gbh += num(it.quantity);
+      }
     }
     const hoursSoFar = Math.max(1, (now.getTime() - monthStart(now).getTime()) / 3_600_000);
+    const round2 = (n: number) => Math.round(n * 100) / 100;
     return {
       ...base,
       status: "ok",
@@ -168,10 +215,17 @@ export async function githubUsage(env: Env, f: Fetcher, now: Date): Promise<Prov
         },
         { label: "Billed this month", used: Math.round(billed * 100) / 100, limit: null, unit: "USD" },
       ],
-      items: [...byRepo.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 8)
-        .map(([name, m]) => ({ name, detail: `${Math.round(m)} min` })),
+      rows: [...byRepo.entries()]
+        .sort((a, b) => b[1].min - a[1].min)
+        .map(([name, r]) => ({
+          name,
+          app: appFor(name),
+          metrics: [
+            { label: "Actions", value: Math.round(r.min), unit: "min" },
+            { label: "Storage", value: round2(r.gbh / hoursSoFar), unit: "GB" },
+            { label: "Billed", value: round2(r.usd), unit: "USD" },
+          ],
+        })),
     };
   } catch (err) {
     return { ...base, status: "error", message: "Could not read GitHub usage: " + failReason(err) };
@@ -197,6 +251,7 @@ export async function renderUsage(env: Env, f: Fetcher, now: Date): Promise<Prov
     checkedAt: now.toISOString(),
     meters: [],
     items: [],
+    rows: [],
     link: "https://dashboard.render.com/billing",
   };
   const token = env.RENDER_API_KEY;
@@ -211,38 +266,46 @@ export async function renderUsage(env: Env, f: Fetcher, now: Date): Promise<Prov
     return { ...base, status: "error", message: "Could not read Render services: " + failReason(err) };
   }
 
-  const items = services.map((s) => {
-    const plan = str(obj(s.serviceDetails).plan) || "—";
-    const suspended = str(s.suspended) === "suspended";
-    return {
-      name: str(s.name) || str(s.id),
-      detail: `${str(s.type) || "service"}, plan ${plan}${suspended ? ", SUSPENDED" : ""}`,
-    };
-  });
   const suspended = services.filter((s) => str(s.suspended) === "suspended").length;
 
-  // Outbound bandwidth since the 1st of the month, all services together.
-  let bandwidthGb: number | null = null;
-  let bwNote = "All services together. Render's free amount is per workspace; check its Billing page if it looks off.";
-  const ids = services.map((s) => str(s.id)).filter(Boolean);
-  if (ids.length) {
-    const q = new URLSearchParams();
-    for (const id of ids) q.append("resource", id);
-    q.set("startTime", monthStart(now).toISOString());
-    q.set("endTime", now.toISOString());
-    try {
-      const body = await getJson(f, `https://api.render.com/v1/metrics/bandwidth?${q}`, headers);
-      const series = Array.isArray(body) ? body : arr(obj(body).data);
-      let gb = 0;
-      for (const s of series.map(obj)) {
-        const total = arr(s.values).reduce<number>((sum, v) => sum + num(obj(v).value), 0);
-        gb += toGb(total, str(s.unit));
+  // Outbound bandwidth since the 1st of the month, asked one service at a time
+  // so it can be shown per app.
+  const q = new URLSearchParams({ startTime: monthStart(now).toISOString(), endTime: now.toISOString() });
+  let bwFailed: string | null = null;
+  const rows: UsageRow[] = [];
+  let totalGb = 0;
+  for (const s of services.slice(0, 30)) {
+    const id = str(s.id);
+    const name = str(s.name) || id;
+    const plan = str(obj(s.serviceDetails).plan);
+    const note = [plan && `plan ${plan}`, str(s.suspended) === "suspended" && "SUSPENDED"].filter(Boolean).join(", ");
+    let gb: number | null = null;
+    if (id && !bwFailed) {
+      try {
+        const body = await getJson(f, `https://api.render.com/v1/metrics/bandwidth?resource=${encodeURIComponent(id)}&${q}`, headers);
+        const series = Array.isArray(body) ? body : arr(obj(body).data);
+        gb = 0;
+        for (const sr of series.map(obj)) {
+          const total = arr(sr.values).reduce<number>((sum, v) => sum + num(obj(v).value), 0);
+          gb += toGb(total, str(sr.unit));
+        }
+        gb = Math.round(gb * 100) / 100;
+        totalGb += gb;
+      } catch (err) {
+        bwFailed = failReason(err);
       }
-      bandwidthGb = Math.round(gb * 100) / 100;
-    } catch (err) {
-      bwNote = "Could not read bandwidth: " + failReason(err);
     }
+    rows.push({
+      name,
+      app: appFor(name),
+      metrics: gb === null ? [] : [{ label: "Bandwidth out", value: gb, unit: "GB" }],
+      note: note || undefined,
+    });
   }
+  const bandwidthGb = bwFailed || !rows.length ? null : Math.round(totalGb * 100) / 100;
+  const bwNote = bwFailed
+    ? "Could not read bandwidth: " + bwFailed
+    : "All services together. Render's free amount is per workspace; check its Billing page if it looks off.";
 
   return {
     ...base,
@@ -256,8 +319,8 @@ export async function renderUsage(env: Env, f: Fetcher, now: Date): Promise<Prov
         unit: suspended ? `services, ${suspended} suspended` : "services",
       },
     ],
-    items,
-    message: `Render does not share free instance hours (${FREE.renderInstanceHours} a month) or build minutes (${FREE.renderBuildMinutes} a month) through its API; open Billing to see them.`,
+    rows,
+    message: `Render does not share free instance hours (${FREE.renderInstanceHours} a month) or build minutes (${FREE.renderBuildMinutes} a month) through its API; open Billing to see them. They cannot be split by app.`,
   };
 }
 
@@ -280,6 +343,7 @@ export async function flyUsage(env: Env, f: Fetcher, now: Date): Promise<Provide
     checkedAt: now.toISOString(),
     meters: [],
     items: [],
+    rows: [],
     link: `https://fly.io/dashboard/${encodeURIComponent(org)}/billing`,
   };
   const token = env.FLY_API_TOKEN;
@@ -294,12 +358,13 @@ export async function flyUsage(env: Env, f: Fetcher, now: Date): Promise<Provide
     let running = 0;
     let alwaysOn = 0;
     let runningNow = 0;
-    const items: UsageItem[] = [];
+    const rows: UsageRow[] = [];
     for (const app of apps.slice(0, 20)) {
       const name = str(app.name);
       if (!name) continue;
       const machines = arr(await getJson(f, `${api}/apps/${encodeURIComponent(name)}/machines`, headers)).map(obj);
       let appRunning = 0;
+      let appCost = 0;
       for (const m of machines) {
         const price = flyMachineMonthly(obj(obj(m.config).guest), str(m.region));
         total++;
@@ -308,9 +373,17 @@ export async function flyUsage(env: Env, f: Fetcher, now: Date): Promise<Provide
           running++;
           appRunning++;
           runningNow += price;
+          appCost += price;
         }
       }
-      items.push({ name, detail: `${machines.length} machine(s), ${appRunning} running now` });
+      rows.push({
+        name,
+        app: appFor(name),
+        metrics: [
+          { label: "Machines running", value: appRunning, unit: `of ${machines.length}` },
+          { label: "Cost if they stay on", value: Math.round(appCost * 100) / 100, unit: "USD/month", estimate: true },
+        ],
+      });
     }
     const round = (n: number) => Math.round(n * 100) / 100;
     return {
@@ -333,7 +406,7 @@ export async function flyUsage(env: Env, f: Fetcher, now: Date): Promise<Provide
           estimate: true,
         },
       ],
-      items,
+      rows,
       message:
         "Fly has no API for the bill itself, so secval works it out from machine sizes and Fly's price list (estimate). Machines that stop when idle cost less. Volumes and data transfer are not included.",
     };
@@ -351,11 +424,13 @@ export function backblazeUsage(now: Date): ProviderUsage {
     status: "info",
     checkedAt: now.toISOString(),
     meters: [],
+    rows: [],
     items: [
       { name: "Storage", detail: "10 GB free" },
       { name: "List calls (class C)", detail: "2,500 free a day, resets 00:00 UTC" },
       { name: "Read calls (class B)", detail: "2,500 free a day" },
     ],
+    noSplit: "Backblaze cannot be split by app: it has no usage API, and secval's bucket holds only secval's backup.",
     message:
       "Backblaze has no API that reports these counters, so secval cannot show them. Its Caps & Alerts page shows today's use and can e-mail you before a cap is hit.",
     link: "https://secure.backblaze.com/b2_caps_alerts.htm",
@@ -363,6 +438,23 @@ export function backblazeUsage(now: Date): ProviderUsage {
 }
 
 // --- All providers, cached -------------------------------------------------------
+
+export interface AppUsage {
+  app: string;
+  /** One line per repo / service / Fly app, with the provider it is on. */
+  lines: (UsageRow & { provider: string })[];
+}
+
+/** Every app (in the usual order, "other" last) with its rows from all providers. */
+export function groupByApp(providers: ProviderUsage[]): AppUsage[] {
+  const keys = [...APPS.map((a) => a.key), "other"];
+  return keys
+    .map((app) => ({
+      app,
+      lines: providers.flatMap((p) => p.rows.filter((r) => r.app === app).map((r) => ({ ...r, provider: p.name }))),
+    }))
+    .filter((a) => a.app !== "other" || a.lines.length);
+}
 
 /** Results are kept this long so opening the tab does not call the APIs each time. */
 export const USAGE_CACHE_MS = 15 * 60_000;
@@ -373,7 +465,7 @@ let cache: { at: number; data: ProviderUsage[] } | null = null;
 
 export async function allUsage(
   opts: { env?: Env; fetcher?: Fetcher; now?: Date; refresh?: boolean } = {},
-): Promise<{ providers: ProviderUsage[]; cachedAt: string }> {
+): Promise<{ providers: ProviderUsage[]; byApp: AppUsage[]; cachedAt: string }> {
   const now = opts.now ?? new Date();
   const age = cache ? now.getTime() - cache.at : Infinity;
   const fresh = age < (opts.refresh ? USAGE_MIN_REFRESH_MS : USAGE_CACHE_MS);
@@ -388,7 +480,7 @@ export async function allUsage(
     ]);
     cache = { at: now.getTime(), data };
   }
-  return { providers: cache.data, cachedAt: new Date(cache.at).toISOString() };
+  return { providers: cache.data, byApp: groupByApp(cache.data), cachedAt: new Date(cache.at).toISOString() };
 }
 
 /** For tests: forget cached results. */

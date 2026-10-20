@@ -4,6 +4,7 @@ import { openDb } from "../server/db.js";
 import { createApp } from "../server/app.js";
 import {
   allUsage,
+  appFor,
   clearUsageCache,
   flyMachineMonthly,
   flyUsage,
@@ -59,7 +60,9 @@ describe("usage counters", () => {
     expect(g.meters[0]).toMatchObject({ used: 1900, limit: 2000, unit: "min" });
     expect(g.meters[1]!.used).toBe(2.28); // 1068 GB-hours over 468 hours so far
     expect(g.meters[2]).toMatchObject({ used: 1.6, unit: "USD" });
-    expect(g.items[0]).toEqual({ name: "1903978-prog/compplan", detail: "1800 min" });
+    expect(g.rows[0]).toMatchObject({ name: "1903978-prog/compplan", app: "compplan" });
+    expect(g.rows[0]!.metrics[0]).toMatchObject({ value: 1800, unit: "min" });
+    expect(g.rows.find((r) => r.app === "nexus")!.metrics[2]).toMatchObject({ value: 1.6, unit: "USD" });
   });
 
   it("never passes the token or the provider's error text on", async () => {
@@ -76,19 +79,20 @@ describe("usage counters", () => {
         { cursor: "a", service: { id: "srv-1", name: "secval", type: "web_service", suspended: "not_suspended", serviceDetails: { plan: "free" } } },
         { cursor: "b", service: { id: "srv-2", name: "compplan", type: "web_service", suspended: "suspended", serviceDetails: { plan: "free" } } },
       ],
-      "https://api.render.com/v1/metrics/bandwidth": [
-        { labels: [{ field: "resource", value: "srv-1" }], unit: "mb", values: [{ timestamp: "t", value: 1500 }, { timestamp: "t", value: 500 }] },
-        { labels: [{ field: "resource", value: "srv-2" }], unit: "mb", values: [{ timestamp: "t", value: 2000 }] },
+      "https://api.render.com/v1/metrics/bandwidth?resource=srv-1": [
+        { unit: "mb", values: [{ timestamp: "t", value: 1500 }, { timestamp: "t", value: 500 }] },
       ],
+      "https://api.render.com/v1/metrics/bandwidth?resource=srv-2": { data: [{ unit: "mb", values: [{ value: 2000 }] }] },
     });
     const r = await renderUsage({ RENDER_API_KEY: "rnd_secret" }, f, NOW);
     expect(r.status).toBe("ok");
     expect(r.meters[0]).toMatchObject({ used: 4, limit: 5, unit: "GB" });
     expect(r.meters[1]).toMatchObject({ used: 2, unit: "services, 1 suspended" });
-    expect(r.items[1]!.detail).toContain("SUSPENDED");
-    const bw = calls.find((c) => c.url.includes("/metrics/bandwidth"))!.url;
-    expect(bw).toContain("resource=srv-1&resource=srv-2");
-    expect(bw).toContain("startTime=2026-10-01T00%3A00%3A00.000Z");
+    expect(r.rows.map((x) => [x.app, x.metrics[0]!.value])).toEqual([["secval", 2], ["compplan", 2]]);
+    expect(r.rows[1]!.note).toContain("SUSPENDED");
+    const bw = calls.filter((c) => c.url.includes("/metrics/bandwidth"));
+    expect(bw).toHaveLength(2);
+    expect(bw[0]!.url).toContain("startTime=2026-10-01T00%3A00%3A00.000Z");
   });
 
   it("still shows Render services when bandwidth cannot be read", async () => {
@@ -113,12 +117,38 @@ describe("usage counters", () => {
     expect(fl.meters[0]).toMatchObject({ used: 1, limit: null, unit: "of 2 machines" });
     expect(fl.meters[1]).toMatchObject({ used: 6.69, estimate: true });
     expect(fl.meters[2]!.used).toBe(13.38);
+    expect(fl.rows[0]).toMatchObject({ name: "nexus-eendigo", app: "nexus" });
+    expect(fl.rows[0]!.metrics[1]).toMatchObject({ value: 6.69, estimate: true });
   });
 
   it("prices Fly machines close to Fly's own list", () => {
     expect(flyMachineMonthly({ cpu_kind: "shared", cpus: 1, memory_mb: 256 }, "iad")).toBeCloseTo(2.19, 1);
     expect(flyMachineMonthly({ cpu_kind: "shared", cpus: 2, memory_mb: 2048 }, "iad")).toBeCloseTo(13.39, 1);
     expect(flyMachineMonthly({ cpu_kind: "performance", cpus: 1, memory_mb: 2048 }, "iad")).toBeCloseTo(33, 0);
+  });
+
+  it("groups usage by app across providers", async () => {
+    const { f } = fake({
+      "https://api.github.com/": { usageItems: [
+        { product: "actions", unitType: "Minutes", quantity: 50, repositoryName: "1903978-prog/anti-hacker" },
+        { product: "actions", unitType: "Minutes", quantity: 9, repositoryName: "1903978-prog/sandbox" },
+      ] },
+      "https://api.render.com/v1/services": [{ service: { id: "srv-1", name: "secval" } }],
+      "https://api.render.com/v1/metrics/bandwidth": [{ unit: "mb", values: [{ value: 300 }] }],
+    });
+    const { byApp } = await allUsage({ env: { GITHUB_USAGE_TOKEN: "t", RENDER_API_KEY: "k" }, fetcher: f, now: NOW });
+    expect(byApp.map((a) => a.app)).toEqual(["compplan", "lm-op-model", "nexus", "10bonds", "secval", "eendigo", "other"]);
+    const secval = byApp.find((a) => a.app === "secval")!;
+    expect(secval.lines.map((l) => [l.provider, l.name])).toEqual([["GitHub", "1903978-prog/anti-hacker"], ["Render", "secval"]]);
+    expect(byApp.find((a) => a.app === "other")!.lines[0]!.name).toBe("1903978-prog/sandbox");
+  });
+
+  it("matches provider names to apps", () => {
+    expect(appFor("nexus-eendigo")).toBe("nexus");
+    expect(appFor("1903978-prog/anti-hacker")).toBe("secval");
+    expect(appFor("lm-op-model-staging")).toBe("lm-op-model");
+    expect(appFor("10bonds")).toBe("10bonds");
+    expect(appFor("something-else")).toBe("other");
   });
 
   it("caches results and limits manual refreshes", async () => {

@@ -605,18 +605,38 @@ function meterHtml(m) {
   return `<div class="umeter"><div class="ul"><span>${esc(m.label)}${tag}</span><span class="uv ${cls}">${value}</span></div>${bar}${m.note ? `<div class="note">${esc(m.note)}</div>` : ""}</div>`;
 }
 
+const lineMetric = (m) =>
+  `<b>${esc(m.unit.startsWith("USD") ? "$" + Number(m.value).toFixed(2) + m.unit.slice(3) : fmt(m.value, m.unit))}</b> ${esc(m.label.toLowerCase())}${m.estimate ? ' <span class="tag estimate">E</span>' : ""}`;
+
+function appCardHtml(a, providers) {
+  const off = providers.filter((p) => p.status === "not-connected" || p.status === "error").map((p) => p.name);
+  const lines = a.lines.length
+    ? a.lines
+        .map(
+          (l) => `<div class="uline"><div class="un">${esc(l.provider)}: ${esc(l.name)}${l.note ? ` <span class="muted">(${esc(l.note)})</span>` : ""}</div>
+          <div class="um">${l.metrics.length ? l.metrics.map(lineMetric).join(" · ") : "no numbers yet"}</div></div>`,
+        )
+        .join("")
+    : `<div class="note">Nothing found for this app${off.length ? ` (not connected yet: ${esc(off.join(", "))})` : " on GitHub, Render or Fly"}.</div>`;
+  return `<div class="uprov"><h3>${esc(a.app)}</h3>${lines}</div>`;
+}
+
 async function refreshUsage(force) {
   const { ok, status, body } = await api("/api/usage" + (force ? "?refresh=1" : ""));
   if (!ok) {
-    el("usageList").textContent = status === 401 ? NEED_TOKEN : "Could not load usage: " + (body.error || status);
+    const msg = status === 401 ? NEED_TOKEN : "Could not load usage: " + (body.error || status);
+    el("usageApps").textContent = msg;
+    el("usageList").textContent = msg;
     return;
   }
+  el("usageApps").innerHTML = `<div class="ugrid">${body.byApp.map((a) => appCardHtml(a, body.providers)).join("")}</div>`;
   el("usageList").innerHTML = `<div class="ugrid">${body.providers
     .map(
       (p) => `<div class="uprov">
         <h3>${esc(p.name)} ${STATUS_BADGE[p.status] || ""}</h3>
         ${p.meters.map(meterHtml).join("")}
         ${p.message ? `<div class="note">${esc(p.message)}</div>` : ""}
+        ${p.noSplit ? `<div class="note">${esc(p.noSplit)}</div>` : ""}
         ${p.items.length ? `<ul>${p.items.map((i) => `<li>${esc(i.name)}: ${esc(i.detail)}</li>`).join("")}</ul>` : ""}
         <div style="margin-top:8px"><a href="${esc(p.link)}" target="_blank" rel="noopener noreferrer">Open ${esc(p.name)} billing page</a></div>
       </div>`,
