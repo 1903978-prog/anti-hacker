@@ -425,6 +425,21 @@ const GEO_RULES = rulesNote("How the GEO score is worked out", [
   "Kept fresh: content updated within the last 12 months.",
 ]);
 
+// The Secrets in Code checklist (same as reports/secrets-checklist.md).
+const SECRETS_RULES = `<details class="note"><summary>How the Secrets score is worked out</summary>
+<p>Ten rules, 10 points each (10 = done, 5 = partly, 0 = missing). Rated from the app's code and its full history, scanned with gitleaks. It shows the risk if the code were made public.</p><ol>${[
+  "No real password, key or token in today's code.",
+  "No real password, key or token anywhere in the code's history.",
+  "Settings files (.env) and key files are ignored, so they can't be added by mistake.",
+  "No settings or key file was ever added to the code.",
+  "The app reads its passwords and keys from the host's settings.",
+  "No secrets in notes, reports or docs kept with the code.",
+  "Tests use obvious fake values, never real ones.",
+  "Every change is scanned for secrets automatically.",
+  "Any key that ever leaked has been replaced (10 if none leaked).",
+  "Automatic jobs (GitHub workflows) take secrets from GitHub's secret store only.",
+].map((r) => `<li>${r}</li>`).join("")}</ol></details>`;
+
 function renderApp(a) {
   const empty = !a.areas.some((ar) => ar.measured || ar.estimate);
   const areas = empty
@@ -461,14 +476,14 @@ function renderApp(a) {
       ${a.proven ? "" : '<span class="badge">unproven: no measured checks</span>'}
       <span class="muted">${a.reports} report(s) pasted</span>
     </div>
-    ${grid}${other}${DB_RULES}${a.areas.some((ar) => ar.key === "seo" && ar.applies) ? SEO_RULES + GEO_RULES : ""}
+    ${grid}${other}${DB_RULES}${a.areas.some((ar) => ar.key === "secrets" && ar.applies) ? SECRETS_RULES : ""}${a.areas.some((ar) => ar.key === "seo" && ar.applies) ? SEO_RULES + GEO_RULES : ""}
     <h3 class="sub3">Infrastructure</h3>${infra}
   </div>`;
 }
 
 // Short column names; the full criterion name is the column's tooltip.
 const SHORT = {
-  security: "Security", privacy: "Privacy", integrity: "Integrity", persistence: "Backup & recovery",
+  security: "Security", secrets: "Secrets", privacy: "Privacy", integrity: "Integrity", persistence: "Backup & recovery",
   database: "Database", ux: "UX", performance: "Speed", reliability: "Reliability",
   code: "Code", deploy: "Deploy & ops", seo: "SEO", geo: "GEO",
 };

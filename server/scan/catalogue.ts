@@ -264,6 +264,7 @@ export const HEALTH_PASS_SCORE = 85;
 /** What to work on when a criterion scores below green. */
 export const AREA_ADVICE: Record<(typeof AREAS)[number]["key"], string> = {
   security: "Fix the failed security checks above, require login on every private page, and limit wrong-password tries.",
+  secrets: "Keep passwords and keys out of the code and its history, load them from the host's settings, scan every change for secrets, and replace any key that ever leaked (see reports/secrets-checklist.md).",
   privacy: "Keep secrets out of the code, encrypt backups with separate keys, and store only the personal data you need.",
   integrity: "Add database rules (unique, not-null, foreign keys) and tests that check the data stays consistent.",
   persistence: "Back up the database daily, test a restore regularly, and make sure files users upload are backed up too.",

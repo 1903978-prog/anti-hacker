@@ -109,7 +109,7 @@ describe("pasted reports", () => {
     const sec = app.areas.find((a) => a.key === "security")!;
     expect(sec.measured).toBeNull();
     expect(sec.estimate).toMatchObject({ score: 82, source: "estimate" });
-    expect(app.areas).toHaveLength(12);
+    expect(app.areas).toHaveLength(13);
     expect(app.areas.find((a) => a.key === "seo")).toMatchObject({ applies: false, estimate: null });
     expect(app.areas.find((a) => a.key === "privacy")!.estimate).toBeNull();
     expect(app.overall).toBe(79);
@@ -234,6 +234,29 @@ describe("report files", () => {
     expect(een.overall).toBe(80); // SEO and GEO not counted
     const comp = dashboard(db).find((a) => a.host === "compplan.onrender.com")!;
     expect(comp.areas.find((a) => a.key === "seo")).toMatchObject({ applies: false, estimate: null });
+  });
+
+  it("rates Secrets in Code for apps with a code repository, counted in the overall", () => {
+    const db = freshDb();
+    const dir = mkdtempSync(join(tmpdir(), "reports-"));
+    const report = (n: number) =>
+      [
+        "| # | Criterion | Score | Reason |",
+        "|---|---|---|---|",
+        "| 1 | Security & Access Control | 80 | headers |",
+        `| 2 | Secrets in Code (passwords & keys) | ${n} | 1 No secrets in code: 10/10 (clean); 2 History: 5/10 (one key) |`,
+      ].join("\n");
+    writeFileSync(join(dir, "compplan-health.md"), report(60));
+    writeFileSync(join(dir, "eendigo-health.md"), report(90));
+    loadReportFiles(db, dir);
+    const comp = dashboard(db).find((a) => a.host === "compplan.onrender.com")!;
+    const s = comp.areas.find((a) => a.key === "secrets")!;
+    expect(s).toMatchObject({ applies: true, estimate: { score: 60, source: "estimate" } });
+    expect(s.estimate!.evidence).toHaveLength(3); // source line + one per rule
+    expect(comp.overall).toBe(70);
+    const een = dashboard(db).find((a) => a.host === "eendigo.com")!;
+    expect(een.areas.find((a) => a.key === "secrets")).toMatchObject({ applies: false, estimate: null });
+    expect(een.overall).toBe(80);
   });
 
   it("never checks a report-only app", async () => {
