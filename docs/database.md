@@ -75,5 +75,5 @@ Findings hold only the fact that a weakness exists on one of Livio's own sites, 
 | Service | What it receives | Why | Data-processing terms |
 |---|---|---|---|
 | Resend | each alert: the alert address, the sender, finding summaries (level, site, title, detail) | sending new-finding alerts | https://resend.com/legal/dpa |
-| Backblaze B2 | a continuous copy of the whole database via Litestream (`litestream.yml`): allowlist, audit log, scans, findings, health data; 7 days of history | backup and restore | https://www.backblaze.com/company/policy/dpa-for-eea-eu-residents |
+| Backblaze B2 | a continuous copy of the whole database via Litestream (`litestream.yml`): allowlist, audit log, scans, findings, health data; 3 days of history | backup and restore | https://www.backblaze.com/company/policy/dpa-for-eea-eu-residents |
 | Render | runs the server: holds the environment (alert address, keys), sees request IPs, keeps its own request and app logs | hosting | https://render.com/dpa |

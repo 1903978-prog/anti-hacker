@@ -11,7 +11,12 @@ dbs:
         access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
         secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
         force-path-style: true
-        # Keep 7 days of history (default is 1) and take a fresh full copy
-        # daily, so a mistake can be rolled back a week. Tiny store; still free.
-        retention: 168h
+        # Keep 3 days of history and take a fresh full copy daily, so a mistake
+        # can be rolled back 3 days. Every restart (deploy, free-tier sleep)
+        # starts a new "generation", and Backblaze's free 2,500 daily list
+        # calls (Class C) are spent per generation kept: 7 days of them plus an
+        # hourly clean-up check used the whole allowance (20/10/2026). So keep
+        # fewer days and run the clean-up once a day. Tiny store; still free.
+        retention: 72h
+        retention-check-interval: 24h
         snapshot-interval: 24h
