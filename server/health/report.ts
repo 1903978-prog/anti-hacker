@@ -23,6 +23,7 @@ export function dashboardHosts(db: DB): Array<{ host: string; proven: boolean }>
 export const AREAS = [
   { key: "security", label: "Security & Access Control" },
   { key: "secrets", label: "Secrets in Code (passwords & keys)" },
+  { key: "personal", label: "Personal Data in Code" },
   { key: "privacy", label: "Data Protection & Privacy" },
   { key: "integrity", label: "Data Integrity & Consistency" },
   { key: "persistence", label: "Data Persistence & Recovery" },
@@ -48,6 +49,7 @@ export const SCOPED_AREAS: Partial<Record<AreaKey, readonly string[]>> = {
   geo: ["10bonds", "eendigo"],
   // Livio, 20/10/2026: rated from each app's code repository; eendigo has none.
   secrets: ["compplan", "lm-op-model", "nexus-eendigo", "10bonds", "secval"],
+  personal: ["compplan", "lm-op-model", "nexus-eendigo", "10bonds", "secval"],
 };
 
 /** Whether an area is rated for this app (matched on the first part of its address). */
@@ -76,6 +78,8 @@ export function classifyArea(name: string): AreaKey | "other" {
   if (/\bgeo\b|generative engine|ai (search|visibility|assistant|answer)/.test(n)) return "geo";
   if (/\bseo\b|search engine/.test(n)) return "seo";
   if (/secret|password|credential|api key/.test(n)) return "secrets";
+  // Before privacy and code: the name mentions both.
+  if (/personal data in (the )?(code|repo)/.test(n)) return "personal";
   // Only a rated database line ("Database Design: 70"); a plain "Database:" is an infra fact.
   if (/database (design|quality|structure|practice)|data model|schema design/.test(n)) return "database";
   if (/privacy|protection/.test(n)) return "privacy";
