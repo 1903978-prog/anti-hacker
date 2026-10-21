@@ -8,6 +8,7 @@ import {
   clearUsageCache,
   flyMachineMonthly,
   flyUsage,
+  neonUsage,
   githubUsage,
   renderUsage,
   type Fetcher,
@@ -37,6 +38,7 @@ describe("usage counters", () => {
       ["github", "not-connected"],
       ["render", "not-connected"],
       ["fly", "not-connected"],
+      ["neon", "not-connected"],
       ["backblaze", "info"],
     ]);
     expect(calls).toHaveLength(0);
@@ -119,6 +121,30 @@ describe("usage counters", () => {
     expect(fl.meters[2]!.used).toBe(13.38);
     expect(fl.rows[0]).toMatchObject({ name: "nexus-eendigo", app: "nexus" });
     expect(fl.rows[0]!.metrics[1]).toMatchObject({ value: 6.69, estimate: true });
+  });
+
+  it("shows Neon compute and data out per project, tagged by app", async () => {
+    const { f, calls } = fake({
+      "https://console.neon.tech/api/v2/projects?": { projects: [{ id: "p-1", name: "10bonds-prod" }, { id: "p-2", name: "atlas-main" }] },
+      "https://console.neon.tech/api/v2/projects/p-1": { project: { compute_time_seconds: 7200, data_transfer_bytes: 2_500_000_000 } },
+      "https://console.neon.tech/api/v2/projects/p-2": { project: { compute_time_seconds: 36000, data_transfer_bytes: 100_000_000 } },
+    });
+    const n = await neonUsage({ NEON_API_KEY: "napi_secret", NEON_PROJECT_APPS: "atlas-main=compplan" }, f, NOW);
+    expect(n.status).toBe("ok");
+    expect(calls[0]!.headers.authorization).toBe("Bearer napi_secret");
+    expect(n.rows.map((r) => [r.app, r.metrics[0]!.value, r.metrics[1]!.value])).toEqual([
+      ["10bonds", 2, 2.5],
+      ["compplan", 10, 0.1],
+    ]);
+    expect(n.meters[1]).toMatchObject({ used: 12, unit: "hours" });
+    expect(JSON.stringify(n)).not.toContain("napi_secret");
+  });
+
+  it("reports a refused Neon key plainly", async () => {
+    const { f } = fake({ "https://console.neon.tech/": {} }, 403);
+    const n = await neonUsage({ NEON_API_KEY: "k" }, f, NOW);
+    expect(n.status).toBe("error");
+    expect(n.message).toMatch(/refused \(HTTP 403\)/);
   });
 
   it("prices Fly machines close to Fly's own list", () => {

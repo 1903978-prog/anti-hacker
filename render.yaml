@@ -46,6 +46,8 @@ services:
         sync: false
       - key: FLY_API_TOKEN
         sync: false
+      - key: NEON_API_KEY
+        sync: false
     # To make data durable later, upgrade off free and uncomment:
     #   envVars: [{ key: DATA_DIR, value: /var/data }]
     #   disk: { name: secval-data, mountPath: /var/data, sizeGB: 1 }

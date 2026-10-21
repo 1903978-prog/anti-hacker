@@ -61,13 +61,13 @@ export const APPS: { key: string; aliases: string[] }[] = [
 ];
 
 /** Which app a repo, service or Fly app name belongs to ("other" if none). */
-export function appFor(name: string): string {
+export function appFor(name: string, overrides: Record<string, string> = {}): string {
   const n = name.toLowerCase().replace(/^[^/]+\//, "");
-  return APPS.find((a) => a.aliases.some((x) => n.includes(x)))?.key ?? "other";
+  return overrides[n] ?? APPS.find((a) => a.aliases.some((x) => n.includes(x)))?.key ?? "other";
 }
 
 export interface ProviderUsage {
-  id: "github" | "render" | "fly" | "backblaze";
+  id: "github" | "render" | "fly" | "neon" | "backblaze";
   name: string;
   status: UsageStatus;
   checkedAt: string;
@@ -102,6 +102,8 @@ export const FREE = {
   renderBandwidthGb: 5, // Render Hobby workspace, per month
   renderBuildMinutes: 500,
   renderInstanceHours: 750,
+  neonComputeHours: 100, // Neon Free, per project per month
+  neonEgressGb: 5,
 };
 
 /** Fly machine prices (USD/month, always on, iad region), docs.fly.io/about/pricing. */
@@ -415,6 +417,77 @@ export async function flyUsage(env: Env, f: Fetcher, now: Date): Promise<Provide
   }
 }
 
+// --- Neon ---------------------------------------------------------------------
+
+/** "project name=app" pairs from NEON_PROJECT_APPS, for projects whose names do not say the app. */
+function parseOverrides(text: string | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const pair of (text ?? "").split(",")) {
+    const [k, v] = pair.split("=").map((x) => x.trim().toLowerCase());
+    if (k && v) out[k] = v;
+  }
+  return out;
+}
+
+export async function neonUsage(env: Env, f: Fetcher, now: Date): Promise<ProviderUsage> {
+  const base: ProviderUsage = {
+    id: "neon",
+    name: "Neon",
+    status: "not-connected",
+    checkedAt: now.toISOString(),
+    meters: [],
+    items: [],
+    rows: [],
+    link: "https://console.neon.tech/app/billing",
+  };
+  const token = env.NEON_API_KEY;
+  if (!token) return { ...base, message: "Not connected yet. Needs a Neon API key in NEON_API_KEY." };
+  const headers = { authorization: `Bearer ${token}`, accept: "application/json" };
+  const api = "https://console.neon.tech/api/v2";
+  const org = env.NEON_ORG_ID ? `&org_id=${encodeURIComponent(env.NEON_ORG_ID)}` : "";
+  const overrides = parseOverrides(env.NEON_PROJECT_APPS);
+
+  try {
+    const list = obj(await getJson(f, `${api}/projects?limit=100${org}`, headers));
+    const projects = arr(list.projects).map(obj).slice(0, 30);
+    const rows: UsageRow[] = [];
+    let totalHours = 0;
+    let totalGb = 0;
+    for (const p of projects) {
+      const id = str(p.id);
+      const name = str(p.name) || id;
+      // The list leaves out the month's totals; the project's own page has them.
+      const one = obj(obj(await getJson(f, `${api}/projects/${encodeURIComponent(id)}`, headers)).project);
+      const hours = Math.round((num(one.compute_time_seconds) / 3600) * 100) / 100;
+      const gb = Math.round((num(one.data_transfer_bytes) / 1e9) * 100) / 100;
+      totalHours += hours;
+      totalGb += gb;
+      rows.push({
+        name,
+        app: appFor(name, overrides),
+        metrics: [
+          { label: "Compute", value: hours, unit: "hours", estimate: true },
+          { label: "Data out", value: gb, unit: "GB" },
+        ],
+        note: `free: ${FREE.neonComputeHours} compute hours and ${FREE.neonEgressGb} GB out per project`,
+      });
+    }
+    return {
+      ...base,
+      status: "ok",
+      meters: [
+        { label: "Projects", used: projects.length, limit: null, unit: "projects" },
+        { label: "Compute this month, all projects", used: Math.round(totalHours * 100) / 100, limit: null, unit: "hours", estimate: true },
+        { label: "Data out this month, all projects", used: Math.round(totalGb * 100) / 100, limit: null, unit: "GB" },
+      ],
+      rows,
+      message: `Neon's free allowance is per project (${FREE.neonComputeHours} compute hours, ${FREE.neonEgressGb} GB out), so each row shows its own use. Compute hours are Neon's compute seconds divided by 3600, so they are an estimate.`,
+    };
+  } catch (err) {
+    return { ...base, status: "error", message: "Could not read Neon usage: " + failReason(err) };
+  }
+}
+
 // --- Backblaze -------------------------------------------------------------------
 
 export function backblazeUsage(now: Date): ProviderUsage {
@@ -476,6 +549,7 @@ export async function allUsage(
       githubUsage(env, f, now),
       renderUsage(env, f, now),
       flyUsage(env, f, now),
+      neonUsage(env, f, now),
       Promise.resolve(backblazeUsage(now)),
     ]);
     cache = { at: now.getTime(), data };
