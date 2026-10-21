@@ -5,7 +5,7 @@ import { dashboardHosts, saveReport } from "./report.js";
 
 /**
  * Loads the health reports kept in the repo's reports/ folder (one
- * "<app>-health.md" per app, plus "<app>-seo.md" for the SEO and GEO ratings) so the dashboard shows them without anyone
+ * "<app>-health.md" per app, plus "<app>-seo.md" for the SEO and GEO ratings and "<app>-secrets.md" for Secrets in Code) so the dashboard shows them without anyone
  * pasting them. Each is stored as an estimate, like a pasted report. A
  * report already loaded (same app, same text) is skipped, so restarts do
  * not duplicate it.
@@ -17,10 +17,10 @@ export function loadReportFiles(
   if (!existsSync(dir)) return [];
   const hosts = dashboardHosts(db);
   return readdirSync(dir)
-    .filter((f) => /-(health|seo)\.md$/.test(f))
+    .filter((f) => /-(health|seo|secrets)\.md$/.test(f))
     .sort()
     .map((file) => {
-      const name = file.replace(/-(health|seo)\.md$/, "");
+      const name = file.replace(/-(health|seo|secrets)\.md$/, "");
       // Several rows can share a name (10bonds.com and 10bonds.fly.dev): an
       // exact host wins, then a proven row (the live app), then any match.
       const matches = hosts.filter((h) => h.host === name || h.host.split(".")[0]!.startsWith(name));

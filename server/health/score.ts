@@ -45,7 +45,7 @@ export interface AppHealth {
 
 const DAY = 24 * 60 * 60_000;
 /** Areas rated from a 10-rule checklist; their evidence lists one rating per rule. */
-const CHECKLIST_AREAS = new Set(["database", "seo", "geo"]);
+const CHECKLIST_AREAS = new Set(["database", "secrets", "seo", "geo"]);
 /** Areas shown in the table but not counted in the overall score. */
 const OUTSIDE_OVERALL = new Set(["seo", "geo"]);
 const PENALTY = { high: 15, medium: 7, low: 3, info: 0 } as const;
