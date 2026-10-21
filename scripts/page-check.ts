@@ -15,7 +15,7 @@ import { createApp } from "../server/app.js";
 import { loadReportFiles } from "../server/health/seed.js";
 
 const TOKEN = "page-check-token";
-const TABS = ["health", "scans", "tests", "settings"];
+const TABS = ["health", "scans", "tests", "usage", "settings"];
 const WIDTHS = [1440, 390, 360];
 const axeSource = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
 

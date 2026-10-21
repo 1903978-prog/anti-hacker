@@ -39,6 +39,13 @@ services:
         sync: false
       - key: ALERT_TO
         value: livio.moretti@eendigo.com
+      # Usage tab (read-only tokens; each tile says "not connected" until set).
+      - key: GITHUB_USAGE_TOKEN
+        sync: false
+      - key: RENDER_API_KEY
+        sync: false
+      - key: FLY_API_TOKEN
+        sync: false
     # To make data durable later, upgrade off free and uncomment:
     #   envVars: [{ key: DATA_DIR, value: /var/data }]
     #   disk: { name: secval-data, mountPath: /var/data, sizeGB: 1 }

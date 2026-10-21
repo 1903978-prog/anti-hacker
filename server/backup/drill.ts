@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import Database from "better-sqlite3";
 import type { DB } from "../db.js";
 import { appendAudit } from "../audit/log.js";
@@ -34,11 +34,28 @@ export function backupMode(): BackupMode {
   return m === "on" || m === "restore-failed" ? m : "off";
 }
 
+/**
+ * The generation Litestream is writing now (it keeps the name next to the
+ * store). Restoring only that one costs a handful of Backblaze list calls;
+ * without it Litestream lists every generation of the last days, which used
+ * up the free daily Class C allowance.
+ */
+export function currentGeneration(dbPath: string): string | null {
+  try {
+    const name = readFileSync(join(dirname(dbPath), `.${basename(dbPath)}-litestream`, "generation"), "utf8").trim();
+    return /^[0-9a-f]{16}$/.test(name) ? name : null;
+  } catch {
+    return null;
+  }
+}
+
 const litestreamRestore: RestoreFn = (outPath) =>
   new Promise((resolve, reject) => {
+    const dbPath = process.env.SECVAL_DB_PATH ?? "";
+    const gen = currentGeneration(dbPath);
     execFile(
       "./bin/litestream",
-      ["restore", "-config", "litestream.yml", "-o", outPath, process.env.SECVAL_DB_PATH ?? ""],
+      ["restore", "-config", "litestream.yml", ...(gen ? ["-generation", gen] : []), "-o", outPath, dbPath],
       { timeout: 120_000 },
       (err, _out, stderr) => (err ? reject(new Error(stderr.trim() || err.message)) : resolve()),
     );
