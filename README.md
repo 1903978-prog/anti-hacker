@@ -88,7 +88,7 @@ finding counts as new once.
 
 `GET /api/usage` (and the **Usage** tab) shows this month's use of the free
 allowances: GitHub Actions minutes, storage and billed amount; Render
-bandwidth and services; Fly machines with an estimated monthly cost (Fly has
+bandwidth and services; Neon compute hours and data out per project; Fly machines with an estimated monthly cost (Fly has
 no billing API); Backblaze free caps with a link (Backblaze has no usage API).
 Only GET calls are made; results are kept 15 minutes. A provider without a
 token shows "not connected".
@@ -100,6 +100,9 @@ token shows "not connected".
 | `RENDER_API_KEY` | Render API key (Render has no read-only keys; secval only reads with it) |
 | `FLY_API_TOKEN` | read-only Fly org token (`fly tokens create readonly`) |
 | `FLY_ORG` | Fly organization (default `personal`) |
+| `NEON_API_KEY` | Neon API key (account settings, API keys); secval only reads with it |
+| `NEON_ORG_ID` | optional, only if the Neon projects are in an organization |
+| `NEON_PROJECT_APPS` | optional `project name=app,...` for Neon projects whose name does not say the app |
 
 ## Next (ideas)
 
