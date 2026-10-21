@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
 import { openDb } from "../server/db.js";
 import { freshDb } from "./helpers.js";
-import { backupStatus, getLastDrill, runRestoreDrill } from "../server/backup/drill.js";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { backupStatus, currentGeneration, getLastDrill, runRestoreDrill } from "../server/backup/drill.js";
 import { listAudit } from "../server/audit/log.js";
 
 afterEach(() => {
@@ -48,5 +51,18 @@ describe("restore drill", () => {
     process.env.SECVAL_BACKUP_MODE = "on";
     expect(backupStatus(db).healthy).toBe(true);
     expect(backupStatus(db, new Date(Date.now() + 3 * 86_400_000)).healthy).toBe(false); // stale
+  });
+});
+
+describe("current generation", () => {
+  it("reads the generation Litestream keeps next to the store", () => {
+    const dir = mkdtempSync(join(tmpdir(), "secval-gen-"));
+    const db = join(dir, "secval.sqlite");
+    expect(currentGeneration(db)).toBeNull();
+    mkdirSync(join(dir, ".secval.sqlite-litestream"));
+    writeFileSync(join(dir, ".secval.sqlite-litestream", "generation"), "0123456789abcdef\n");
+    expect(currentGeneration(db)).toBe("0123456789abcdef");
+    writeFileSync(join(dir, ".secval.sqlite-litestream", "generation"), "../../etc");
+    expect(currentGeneration(db)).toBeNull();
   });
 });
