@@ -29,7 +29,7 @@ describe("all-tests catalogue", () => {
   it("shows everything as not run before any scan", () => {
     const r = checkReport(freshDb(), HOST);
     expect(r.passed + r.failed).toBe(0);
-    expect(r.total).toBe(121); // 110 checks + 11 health criteria
+    expect(r.total).toBe(122); // 110 checks + 12 health criteria
   });
 
   it("a passive scan fills header/cookie/TLS checks; active-only ones stay not run", () => {
@@ -84,7 +84,7 @@ describe("all-tests catalogue", () => {
     expect(list.body).toContain(HOST);
     const one = await request(app).get("/api/tests/" + HOST).set(auth);
     expect(one.status).toBe(200);
-    expect(one.body.checks).toHaveLength(121);
+    expect(one.body.checks).toHaveLength(122);
     expect((await request(app).get("/api/tests/evil.example").set(auth)).status).toBe(400);
   });
 });

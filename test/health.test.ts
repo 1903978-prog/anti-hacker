@@ -109,7 +109,7 @@ describe("pasted reports", () => {
     const sec = app.areas.find((a) => a.key === "security")!;
     expect(sec.measured).toBeNull();
     expect(sec.estimate).toMatchObject({ score: 82, source: "estimate" });
-    expect(app.areas).toHaveLength(13);
+    expect(app.areas).toHaveLength(14);
     expect(app.areas.find((a) => a.key === "seo")).toMatchObject({ applies: false, estimate: null });
     expect(app.areas.find((a) => a.key === "privacy")!.estimate).toBeNull();
     expect(app.overall).toBe(79);
@@ -257,6 +257,30 @@ describe("report files", () => {
     const een = dashboard(db).find((a) => a.host === "eendigo.com")!;
     expect(een.areas.find((a) => a.key === "secrets")).toMatchObject({ applies: false, estimate: null });
     expect(een.overall).toBe(80);
+  });
+
+  it("rates Personal Data in Code apart from Privacy and Code, counted in the overall", () => {
+    const db = freshDb();
+    const dir = mkdtempSync(join(tmpdir(), "reports-"));
+    writeFileSync(
+      join(dir, "compplan-personal.md"),
+      [
+        "| Area | Score | Why |",
+        "|---|---|---|",
+        "| Personal Data in Code | ~40 (estimate) | 1 Money: 0/10 (seed file); 2 Health: 10/10 (none) |",
+      ].join("\n"),
+    );
+    writeFileSync(join(dir, "compplan-health.md"), "| # | Criterion | Score | Reason |\n|---|---|---|---|\n| 1 | Data Protection & Privacy | 80 | ok |\n| 2 | Code Quality | 60 | ok |");
+    loadReportFiles(db, dir);
+    const comp = dashboard(db).find((a) => a.host === "compplan.onrender.com")!;
+    const p = comp.areas.find((a) => a.key === "personal")!;
+    expect(p).toMatchObject({ applies: true, estimate: { score: 40, source: "estimate" } });
+    expect(p.estimate!.evidence).toHaveLength(3); // source line + one per rule
+    expect(comp.areas.find((a) => a.key === "privacy")!.estimate!.score).toBe(80);
+    expect(comp.areas.find((a) => a.key === "code")!.estimate!.score).toBe(60);
+    expect(comp.overall).toBe(60);
+    const een = dashboard(db).find((a) => a.host === "eendigo.com")!;
+    expect(een.areas.find((a) => a.key === "personal")).toMatchObject({ applies: false, estimate: null });
   });
 
   it("never checks a report-only app", async () => {

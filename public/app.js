@@ -441,6 +441,21 @@ const SECRETS_RULES = `<details class="note"><summary>How the Secrets score is w
   "Automatic jobs (GitHub workflows) take secrets from GitHub's secret store only.",
 ].map((r) => `<li>${r}</li>`).join("")}</ol></details>`;
 
+// The Personal Data in Code checklist (same as reports/personal-data-checklist.md).
+const PERSONAL_RULES = `<details class="note"><summary>How the Personal data score is worked out</summary>
+<p>Ten rules, 10 points each (10 = done, 5 = partly, 0 = missing). Rated from the app's code, its full history and GitHub's pull-request copies. It shows what personal data would be exposed if the code were made public. Values are never shown, only where they are.</p><ol>${[
+  "No real money data (balances, holdings, account numbers) in today's code.",
+  "No real health data in today's code.",
+  "No real names, emails, phones or addresses of people in today's code (beyond the owner's own alert address).",
+  "No ID data (tax code, date of birth, passport, IBAN) in today's code.",
+  "Real starting data lives only in the database, not in seed files.",
+  "Tests and examples use made-up people and numbers.",
+  "Notes files (CLAUDE.md, docs, reports) hold no personal details.",
+  "No personal data anywhere in the code's history.",
+  "No personal data in GitHub's pull-request copies (only GitHub Support can delete those).",
+  "Every change is checked for personal data automatically.",
+].map((r) => `<li>${r}</li>`).join("")}</ol></details>`;
+
 function renderApp(a) {
   const empty = !a.areas.some((ar) => ar.measured || ar.estimate);
   const areas = empty
@@ -477,14 +492,14 @@ function renderApp(a) {
       ${a.proven ? "" : '<span class="badge">unproven: no measured checks</span>'}
       <span class="muted">${a.reports} report(s) pasted</span>
     </div>
-    ${grid}${other}${DB_RULES}${a.areas.some((ar) => ar.key === "secrets" && ar.applies) ? SECRETS_RULES : ""}${a.areas.some((ar) => ar.key === "seo" && ar.applies) ? SEO_RULES + GEO_RULES : ""}
+    ${grid}${other}${DB_RULES}${a.areas.some((ar) => ar.key === "secrets" && ar.applies) ? SECRETS_RULES : ""}${a.areas.some((ar) => ar.key === "personal" && ar.applies) ? PERSONAL_RULES : ""}${a.areas.some((ar) => ar.key === "seo" && ar.applies) ? SEO_RULES + GEO_RULES : ""}
     <h3 class="sub3">Infrastructure</h3>${infra}
   </div>`;
 }
 
 // Short column names; the full criterion name is the column's tooltip.
 const SHORT = {
-  security: "Security", secrets: "Secrets", privacy: "Privacy", integrity: "Integrity", persistence: "Backup & recovery",
+  security: "Security", secrets: "Secrets", personal: "Personal data", privacy: "Privacy", integrity: "Integrity", persistence: "Backup & recovery",
   database: "Database", ux: "UX", performance: "Speed", reliability: "Reliability",
   code: "Code", deploy: "Deploy & ops", seo: "SEO", geo: "GEO",
 };
