@@ -112,6 +112,23 @@
       .tbody .tadv { margin-top: 2px; }
       .tbody .tadv.fail { color: var(--text); } .tbody .tadv.not-run { color: var(--muted); font-size: 13px; }
       .tbody .tdet { margin-top: 4px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+      .ugrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+      .uprov { border: 1px solid var(--border); border-radius: 8px; padding: 12px; min-width: 0; }
+      .uprov h3 { font-size: 15px; margin: 0 0 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .umeter { margin: 8px 0; font-size: 13px; }
+      .umeter .ul { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+      .umeter .uv { font-weight: 700; }
+      .umeter .uv.good { color: var(--good); } .umeter .uv.mid { color: var(--medium); } .umeter .uv.bad { color: var(--high); }
+      .ubar { height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; margin-top: 3px; }
+      .ubar span { display: block; height: 100%; }
+      .ubar .good { background: #1f9d55; } .ubar .mid { background: #d98324; } .ubar .bad { background: #d23b3b; }
+      .uprov ul { margin: 6px 0 0; padding-left: 16px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+      .uprov a { color: var(--accent); font-size: 13px; }
+      .uline { padding: 6px 0; border-top: 1px solid var(--border); font-size: 13px; }
+      .uline:first-of-type { border-top: 0; }
+      .uline .un { font-weight: 600; overflow-wrap: anywhere; }
+      .uline .um { color: var(--muted); }
+      .uline .um b { color: var(--text); }
     </style>
   </head>
   <body>
@@ -125,6 +142,7 @@
       <a href="#health" data-tab="health" role="tab">Health dashboard</a>
       <a href="#scans" data-tab="scans" role="tab">Security scans</a>
       <a href="#tests" data-tab="tests" role="tab">All tests</a>
+      <a href="#usage" data-tab="usage" role="tab">Usage</a>
       <a href="#settings" data-tab="settings" role="tab">Settings</a>
     </nav>
     <main>
@@ -220,6 +238,28 @@
         </div>
         <div id="testsList" class="muted">Loading…</div>
         <div class="note">Security checks come from secval's own scans. "App health report" rows are estimates from the app's health report; 85 or more is a pass. Tap a row for the details.</div>
+      </div>
+      </section>
+
+      <section data-panel="usage" hidden>
+      <div class="card">
+        <h2>Usage by app this month</h2>
+        <div class="note" style="margin:-6px 0 12px">
+          What each app uses on GitHub, Render and Fly. <strong>E</strong> = estimate worked out by secval. Updates every 15 minutes.
+        </div>
+        <div id="usageApps" class="muted">Loading…</div>
+        <div class="row" style="margin-top:8px;align-items:center">
+          <span id="usageMsg" class="note" style="flex:1;margin:0"></span>
+          <button id="usageRefresh" class="ghost">Refresh now</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Totals and free allowances</h2>
+        <div class="note" style="margin:-6px 0 12px">
+          All apps together, against each free allowance. Green below 70%, amber 70–89%, red 90% and up.
+        </div>
+        <div id="usageList" class="muted">Loading…</div>
       </div>
       </section>
 
