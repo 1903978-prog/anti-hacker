@@ -8,6 +8,11 @@ const NEED_TOKEN = "Needs your secret token: paste it in the box at the top, the
 // A request was refused: show the token box with the reason and bring it into
 // view. A "wrong token" reason stays on screen over the generic one.
 const WRONG = "That secret token was wrong. Paste it again.";
+// Why the server refused this browser (sent with the 401).
+const WHY = {
+  "token-changed": "The secret token was changed on Render, so this browser's sign-in stopped working. Paste the new token once.",
+  "not-signed-in": "This browser has no sign-in saved (cookies cleared, another browser or a private window). Paste your token once; it is then remembered for over a year.",
+};
 function askForToken(message) {
   signedIn = false;
   el("tokenBox").hidden = false;
@@ -22,7 +27,7 @@ const api = (path, opts = {}) => {
   const headers = { "content-type": "application/json", ...(opts.headers || {}) };
   return fetch(path, { ...opts, headers, credentials: "same-origin" }).then((r) =>
     r.json().then((b) => {
-      if (r.status === 401) askForToken();
+      if (r.status === 401) askForToken(el("tokenMsg").textContent === WRONG ? undefined : WHY[b?.reason]);
       else if (r.ok && path.startsWith("/api/")) signedIn = true;
       return { ok: r.ok, status: r.status, body: b };
     }),
