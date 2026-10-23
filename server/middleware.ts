@@ -80,7 +80,8 @@ function constantTimeEqual(a: string, b: string): boolean {
 }
 
 export const SESSION_COOKIE = "secval_session";
-const SESSION_DAYS = 180;
+// 400 days is the longest a browser (Chrome) keeps a cookie; each use renews it.
+const SESSION_DAYS = 400;
 
 /**
  * The browser session value: derived from the API token, so it survives a
@@ -208,7 +209,10 @@ export function apiAuth(token: string | undefined, limiter?: FailedAuthLimiter) 
       if (limiter?.blocked()) return tooManyTries(res);
       limiter?.fail();
     }
-    return res.status(401).json({ error: "unauthorized" });
+    // Say why, so the page can tell the owner whether the browser lost its
+    // sign-in or the token was changed on the server (old cookies stop working).
+    const reason = provided ? "wrong-token" : cookie ? "token-changed" : "not-signed-in";
+    return res.status(401).json({ error: "unauthorized", reason });
   };
 }
 

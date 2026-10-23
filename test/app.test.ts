@@ -102,7 +102,7 @@ describe("control-plane hardening", () => {
     const read = await request(a).get("/api/allowlist").set("Cookie", session);
     expect(read.status).toBe(200);
     // each use renews the sign-in, and a restarted server still accepts it
-    expect(String(read.headers["set-cookie"])).toMatch(/Max-Age=15552000/);
+    expect(String(read.headers["set-cookie"])).toMatch(/Max-Age=34560000/);
     expect((await request(app()).get("/api/allowlist").set("Cookie", session)).status).toBe(200);
     // a change from secval's own page works; one from another site is refused
     const host = "secval.example";
@@ -117,7 +117,10 @@ describe("control-plane hardening", () => {
       .send({});
     expect(foreign.status).toBe(403);
     // a forged or old cookie does not work
-    expect((await request(a).get("/api/allowlist").set("Cookie", "secval_session=forged")).status).toBe(401);
+    const forged = await request(a).get("/api/allowlist").set("Cookie", "secval_session=forged");
+    expect(forged.status).toBe(401);
+    expect(forged.body.reason).toBe("token-changed");
+    expect((await request(a).get("/api/allowlist")).body.reason).toBe("not-signed-in");
     const out = await request(a).post("/api/session/end").send({});
     expect(String(out.headers["set-cookie"])).toMatch(/Max-Age=0/);
   });
