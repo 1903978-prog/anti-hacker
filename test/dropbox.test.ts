@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { freshDb } from "./helpers.js";
 import {
   checkDropboxBackups,
+  lastMonday,
   classifyFile,
   getDropboxHealth,
   rateKind,
@@ -12,6 +13,7 @@ import { dashboard } from "../server/health/score.js";
 const NOW = new Date("2026-10-24T12:00:00Z");
 const ENV = { DROPBOX_APP_KEY: "k", DROPBOX_APP_SECRET: "s", DROPBOX_REFRESH_TOKEN: "r" };
 const hoursAgo = (h: number) => new Date(NOW.getTime() - h * 3_600_000).toISOString();
+const monday = (name: string, size: number) => ({ ".tag": "file", name, size, server_modified: "2026-10-19T08:00:00Z" });
 const file = (name: string, size: number, h: number) => ({ ".tag": "file", name, size, server_modified: hoursAgo(h) });
 
 /** Fake Dropbox: folder path -> entries; missing path -> 409. Records calls. */
@@ -55,6 +57,23 @@ describe("rating one kind of copy", () => {
   });
 });
 
+describe("Monday copy", () => {
+  it("finds the last finished Monday", () => {
+    expect(lastMonday(new Date("2026-10-24T12:00:00Z"))).toBe("2026-10-19"); // Saturday
+    expect(lastMonday(new Date("2026-10-26T09:00:00Z"))).toBe("2026-10-19"); // Monday itself: previous one
+    expect(lastMonday(new Date("2026-10-27T09:00:00Z"))).toBe("2026-10-26");
+  });
+  it("flags a week with no Monday copy even when the copy is fresh", () => {
+    const now = new Date("2026-10-24T12:00:00Z");
+    const mk = (iso: string) => [{ name: "a-db.zip", size: 100, modified: iso }];
+    const missed = rateKind("db", mk("2026-10-24T08:00:00Z"), [], now);
+    expect(missed.rating).toBe("warning");
+    expect(missed.reason).toContain("Monday 2026-10-19");
+    const [a, b] = [mk("2026-10-24T08:00:00Z")[0]!, mk("2026-10-19T08:00:00Z")[0]!];
+    expect(rateKind("db", [a, b], [], now).rating).toBe("healthy");
+  });
+});
+
 describe("Dropbox check", () => {
   it("says not connected, without calling Dropbox, when the settings are missing", async () => {
     const db = freshDb();
@@ -70,8 +89,8 @@ describe("Dropbox check", () => {
     const db = freshDb();
     const host = dashboard(db).find((a) => a.host.startsWith("nexus"))!.host;
     const { f, calls } = fake({
-      "/nexus/CODE": [file("261024-nexus-code.zip", 20e6, 4)],
-      "/nexus/DB": [file("261024-nexus-db.zip", 120e6, 4)],
+      "/nexus/CODE": [file("261024-nexus-code.zip", 20e6, 4), monday("261019-nexus-code.zip", 20e6)],
+      "/nexus/DB": [file("261024-nexus-db.zip", 120e6, 4), monday("261019-nexus-db.zip", 120e6)],
     });
     await checkDropboxBackups(db, { env: ENV, fetcher: f, now: NOW });
     const app = dashboard(db).find((a) => a.host === host)!;
