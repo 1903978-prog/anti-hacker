@@ -41,14 +41,15 @@ describe("file classification", () => {
 
 describe("rating one kind of copy", () => {
   it("is healthy under 36 hours, warning to 72, failing beyond or missing", () => {
-    const r = (h: number) => rateKind("db", [{ name: "a-db.zip", size: 100, modified: hoursAgo(h) }], [], NOW).rating;
+    const mon = { name: "m-db.zip", size: 100, modified: "2026-10-19T08:00:00Z" };
+    const r = (h: number) => rateKind("db", [mon, { name: "a-db.zip", size: 100, modified: hoursAgo(h) }], [], NOW).rating;
     expect(r(10)).toBe("healthy");
     expect(r(50)).toBe("warning");
     expect(r(100)).toBe("failing");
     expect(rateKind("code", [], [], NOW)).toMatchObject({ rating: "failing", lastUpload: null });
   });
   it("flags an empty or much smaller copy", () => {
-    const f = (size: number) => [{ name: "a-db.zip", size, modified: hoursAgo(5) }];
+    const f = (size: number) => [{ name: "m-db.zip", size, modified: "2026-10-19T08:00:00Z" }, { name: "a-db.zip", size, modified: hoursAgo(5) }];
     expect(rateKind("db", f(0), [], NOW).rating).toBe("failing");
     const small = rateKind("db", f(10), [100, 110, 90], NOW);
     expect(small.rating).toBe("warning");
@@ -105,7 +106,7 @@ describe("Dropbox check", () => {
   it("fails an app whose newest database copy is old, and logs the change once", async () => {
     const db = freshDb();
     const { f } = fake({
-      "/nexus/CODE": [file("a-code.zip", 20e6, 3)],
+      "/nexus/CODE": [file("a-code.zip", 20e6, 3), monday("m-code.zip", 20e6)],
       "/nexus/DB": [file("a-db.zip", 120e6, 200)],
     });
     await checkDropboxBackups(db, { env: ENV, fetcher: f, now: NOW });

@@ -165,6 +165,18 @@ const median = (xs: number[]) => {
   return s.length ? s[Math.floor(s.length / 2)]! : 0;
 };
 
+const TZ = "Europe/Paris";
+const parisDay = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(d); // YYYY-MM-DD
+const parisWeekday = (d: Date) => new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short" }).format(d);
+
+/** The most recent Monday that has already ended (today does not count), as a Paris date YYYY-MM-DD. */
+export function lastMonday(now: Date): string {
+  const back = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].indexOf(parisWeekday(now));
+  const days = back === 0 ? 7 : back;
+  const t = new Date(now.getTime() - days * 24 * HOUR);
+  return parisDay(t);
+}
+
 const mb = (n: number) => `${(n / 1e6).toFixed(1)} MB`;
 const kindName = (k: CopyKind) => (k === "db" ? "database" : "code");
 
@@ -191,6 +203,12 @@ export function rateKind(kind: CopyKind, files: DropboxFile[], earlierSizes: num
       rating = worse(rating, "warning");
       reason += ` It is ${mb(newest.size)}, much smaller than the usual ${mb(usual)}.`;
     }
+  }
+  // Livio's rule: a copy must be made every Monday.
+  const monday = lastMonday(now);
+  if (!mine.some((x) => parisDay(new Date(x.modified)) === monday)) {
+    rating = worse(rating, "warning");
+    reason += ` No ${kindName(kind)} copy was made on Monday ${monday}.`;
   }
   return { kind, rating, lastUpload: new Date(newest.modified).toISOString(), sizeBytes: newest.size, reason };
 }
@@ -310,13 +328,13 @@ export async function checkDropboxBackups(
   return out;
 }
 
-/** Checks a minute after start, then every 7 days. A failed round never crashes the server. */
+/** Checks a minute after start, then daily. A failed round never crashes the server. */
 export function startDropboxChecker(db: DB): () => void {
   const run = () => void checkDropboxBackups(db, { actor: "scheduler" }).catch(() => {
     /* recorded as a result; never crash */
   });
   const first = setTimeout(run, 60_000);
-  const timer = setInterval(run, 7 * 24 * HOUR);
+  const timer = setInterval(run, 24 * HOUR);
   first.unref?.();
   timer.unref?.();
   return () => {
