@@ -310,13 +310,13 @@ export async function checkDropboxBackups(
   return out;
 }
 
-/** Checks a minute after start, then every 6 hours. A failed round never crashes the server. */
+/** Checks a minute after start, then every 7 days. A failed round never crashes the server. */
 export function startDropboxChecker(db: DB): () => void {
   const run = () => void checkDropboxBackups(db, { actor: "scheduler" }).catch(() => {
     /* recorded as a result; never crash */
   });
   const first = setTimeout(run, 60_000);
-  const timer = setInterval(run, 6 * HOUR);
+  const timer = setInterval(run, 7 * 24 * HOUR);
   first.unref?.();
   timer.unref?.();
   return () => {

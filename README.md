@@ -111,7 +111,7 @@ secval) gets a **Dropbox copies** column and a detail block: a rating
 (healthy / warning / failing) for the database copy and the code copy, the
 date of the last upload, the size, and the reason in plain words. Healthy =
 newest copy under 36 hours old; warning = under 72 hours, or a copy under half
-its usual size; failing = older, empty or missing. Checked every 6 hours and by
+its usual size; failing = older, empty or missing. Checked once a week (and at each start) and by
 "Check now". Only folder listings are read (file names, sizes, upload times);
 contents are never downloaded and only those facts are stored.
 

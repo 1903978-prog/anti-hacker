@@ -24,7 +24,7 @@ startScheduler(db);
 startUptimeChecker(db);
 // Backup: restore the Backblaze copy into a scratch file daily and check it.
 startRestoreDrill(db);
-// Dropbox copies: check every app's database and code backups every 6 hours (read-only).
+// Dropbox copies: check every app's database and code backups once a week (read-only).
 startDropboxChecker(db);
 // Health reports kept in the repo (reports/*-health.md) appear as estimates.
 for (const r of loadReportFiles(db)) {
