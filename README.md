@@ -104,6 +104,22 @@ token shows "not connected".
 | `NEON_ORG_ID` | optional, only if the Neon projects are in an organization |
 | `NEON_PROJECT_APPS` | optional `project name=app,...` for Neon projects whose name does not say the app |
 
+## Dropbox copies column
+
+Each app that backs up to Dropbox (compplan, lm-op-model, nexus, 10bonds,
+secval) gets a **Dropbox copies** column and a detail block: a rating
+(healthy / warning / failing) for the database copy and the code copy, the
+date of the last upload, the size, and the reason in plain words. Healthy =
+newest copy under 36 hours old; warning = under 72 hours, or a copy under half
+its usual size; failing = older, empty or missing. Checked every 6 hours and by
+"Check now". Only folder listings are read (file names, sizes, upload times);
+contents are never downloaded and only those facts are stored.
+
+| Setting | Meaning |
+| --- | --- |
+| `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_REFRESH_TOKEN` | the same three values the apps already use for their Dropbox backups; without them the column says "not connected" |
+| `DROPBOX_BACKUP_FOLDERS` | optional JSON `{"nexus": ["/nexus/CODE", "/nexus/DB"]}` to override where to look; default `/<app>/CODE`, `/<app>/DB` and `/App backups/<app>` |
+
 ## Next (ideas)
 
 Active (authenticated / deeper) scanning for active-eligible targets and

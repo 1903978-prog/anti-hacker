@@ -48,6 +48,14 @@ services:
         sync: false
       - key: NEON_API_KEY
         sync: false
+      # Dropbox backup health (same three values the apps already use for
+      # their backups; secval only lists folders with them).
+      - key: DROPBOX_APP_KEY
+        sync: false
+      - key: DROPBOX_APP_SECRET
+        sync: false
+      - key: DROPBOX_REFRESH_TOKEN
+        sync: false
     # To make data durable later, upgrade off free and uncomment:
     #   envVars: [{ key: DATA_DIR, value: /var/data }]
     #   disk: { name: secval-data, mountPath: /var/data, sizeGB: 1 }

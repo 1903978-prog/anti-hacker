@@ -3,6 +3,7 @@ import { createApp } from "./app.js";
 import { startScheduler } from "./schedule/weekly.js";
 import { startUptimeChecker } from "./health/uptime.js";
 import { loadReportFiles } from "./health/seed.js";
+import { startDropboxChecker } from "./backup/dropbox.js";
 import { startRestoreDrill } from "./backup/drill.js";
 
 const db = openDb();
@@ -23,6 +24,8 @@ startScheduler(db);
 startUptimeChecker(db);
 // Backup: restore the Backblaze copy into a scratch file daily and check it.
 startRestoreDrill(db);
+// Dropbox copies: check every app's database and code backups every 6 hours (read-only).
+startDropboxChecker(db);
 // Health reports kept in the repo (reports/*-health.md) appear as estimates.
 for (const r of loadReportFiles(db)) {
   // eslint-disable-next-line no-console

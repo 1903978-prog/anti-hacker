@@ -22,6 +22,7 @@ import { apiAuth, failedAuthLimiter, noStore, rateLimit, securityHeaders, sessio
 import { dashboard } from "./health/score.js";
 import { dashboardHosts, guessApp, listEstimates, saveReport } from "./health/report.js";
 import { checkAllUptime } from "./health/uptime.js";
+import { checkDropboxBackups } from "./backup/dropbox.js";
 import { allUsage } from "./usage/providers.js";
 
 export interface AppOptions {
@@ -238,7 +239,8 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
 
   app.post("/api/dashboard/check-now", async (_req, res) => {
     const checks = await checkAllUptime(db);
-    res.json({ checked: checks.length });
+    const dropbox = await checkDropboxBackups(db, { actor: ACTOR });
+    res.json({ checked: checks.length, dropboxChecked: dropbox.length });
   });
 
   // --- Usage counters (GitHub, Render, Fly, Backblaze; read-only) ----------

@@ -498,6 +498,7 @@ function renderApp(a) {
       <span class="muted">${a.reports} report(s) pasted</span>
     </div>
     ${grid}${other}${DB_RULES}${a.areas.some((ar) => ar.key === "secrets" && ar.applies) ? SECRETS_RULES : ""}${a.areas.some((ar) => ar.key === "personal" && ar.applies) ? PERSONAL_RULES : ""}${a.areas.some((ar) => ar.key === "seo" && ar.applies) ? SEO_RULES + GEO_RULES : ""}
+    ${dropboxDetail(a)}
     <h3 class="sub3">Infrastructure</h3>${infra}
   </div>`;
 }
@@ -521,6 +522,30 @@ function cellHtml(a, ar) {
   return `<td class="cell ${tone(s.score)} ${s.source}" ${label} title="${esc(tip)}" data-open="${esc(a.host)}">${s.score}%<sup>${mark}</sup></td>`;
 }
 
+// Dropbox copies: one rating for the database and code backups held in Dropbox.
+const BK_TONE = { healthy: "good", warning: "mid", failing: "bad", "not-connected": "none" };
+const BK_WORD = { healthy: "OK", warning: "Warn", failing: "Bad", "not-connected": "–" };
+const shortDate = (iso) => (iso ? new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" }) : "none");
+function dropboxCell(a) {
+  const d = a.dropbox;
+  const label = 'data-label="Dropbox copies"';
+  if (!d) return `<td class="cell none" ${label} title="Dropbox copies: this app does not back up to Dropbox">-</td>`;
+  const tip = `Dropbox copies: ${d.rating}\nDatabase: ${d.db.reason}\nCode: ${d.code.reason}`;
+  if (d.rating === "not-connected") return `<td class="cell none" ${label} title="${esc(tip)}" data-open="${esc(a.host)}">–</td>`;
+  return `<td class="cell ${BK_TONE[d.rating]}" ${label} title="${esc(tip)}" data-open="${esc(a.host)}">${BK_WORD[d.rating]}<br><span style="font-size:10px;font-weight:400">db ${esc(shortDate(d.db.lastUpload))}<br>code ${esc(shortDate(d.code.lastUpload))}</span></td>`;
+}
+
+function dropboxDetail(a) {
+  const d = a.dropbox;
+  if (!d) return "";
+  const line = (k, name) =>
+    `<tr><td class="muted">${name}</td><td><span class="badge${k.rating === "healthy" ? " ok" : ""}">${esc(k.rating)}</span> ` +
+    `last upload ${k.lastUpload ? esc(new Date(k.lastUpload).toLocaleString()) : "none found"}` +
+    `${k.sizeBytes ? " · " + (k.sizeBytes / 1e6).toFixed(1) + " MB" : ""}<div class="note" style="margin:0">${esc(k.reason)}</div></td></tr>`;
+  return `<h3 class="sub3">Dropbox copies</h3><table class="infra"><tbody>${line(d.db, "Database")}${line(d.code, "Code")}</tbody></table>` +
+    `<div class="note">Checked ${esc(new Date(d.checkedAt).toLocaleString())}. Only file names, sizes and upload times are read, never the contents.</div>`;
+}
+
 function renderTable(apps) {
   if (!apps.length) return "No apps on the allowlist yet.";
   const head = apps[0].areas
@@ -532,10 +557,11 @@ function renderTable(apps) {
         <th class="appname"><button class="link" data-open="${esc(a.host)}">${esc(a.host)}</button></th>
         ${a.overall === null ? '<td class="cell none" data-label="Overall">–</td>' : `<td class="cell ${tone(a.overall)} overallc" data-label="Overall">${a.overall}%</td>`}
         ${a.areas.map((ar) => cellHtml(a, ar)).join("")}
+        ${dropboxCell(a)}
       </tr>`,
     )
     .join("");
-  return `<div class="tablewrap"><table class="dash"><thead><tr><th class="appname">App</th><th>Overall</th>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  return `<div class="tablewrap"><table class="dash"><thead><tr><th class="appname">App</th><th>Overall</th>${head}<th title="Dropbox holds recent, healthy copies of the database and code">Dropbox copies</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 function renderDetail() {

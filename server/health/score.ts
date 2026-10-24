@@ -1,5 +1,6 @@
 import type { DB } from "../db.js";
 import { AREAS, INFRA, appliesTo, dashboardHosts, listEstimates, listInfra, shipperFrom, type StoredEstimate } from "./report.js";
+import { getDropboxHealth, backupAppFor, type DropboxHealth } from "../backup/dropbox.js";
 import { listUptime, type UptimeCheck } from "./uptime.js";
 
 /**
@@ -41,6 +42,8 @@ export interface AppHealth {
   /** Pasted areas that do not fit the ten fixed ones. */
   other: StoredEstimate[];
   reports: number;
+  /** Dropbox copies of the database and code; null for apps that do not back up to Dropbox. */
+  dropbox: DropboxHealth | null;
 }
 
 const DAY = 24 * 60 * 60_000;
@@ -239,6 +242,7 @@ export function dashboard(db: DB, now: Date = new Date()): AppHealth[] {
       infra: infraFacts(db, e.domain, checks7d),
       other: estimates.filter((s) => s.area === "other" && s.createdAt === newestReport),
       reports: new Set(estimates.map((s) => s.createdAt)).size,
+      dropbox: backupAppFor(e.domain) ? getDropboxHealth(db, e.domain) : null,
     };
   });
 }

@@ -62,6 +62,28 @@ export const MIGRATIONS: Migration[] = [
       rule("uptime_checks", "ok", "NEW.ok IN (0, 1)", "uptime_checks.ok must be 0 or 1"),
     ].join("\n"),
   },
+  {
+    // Dropbox backup health: facts only (file names, sizes, upload times).
+    version: 4,
+    name: "dropbox backup health",
+    sql: `
+    CREATE TABLE IF NOT EXISTS dropbox_backup_files (
+      app         TEXT NOT NULL,
+      kind        TEXT NOT NULL,
+      name        TEXT NOT NULL,
+      size        INTEGER NOT NULL,
+      uploaded_at TEXT NOT NULL,
+      first_seen  TEXT NOT NULL,
+      PRIMARY KEY (app, name)
+    );
+    CREATE TABLE IF NOT EXISTS dropbox_backup_status (
+      host       TEXT PRIMARY KEY,
+      app        TEXT NOT NULL,
+      checked_at TEXT NOT NULL,
+      result     TEXT NOT NULL
+    );
+    `,
+  },
 ];
 
 /** Applies every migration the database has not seen yet; returns their versions. */
