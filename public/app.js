@@ -529,10 +529,12 @@ const shortDate = (iso) => (iso ? new Date(iso).toLocaleDateString(undefined, { 
 function dropboxCell(a) {
   const d = a.dropbox;
   const label = 'data-label="Dropbox copies"';
-  if (!d) return `<td class="cell none" ${label} title="Dropbox copies: this app does not back up to Dropbox">-</td>`;
+  if (!d) return `<td class="cell none" style="min-width:0" ${label} title="Dropbox copies: this app does not back up to Dropbox">-</td>`;
+  const dates = [d.db.lastUpload, d.code.lastUpload].filter(Boolean).sort();
+  const older = dates.length === 2 ? dates[0] : null; // the older of the two newest uploads
   const tip = `Dropbox copies: ${d.rating}\nDatabase: ${d.db.reason}\nCode: ${d.code.reason}`;
-  if (d.rating === "not-connected") return `<td class="cell none" ${label} title="${esc(tip)}" data-open="${esc(a.host)}">–</td>`;
-  return `<td class="cell ${BK_TONE[d.rating]}" ${label} title="${esc(tip)}" data-open="${esc(a.host)}">${BK_WORD[d.rating]}<br><span style="font-size:10px;font-weight:400">db ${esc(shortDate(d.db.lastUpload))}<br>code ${esc(shortDate(d.code.lastUpload))}</span></td>`;
+  if (d.rating === "not-connected") return `<td class="cell none" style="min-width:0" ${label} title="${esc(tip)}" data-open="${esc(a.host)}">–</td>`;
+  return `<td class="cell ${BK_TONE[d.rating]}" style="min-width:0;padding:8px 0" ${label} title="${esc(tip)}" data-open="${esc(a.host)}">${BK_WORD[d.rating]}<br><span style="font-size:9px;font-weight:400">${esc(shortDate(older))}</span></td>`;
 }
 
 function dropboxDetail(a) {
@@ -561,7 +563,7 @@ function renderTable(apps) {
       </tr>`,
     )
     .join("");
-  return `<div class="tablewrap"><table class="dash"><thead><tr><th class="appname">App</th><th>Overall</th>${head}<th title="Dropbox holds recent, healthy copies of the database and code">Dropbox copies</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  return `<div class="tablewrap"><table class="dash"><thead><tr><th class="appname">App</th><th>Overall</th>${head}<th title="Dropbox copies: healthy, recent copies of the database and code (date shown is the older of the two)">Dropbox</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 function renderDetail() {
