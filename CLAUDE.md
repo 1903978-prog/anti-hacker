@@ -19,6 +19,12 @@ touches a target may exist or run until that layer approves it.
 5. **Governance first.** Build and test the safety layer before any scanning
    capability. Scanning code must call the policy engine for approval and
    **cannot bypass or disable it**.
+6. **Run the full gate before every push.** `npm run verify` runs exactly what
+   CI runs (type check, lint, tests, page check). If Chromium is missing, set
+   `PW_CHROMIUM` to an installed one (cloud sessions: `/opt/pw-browsers/chromium`).
+   Any change to `public/` (colours, columns, links) must pass the page check,
+   in light and dark. Do not push on a red or unrun `verify`. Rule 3 applies
+   to editing loops only, not to the last run before a push.
 
 ## Safety invariants the code must uphold
 

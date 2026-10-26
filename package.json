@@ -15,7 +15,8 @@
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:page": "tsx scripts/page-check.ts"
+    "test:page": "tsx scripts/page-check.ts",
+    "verify": "npm run typecheck && npm run lint && npm test && npm run test:page"
   },
   "dependencies": {
     "better-sqlite3": "^12.0.0",
