@@ -322,6 +322,15 @@ async function refreshBackup() {
     esc(BACKUP_MODE[body.mode] || body.mode) + " · " + esc(drill);
   el("drillBtn").hidden = body.mode !== "on";
 }
+async function refreshDropbox() {
+  const { ok, body } = await api("/api/backup/dropbox");
+  if (!ok) return;
+  const cls = body.status === "ok" ? " ok" : "";
+  const label = { ok: "ok", amber: "missing copy", "not-connected": "not connected", error: "error" }[body.status] || body.status;
+  const lines = (body.apps || []).filter((a) => a.status !== "ok").map((a) => `<div><b>${esc(a.app)}</b>: ${esc(a.message)}</div>`).join("");
+  el("dropboxText").innerHTML = `<span class="badge${cls}">${esc(label)}</span> ${esc(body.message)}${lines}` +
+    ` · <a href="${esc(body.link)}" target="_blank" rel="noopener">open Dropbox</a>`;
+}
 el("drillBtn").onclick = async () => {
   el("drillBtn").disabled = true;
   el("backupText").textContent = "Restoring the backup into a scratch file…";
@@ -337,6 +346,7 @@ function refreshAll() {
   refreshAudit();
   refreshSchedule();
   refreshBackup();
+  refreshDropbox();
   refreshDashboard();
   if (currentTab === "tests") refreshTests();
   if (currentTab === "usage") refreshUsage();

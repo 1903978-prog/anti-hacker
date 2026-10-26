@@ -48,6 +48,13 @@ services:
         sync: false
       - key: NEON_API_KEY
         sync: false
+      # Dropbox backup check (read-only; the check says "not connected" until set).
+      - key: DROPBOX_REFRESH_TOKEN
+        sync: false
+      - key: DROPBOX_APP_KEY
+        sync: false
+      - key: DROPBOX_APP_SECRET
+        sync: false
     # To make data durable later, upgrade off free and uncomment:
     #   envVars: [{ key: DATA_DIR, value: /var/data }]
     #   disk: { name: secval-data, mountPath: /var/data, sizeGB: 1 }

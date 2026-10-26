@@ -30,6 +30,7 @@ export interface AppOptions {
 }
 import { DEFAULT_WEEKLY, getLastRun, runWeeklySweep } from "./schedule/weekly.js";
 import { backupMode, backupStatus, runRestoreDrill } from "./backup/drill.js";
+import { dropboxStatus } from "./backup/dropbox.js";
 import { lastIntegrity, refreshIntegrity } from "./integrity.js";
 
 // Until a real auth layer exists, the actor is a fixed operator identity.
@@ -215,6 +216,11 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
       return;
     }
     res.json(await runRestoreDrill(db, ACTOR));
+  });
+
+  // Dropbox copies of each app's code and database (read-only check).
+  app.get("/api/backup/dropbox", async (req, res) => {
+    res.json(await dropboxStatus({ refresh: req.query.refresh === "1" }));
   });
 
   // --- Schedule (weekly automatic sweep) ------------------------------------
