@@ -51,10 +51,27 @@ function localParts(now: Date, timeZone: string): LocalParts {
 }
 
 /**
+ * The local date (YYYY-MM-DD) of the most recent weekly slot at or before
+ * `now`, or null when it cannot be found (bad config).
+ */
+export function latestSlotKey(now: Date, cfg: WeeklyConfig = DEFAULT_WEEKLY): string | null {
+  for (let d = 0; d <= 7; d++) {
+    const p = localParts(new Date(now.getTime() - d * 24 * 60 * 60_000), cfg.timeZone);
+    if (p.weekday !== cfg.weekday) continue;
+    if (d === 0 && p.hour < cfg.hour) continue; // today's slot has not started yet
+    return p.dateKey;
+  }
+  return null;
+}
+
+/**
  * Decides whether the weekly sweep is due. It becomes due on the first check
  * at or after the configured weekday/hour (local time) whose date has not
- * already been run — so a brief outage around the exact minute does not skip
- * the week. Returns the slot key to record when a run happens.
+ * already been run. If the server was asleep at that moment (Render's free
+ * tier sleeps when idle), the missed sweep runs on the first check after it
+ * wakes, any day of the week, so a sleeping server never skips a week. A
+ * brand-new store (never run) waits for the next real slot. Returns the slot
+ * key to record when a run happens.
  */
 export function isWeeklyDue(
   now: Date,
@@ -62,9 +79,11 @@ export function isWeeklyDue(
   cfg: WeeklyConfig = DEFAULT_WEEKLY,
 ): { due: boolean; key: string | null } {
   const { weekday, hour, dateKey } = localParts(now, cfg.timeZone);
-  if (weekday !== cfg.weekday) return { due: false, key: null };
-  if (hour < cfg.hour) return { due: false, key: null };
-  return { due: dateKey !== lastRunKey, key: dateKey };
+  const inSlot = weekday === cfg.weekday && hour >= cfg.hour;
+  if (lastRunKey === null) return inSlot ? { due: true, key: dateKey } : { due: false, key: null };
+  const slot = latestSlotKey(now, cfg);
+  if (!slot) return { due: false, key: null };
+  return { due: lastRunKey < slot, key: slot };
 }
 
 export interface SweepResult {

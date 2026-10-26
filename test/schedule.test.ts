@@ -36,6 +36,20 @@ describe("weekly due check", () => {
     const { key } = isWeeklyDue(mondayMorningUtc, null);
     expect(isWeeklyDue(mondayMorningUtc, key).due).toBe(false);
   });
+  it("catches up a missed week after the server wakes (any day)", () => {
+    // Last run Monday 12 Oct; the server slept through Monday 19 Oct 08:00 and
+    // wakes on Wednesday 21 Oct: the missed sweep is due, keyed to the 19th.
+    const wednesday = new Date("2026-10-21T13:00:00Z");
+    expect(isWeeklyDue(wednesday, "2026-10-12")).toEqual({ due: true, key: "2026-10-19" });
+    // Once that catch-up has run, it does not fire again that week.
+    expect(isWeeklyDue(wednesday, "2026-10-19").due).toBe(false);
+  });
+  it("does not catch up before the week's slot has come", () => {
+    // Sunday 18 Oct: the latest slot is Monday 12 Oct, already run.
+    expect(isWeeklyDue(sundayUtc, "2026-10-12").due).toBe(false);
+    // Monday 07:00 Paris: the slot for the 19th has not started yet.
+    expect(isWeeklyDue(mondayEarlyUtc, "2026-10-12").due).toBe(false);
+  });
 });
 
 describe("scheduler tick + sweep", () => {
