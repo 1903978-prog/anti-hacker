@@ -793,6 +793,67 @@ function renderTests() {
     : `<div class="muted">Nothing to show here.</div>`;
 }
 
+// One plain-text report of every failed check, all apps together, built from
+// data secval already holds (no new scans). Only titles, severity, fix text and
+// scores go in; check "details" are left out so nothing sensitive is copied.
+async function buildFailedReport() {
+  const apps = await api("/api/tests");
+  if (!apps.ok) throw new Error(apps.status === 401 ? NEED_TOKEN : "Could not load apps");
+  const dash = await api("/api/dashboard");
+  const scores = new Map((dash.ok ? dash.body : []).map((a) => [a.host, a]));
+  const lines = [];
+  let total = 0;
+  let newest = "";
+  const sections = [];
+  for (const host of apps.body) {
+    const r = await api("/api/tests/" + encodeURIComponent(host));
+    if (!r.ok) throw new Error("Could not load tests for " + host);
+    const d = r.body;
+    if (d.lastScan?.finishedAt && d.lastScan.finishedAt > newest) newest = d.lastScan.finishedAt;
+    const fails = d.checks.filter((c) => c.status === "fail");
+    total += fails.length;
+    const a = scores.get(host);
+    const sc = a
+      ? a.areas
+          .filter((ar) => ar.applies !== false && (ar.measured || ar.estimate))
+          .map((ar) => `${SHORT[ar.key] || ar.label} ${(ar.measured || ar.estimate).score}%`)
+          .join(", ")
+      : "";
+    const sevRank = { high: 0, medium: 1, low: 2, info: 3 };
+    fails.sort((x, y) => sevRank[x.severity] - sevRank[y.severity]);
+    const out = [`## ${host}: ${fails.length} failed of ${d.total} tests` + (a && a.overall !== null ? ` (overall ${a.overall}%)` : "")];
+    out.push(`Last scan: ${d.lastScan ? day(d.lastScan.finishedAt) + " (" + d.lastScan.mode + ")" : "not scanned yet"}`);
+    if (sc) out.push(`Scores (E = estimate): ${sc}`);
+    if (!fails.length) out.push("No failed tests.");
+    fails.forEach((c, i) => {
+      out.push(`${i + 1}. [${c.group === "health" ? "health" : c.severity}] ${c.groupLabel}: ${c.title}`);
+      if (c.advice) out.push(`   Fix: ${c.advice}`);
+    });
+    sections.push(out.join("\n"));
+  }
+  lines.push(`secval failed-tests report, ${new Date().toISOString().slice(0, 10)}`);
+  lines.push(`${total} failed across ${apps.body.length} apps. Newest scan: ${newest ? day(newest) : "none yet"}.`);
+  lines.push("Please fix these one by one, worst first.", "");
+  return lines.join("\n") + sections.join("\n\n") + "\n";
+}
+
+el("copyFailedBtn").onclick = async () => {
+  const msg = el("testsMsg");
+  el("copyFailedBox").hidden = true;
+  msg.textContent = "Building report…";
+  let text;
+  try { text = await buildFailedReport(); } catch (e) { msg.textContent = String(e.message || e); return; }
+  try {
+    await navigator.clipboard.writeText(text);
+    msg.textContent = "Copied! Paste it into the chat.";
+  } catch {
+    msg.textContent = "Could not copy automatically.";
+    el("copyFailedText").value = text;
+    el("copyFailedBox").hidden = false;
+    el("copyFailedText").select();
+  }
+};
+
 el("testsApp").onchange = () => {
   try { localStorage.setItem("secval_tests_app", el("testsApp").value); } catch { /* not remembered */ }
   refreshTests();
