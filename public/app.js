@@ -1,3 +1,4 @@
+/* global isBigCost */
 // secval control-plane UI. The secret token (the server's SECVAL_API_TOKEN)
 // is typed once into a small box on the page (no pop-up). The server swaps it
 // for a sign-in cookie that page scripts cannot read, so the token itself is
@@ -648,11 +649,14 @@ function meterHtml(m) {
   } else if (m.unit === "USD") {
     cls = m.used > 0 ? "mid" : "good";
   }
-  return `<div class="umeter"><div class="ul"><span>${esc(m.label)}${tag}</span><span class="uv ${cls}">${value}</span></div>${bar}${m.note ? `<div class="note">${esc(m.note)}</div>` : ""}</div>`;
+  return `<div class="umeter"><div class="ul"><span>${esc(m.label)}${tag}</span><span class="uv ${cls}${m.unit === "USD" && isBigCost(m.used) ? " bigcost" : ""}">${value}</span></div>${bar}${m.note ? `<div class="note">${esc(m.note)}</div>` : ""}</div>`;
 }
 
-const lineMetric = (m) =>
-  `<b>${esc(m.unit.startsWith("USD") ? "$" + Number(m.value).toFixed(2) + m.unit.slice(3) : fmt(m.value, m.unit))}</b> ${esc(m.label.toLowerCase())}${m.estimate ? ' <span class="tag estimate">E</span>' : ""}`;
+const lineMetric = (m) => {
+  const isUsd = m.unit.startsWith("USD");
+  const text = esc(isUsd ? "$" + Number(m.value).toFixed(2) + m.unit.slice(3) : fmt(m.value, m.unit));
+  return `<b${isUsd && isBigCost(m.value) ? ' class="bigcost"' : ""}>${text}</b> ${esc(m.label.toLowerCase())}${m.estimate ? ' <span class="tag estimate">E</span>' : ""}`;
+};
 
 function appCardHtml(a, providers) {
   const off = providers.filter((p) => p.status === "not-connected" || p.status === "error").map((p) => p.name);
