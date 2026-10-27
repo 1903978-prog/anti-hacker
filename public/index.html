@@ -229,8 +229,13 @@
         <div class="row" style="align-items:center">
           <select id="testsApp" aria-label="App"></select>
           <button id="testsRunBtn">Run all tests now</button>
+          <button id="copyFailedBtn" class="ghost">Copy failed report (all apps)</button>
         </div>
         <div id="testsMsg" class="note"></div>
+        <div id="copyFailedBox" hidden>
+          <div class="note">Your browser blocked copying. Select all the text below, copy it and paste it into the chat.</div>
+          <textarea id="copyFailedText" readonly rows="10"></textarea>
+        </div>
         <div id="testsSummary" class="tsum"></div>
         <div class="row tfilter" role="group" aria-label="Show">
           <button class="ghost" data-tfilter="all" aria-pressed="true">All</button>
