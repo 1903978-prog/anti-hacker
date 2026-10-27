@@ -743,10 +743,10 @@ el("usageRefresh").onclick = async () => {
 
 // --- Menus (tabs) -------------------------------------------------------------
 // Each menu is a section of this one page. The address (#health, #scans,
-// #tests, #usage, #settings) picks the menu, so links and reloads keep it; the last one
+// #tests, #usage, #backup, #settings) picks the menu, so links and reloads keep it; the last one
 // used is remembered in this browser. The token box sits above the menus, so it
 // shows whichever menu is open.
-const TABS = ["health", "scans", "tests", "usage", "settings"];
+const TABS = ["health", "scans", "tests", "usage", "backup", "settings"];
 let currentTab = "health";
 function showTab(name) {
   const tab = TABS.includes(name) ? name : "health";

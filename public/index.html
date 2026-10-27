@@ -145,6 +145,7 @@
       <a href="#scans" data-tab="scans" role="tab">Security scans</a>
       <a href="#tests" data-tab="tests" role="tab">All tests</a>
       <a href="#usage" data-tab="usage" role="tab">Usage</a>
+      <a href="#backup" data-tab="backup" role="tab">Backup</a>
       <a href="#settings" data-tab="settings" role="tab">Settings</a>
     </nav>
     <main>
@@ -271,6 +272,20 @@
       </div>
       </section>
 
+      <section data-panel="backup" hidden>
+      <div class="card">
+        <h2>Backup</h2>
+        <div class="row" style="align-items:center">
+          <span id="backupText" class="note" style="flex:1;margin:0">Loading…</span>
+          <button id="drillBtn" class="ghost">Test restore now</button>
+        </div>
+        <div class="note">secval copies its data to Backblaze all the time. Once a day it restores that copy into a scratch file and checks it, so you know the backup really works. You don't need to do anything.</div>
+        <h2 style="margin-top:14px">Dropbox copies</h2>
+        <div id="dropboxText" class="note" style="margin:0">Loading…</div>
+        <div class="note">Every Monday your PC saves a code copy and a database copy of each app to Dropbox. secval checks daily that last Monday's copies are there. Amber means one is missing.</div>
+      </div>
+      </section>
+
       <section data-panel="settings" hidden>
       <div class="card">
         <h2>Kill switch</h2>
@@ -285,18 +300,6 @@
         <div id="rollbackText" class="note" style="margin:0">Loading…</div>
         <div id="rollbackList"></div>
         <div class="note">If a new version of secval misbehaves, roll back to an earlier version that worked. Render switches to that build in about a minute. Auto-deploy stays on, so the next push to integration deploys again once its checks pass.</div>
-      </div>
-
-      <div class="card">
-        <h2>Backup</h2>
-        <div class="row" style="align-items:center">
-          <span id="backupText" class="note" style="flex:1;margin:0">Loading…</span>
-          <button id="drillBtn" class="ghost">Test restore now</button>
-        </div>
-        <div class="note">secval copies its data to Backblaze all the time. Once a day it restores that copy into a scratch file and checks it, so you know the backup really works. You don't need to do anything.</div>
-        <h2 style="margin-top:14px">Dropbox copies</h2>
-        <div id="dropboxText" class="note" style="margin:0">Loading…</div>
-        <div class="note">Every Monday your PC saves a code copy and a database copy of each app to Dropbox. secval checks daily that last Monday's copies are there. Amber means one is missing.</div>
       </div>
 
       <div class="card">
