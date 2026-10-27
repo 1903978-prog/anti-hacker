@@ -329,7 +329,19 @@ async function refreshDropbox() {
   const cls = body.status === "ok" ? " ok" : "";
   const label = { ok: "ok", amber: "missing copy", "not-connected": "not connected", error: "error" }[body.status] || body.status;
   const lines = (body.apps || []).filter((a) => a.status !== "ok").map((a) => `<div><b>${esc(a.app)}</b>: ${esc(a.message)}</div>`).join("");
-  el("dropboxText").innerHTML = `<span class="badge${cls}">${esc(label)}</span> ${esc(body.message)}${lines}` +
+  const fmt = (iso) => iso ? new Date(iso).toLocaleString("en-GB", { timeZone: "Europe/Paris", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+  const cell = (iso, na) => {
+    if (na) return `<td>${na}</td>`;
+    if (!iso) return `<td><span class="badge" style="color:var(--bad,#d33)">none found</span></td>`;
+    const days = (Date.now() - new Date(iso).getTime()) / 86400000;
+    return `<td>${esc(fmt(iso))}${days > 8 ? ` <span class="badge" style="color:var(--bad,#d33)">older than 8 days</span>` : ""}</td>`;
+  };
+  const rows = (body.apps || []).map((a) =>
+    `<tr><td><b>${esc(a.app)}</b></td>${cell(a.latestCode)}${cell(a.latestDb, a.app === "secval" ? "kept in Backblaze, not Dropbox" : "")}</tr>`).join("") +
+    `<tr><td><b>eendigo</b></td><td>not applicable</td><td>not applicable</td></tr>`;
+  const table = (body.apps || []).length
+    ? `<div class="tablewrap"><table><tr><th>App</th><th>Code last saved (Paris time)</th><th>Database last saved (Paris time)</th></tr>${rows}</table></div>` : "";
+  el("dropboxText").innerHTML = `<span class="badge${cls}">${esc(label)}</span> ${esc(body.message)}${lines}${table}` +
     ` · <a href="${esc(body.link)}" target="_blank" rel="noopener">open Dropbox</a>`;
 }
 let rollbackArmed = null;
