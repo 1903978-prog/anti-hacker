@@ -12,7 +12,7 @@ import {
   setActiveEligible,
 } from "./ownership/allowlist.js";
 import { createChallenge, verifyOwnership, type ProofMethod } from "./ownership/proof.js";
-import { listAudit } from "./audit/log.js";
+import { appendAudit, listAudit } from "./audit/log.js";
 import { engage, isEngaged, release } from "./governance/killswitch.js";
 import { requestApproval, type ScanMode } from "./governance/policy.js";
 import { getFindings, listScans, runPassiveScan } from "./scan/passive.js";
@@ -27,11 +27,16 @@ import { allUsage } from "./usage/providers.js";
 export interface AppOptions {
   /** Secret token required for every API request (bearer header or sign-in cookie). */
   apiToken?: string;
+  /** Render API caller; tests hand in canned answers. */
+  renderFetch?: RenderFetcher;
+  /** Environment for the Render rollback (defaults to process.env). */
+  renderEnv?: Record<string, string | undefined>;
 }
 import { DEFAULT_WEEKLY, getLastRun, runWeeklySweep } from "./schedule/weekly.js";
 import { backupMode, backupStatus, runRestoreDrill } from "./backup/drill.js";
 import { dropboxStatus } from "./backup/dropbox.js";
 import { lastIntegrity, refreshIntegrity } from "./integrity.js";
+import { listDeploys, rollbackTo, type RenderFetcher } from "./deploy/rollback.js";
 
 // Until a real auth layer exists, the actor is a fixed operator identity.
 // Every governance action is still attributed in the audit trail.
@@ -221,6 +226,29 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
   // Dropbox copies of each app's code and database (read-only check).
   app.get("/api/backup/dropbox", async (req, res) => {
     res.json(await dropboxStatus({ refresh: req.query.refresh === "1" }));
+  });
+
+  // --- Rollback (recent Render deploys, one-click rollback) -------------------
+  app.get("/api/deploys", async (_req, res) => {
+    res.json(await listDeploys(options.renderEnv ?? process.env, options.renderFetch));
+  });
+
+  app.post("/api/rollback", async (req, res) => {
+    const body = z.object({ deployId: z.string().max(80) }).safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: "deployId is required" });
+      return;
+    }
+    const result = await rollbackTo(body.data.deployId, options.renderEnv ?? process.env, options.renderFetch);
+    appendAudit(db, {
+      actor: ACTOR,
+      action: "rollback",
+      target: body.data.deployId,
+      decision: result.ok ? "allow" : "deny",
+      reason: result.message,
+      detail: result.deploy ? { commit: result.deploy.commit, status: result.deploy.status } : null,
+    });
+    res.status(result.ok ? 200 : 409).json(result);
   });
 
   // --- Schedule (weekly automatic sweep) ------------------------------------

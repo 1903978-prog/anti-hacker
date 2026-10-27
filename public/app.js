@@ -332,6 +332,34 @@ async function refreshDropbox() {
   el("dropboxText").innerHTML = `<span class="badge${cls}">${esc(label)}</span> ${esc(body.message)}${lines}` +
     ` · <a href="${esc(body.link)}" target="_blank" rel="noopener">open Dropbox</a>`;
 }
+let rollbackArmed = null;
+async function refreshRollback() {
+  const { ok, body } = await api("/api/deploys");
+  if (!ok) return;
+  const label = { ok: "connected", "not-connected": "not connected", error: "error" }[body.status] || body.status;
+  el("rollbackText").innerHTML =
+    `<span class="badge${body.status === "ok" ? " ok" : ""}">${esc(label)}</span> ${esc(body.message)}` +
+    ` · <a href="${esc(body.link)}" target="_blank" rel="noopener">open Render deploys</a>`;
+  el("rollbackList").innerHTML = (body.deploys || []).map((d) => {
+    const when = d.createdAt ? new Date(d.createdAt).toLocaleString() : "";
+    const state = d.current ? "live now" : d.status;
+    const btn = d.canRollBack
+      ? `<button class="ghost" data-rb="${esc(d.id)}">${rollbackArmed === d.id ? "Really roll back?" : "Roll back to this"}</button>`
+      : "";
+    return `<div class="row" style="align-items:center"><span class="note" style="flex:1;margin:0"><b>${esc(d.commit)}</b> ${esc(d.message)} · ${esc(state)} · ${esc(when)}</span>${btn}</div>`;
+  }).join("");
+  for (const b of el("rollbackList").querySelectorAll("button[data-rb]")) {
+    b.onclick = async () => {
+      const id = b.dataset.rb;
+      if (rollbackArmed !== id) { rollbackArmed = id; refreshRollback(); return; }
+      rollbackArmed = null;
+      b.disabled = true;
+      const r = await api("/api/rollback", { method: "POST", body: JSON.stringify({ deployId: id }) });
+      el("rollbackText").textContent = (r.body && (r.body.message || r.body.error)) || "Rollback request sent.";
+      refreshAudit();
+    };
+  }
+}
 el("drillBtn").onclick = async () => {
   el("drillBtn").disabled = true;
   el("backupText").textContent = "Restoring the backup into a scratch file…";
@@ -348,6 +376,7 @@ function refreshAll() {
   refreshSchedule();
   refreshBackup();
   refreshDropbox();
+  refreshRollback();
   refreshDashboard();
   if (currentTab === "tests") refreshTests();
   if (currentTab === "usage") refreshUsage();

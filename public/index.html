@@ -125,7 +125,7 @@
       .ubar span { display: block; height: 100%; }
       .ubar .good { background: #1f9d55; } .ubar .mid { background: #d98324; } .ubar .bad { background: #d23b3b; }
       .uprov ul { margin: 6px 0 0; padding-left: 16px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
-      .uprov a, #dropboxText a { color: var(--accent); font-size: 13px; }
+      .uprov a, #dropboxText a, #rollbackText a { color: var(--accent); font-size: 13px; }
       .uline { padding: 6px 0; border-top: 1px solid var(--border); font-size: 13px; }
       .uline:first-of-type { border-top: 0; }
       .uline .un { font-weight: 600; overflow-wrap: anywhere; }
@@ -278,6 +278,13 @@
           <span class="note" style="flex:1;margin:0">Stops every scan and check at once. Press again to release.</span>
           <button id="ksBtn" class="ghost">…</button>
         </div>
+      </div>
+
+      <div class="card">
+        <h2>Roll back secval</h2>
+        <div id="rollbackText" class="note" style="margin:0">Loading…</div>
+        <div id="rollbackList"></div>
+        <div class="note">If a new version of secval misbehaves, roll back to an earlier version that worked. Render switches to that build in about a minute. Auto-deploy stays on, so the next push to integration deploys again once its checks pass.</div>
       </div>
 
       <div class="card">
