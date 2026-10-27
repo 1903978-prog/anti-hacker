@@ -1,0 +1,31 @@
+# Keep-awake ping for Render's free plan, which sleeps after 15 minutes
+# without a visit. While asleep the in-app timers (weekly scan, uptime
+# checks) stop and the first visit waits for a cold start.
+#
+# Cost: this repo is public, so GitHub Actions minutes are free. Render side:
+# awake about 14 hours a day is about 430 of the 750 free instance hours a
+# month (always-on would be about 740). Daytime only: 07:00-20:50 UTC is
+# 08:00-21:50 Paris in winter. The weekly scan at Monday 08:00 Paris falls
+# inside it; outside it, the catch-up in the app still runs the scan on wake.
+#
+# The ping never fails the run (no failure emails). The log line shows the
+# answer time, which is the only speed measurement secval has.
+name: Keep awake
+
+on:
+  schedule:
+    - cron: "*/10 7-20 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Ping /health
+        run: |
+          curl -sS -o /dev/null --max-time 90 --retry 2 --retry-delay 5 \
+            -w "status=%{http_code} total=%{time_total}s\n" \
+            https://secval.onrender.com/health || echo "ping failed (secval unreachable)"
