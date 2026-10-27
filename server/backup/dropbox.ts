@@ -160,6 +160,16 @@ async function accessToken(env: Env, f: DropboxFetcher): Promise<string | null> 
   return env.DROPBOX_ACCESS_TOKEN || null;
 }
 
+/** Names only (never values): which of the three variables are missing or empty, and any similar names that are set. */
+export function missingNote(env: Env): string {
+  const need = ["DROPBOX_REFRESH_TOKEN", "DROPBOX_APP_KEY", "DROPBOX_APP_SECRET"];
+  const missing = need.filter((k) => !env[k]);
+  const similar = Object.keys(env).filter((k) => /dropbox/i.test(k) && !need.includes(k));
+  const parts = [`Missing or empty: ${missing.join(", ") || "none"}.`];
+  if (similar.length) parts.push(`Set under other names: ${similar.map((k) => JSON.stringify(k)).join(", ")}.`);
+  return " " + parts.join(" ");
+}
+
 export async function checkDropbox(
   opts: { env?: Env; fetcher?: DropboxFetcher; now?: Date } = {},
 ): Promise<DropboxCheck> {
@@ -172,7 +182,8 @@ export async function checkDropbox(
     status: "not-connected",
     apps: [],
     message:
-      "Not connected yet. Needs a read-only Dropbox key: DROPBOX_REFRESH_TOKEN, DROPBOX_APP_KEY and DROPBOX_APP_SECRET.",
+      "Not connected yet. Needs a read-only Dropbox key: DROPBOX_REFRESH_TOKEN, DROPBOX_APP_KEY and DROPBOX_APP_SECRET." +
+      missingNote(env),
   };
   try {
     const token = await accessToken(env, f);

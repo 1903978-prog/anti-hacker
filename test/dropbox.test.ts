@@ -59,6 +59,13 @@ describe("dropbox backup check", () => {
     expect(calls).toBe(0);
   });
 
+  it("names the missing variables, never their values", async () => {
+    const r = await checkDropbox({ env: { DROPBOX_APP_KEY: "k", "DROPBOX_REFRESH_TOKEN ": "s3cr3tvalue" }, now: TUE });
+    expect(r.message).toContain("Missing or empty: DROPBOX_REFRESH_TOKEN, DROPBOX_APP_SECRET.");
+    expect(r.message).toContain('"DROPBOX_REFRESH_TOKEN "');
+    expect(r.message).not.toContain("s3cr3tvalue");
+  });
+
   it("lists the folder with the refreshed key and follows pages", async () => {
     const seen: string[] = [];
     const f: DropboxFetcher = async (url, init) => {
