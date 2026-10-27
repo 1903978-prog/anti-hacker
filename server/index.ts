@@ -36,7 +36,21 @@ for (const r of loadReportFiles(db)) {
   console.log(`secval: report ${r.file} -> ${r.host ?? "?"}: ${r.loaded ? "loaded" : r.reason}`);
 }
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
   // eslint-disable-next-line no-console
   console.log(`secval listening on :${port}`);
+});
+
+// A forgotten promise error in a timer must not crash the server (Node would
+// exit); log it and keep serving.
+process.on("unhandledRejection", (reason) => {
+  // eslint-disable-next-line no-console
+  console.error("secval: unhandled promise error:", reason instanceof Error ? reason.message : "unknown");
+});
+
+// Render stops the old copy on every deploy: finish requests in flight, then
+// exit so Litestream can send its last changes to the backup.
+process.on("SIGTERM", () => {
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 8_000).unref();
 });

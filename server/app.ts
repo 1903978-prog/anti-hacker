@@ -1,3 +1,4 @@
+import compression from "compression";
 import express, { type Express, type Request, type Response } from "express";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -56,6 +57,8 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
   app.disable("x-powered-by");
   app.set("trust proxy", true); // behind Render's proxy; needed for correct req.ip
   app.use(securityHeaders());
+  // Smaller pages and scripts: the first visit after a cold start is the slow one.
+  app.use(compression());
   app.use(express.json({ limit: "32kb" }));
 
   // Control-plane protection: rate limit all API traffic, and require a bearer
@@ -301,6 +304,15 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
   // --- Static UI ------------------------------------------------------------
   const publicDir = join(dirname(fileURLToPath(import.meta.url)), "..", "public");
   app.use(express.static(publicDir));
+
+  // Last resort: one bad request answers 500 as JSON (no stack, no details)
+  // and never takes the server down.
+  app.use((err: unknown, _req: Request, res: Response, next: (e?: unknown) => void) => {
+    if (res.headersSent) return next(err);
+    // eslint-disable-next-line no-console
+    console.error("secval: request failed:", err instanceof Error ? err.message : "unknown error");
+    res.status(500).json({ error: "Something went wrong on the server." });
+  });
 
   return app;
 }
