@@ -144,3 +144,21 @@ describe("control-plane hardening", () => {
     expect((await request(noToken).get("/api/allowlist")).status).toBe(503);
   });
 });
+
+describe("speed and error handling", () => {
+  it("compresses the page script for browsers that accept gzip", async () => {
+    const res = await request(app()).get("/app.js").set("accept-encoding", "gzip");
+    expect(res.status).toBe(200);
+    expect(res.headers["content-encoding"]).toBe("gzip");
+  });
+
+  it("answers a failing request with a plain JSON 500 and no stack", async () => {
+    const db = openDb(":memory:");
+    const a = createApp(db, { apiToken: TOKEN });
+    db.exec("DROP TABLE scans"); // makes the scans route throw
+    const res = await request(a).get("/api/scans").set(auth);
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: "Something went wrong on the server." });
+    expect(JSON.stringify(res.body)).not.toContain("scans");
+  });
+});
