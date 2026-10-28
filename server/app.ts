@@ -24,6 +24,7 @@ import { dashboard } from "./health/score.js";
 import { dashboardHosts, guessApp, listEstimates, saveReport } from "./health/report.js";
 import { checkAllUptime } from "./health/uptime.js";
 import { allUsage } from "./usage/providers.js";
+import { previewDigest } from "./notify/daily.js";
 
 export interface AppOptions {
   /** Secret token required for every API request (bearer header or sign-in cookie). */
@@ -299,6 +300,11 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
   // --- Usage counters (GitHub, Render, Fly, Backblaze; read-only) ----------
   app.get("/api/usage", async (req, res) => {
     res.json(await allUsage({ refresh: req.query.refresh === "1" }));
+  });
+
+  // What tomorrow's daily e-mail would say, and whether e-mail is configured.
+  app.get("/api/digest/preview", async (_req, res) => {
+    res.json(await previewDigest(db));
   });
 
   // --- Static UI ------------------------------------------------------------

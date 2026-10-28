@@ -37,7 +37,7 @@ describe("live build signals", () => {
   it("caps Reliability and Deploy at 50 and marks them failing now", () => {
     const db = freshDb();
     saveReport(db, "10bonds.com", "Reliability & Error Handling: 85 - fine\nDeployment & Operational Readiness: 88 - fine\nCode Quality: 88 - fine", "t");
-    const ci = () => ({ repo: "10bonds", branch: "main", checkedAt: "2026-10-28T05:10:00Z", failing: [{ name: "Deploy", url: "https://x/run/1", at: "" }] });
+    const ci = () => ({ repo: "10bonds", branch: "main", checkedAt: "2026-10-28T05:10:00Z", failing: [{ name: "Deploy", url: "https://x/run/1", at: "" }], latest: null });
     const app = dashboard(db, new Date(), ci).find((a) => a.host === "10bonds.com")!;
     const get = (k: string) => app.areas.find((a) => a.key === k)!;
     expect(get("deploy").measured).toMatchObject({ score: 50, source: "measured", failingNow: [{ name: "Deploy", url: "https://x/run/1" }] });
@@ -53,7 +53,7 @@ describe("measured only", () => {
   it("a green main branch gives Deploy a measured 100; without a signal Deploy is not measured and the overall ignores estimates", () => {
     const db = freshDb();
     saveReport(db, "10bonds.com", "Deployment & Operational Readiness: 92 - fine\nCode Quality: 90 - fine", "t");
-    const green = () => ({ repo: "10bonds", branch: "main", checkedAt: "2026-10-28T06:00:00Z", failing: [] });
+    const green = () => ({ repo: "10bonds", branch: "main", checkedAt: "2026-10-28T06:00:00Z", failing: [], latest: null });
     const on = dashboard(db, new Date(), green).find((a) => a.host === "10bonds.com")!;
     expect(on.areas.find((a) => a.key === "deploy")!.measured).toMatchObject({ score: 100, source: "measured" });
     expect(on.overall).toBe(100);

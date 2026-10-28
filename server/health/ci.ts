@@ -16,6 +16,8 @@ export interface CiSignal {
   branch: string;
   checkedAt: string;
   failing: FailingRun[];
+  /** Newest finished run of any workflow (the last deploy/check result). */
+  latest: { name: string; conclusion: string; at: string; url: string } | null;
 }
 
 export type CiFetcher = (url: string) => Promise<{ status: number; json: () => Promise<unknown> }>;
@@ -35,9 +37,16 @@ export const FAILING_CAP = 50;
 const EVERY_MS = 15 * 60_000;
 const cache = new Map<string, CiSignal>();
 
+// GITHUB_USAGE_TOKEN (read-only, already in the Render env group) is tried for
+// private repos; if it lacks the scope GitHub answers 404 and the app simply
+// shows "not measured".
 const realFetch: CiFetcher = (url) =>
   fetch(url, {
-    headers: { accept: "application/vnd.github+json", "user-agent": "secval" },
+    headers: {
+      accept: "application/vnd.github+json",
+      "user-agent": "secval",
+      ...(process.env.GITHUB_USAGE_TOKEN ? { authorization: `Bearer ${process.env.GITHUB_USAGE_TOKEN}` } : {}),
+    },
     signal: AbortSignal.timeout(10_000),
   });
 
@@ -86,7 +95,11 @@ export async function fetchCiSignal(host: string, fetcher: CiFetcher = realFetch
   const failing = [...newest.values()]
     .filter((r) => r.conclusion === "failure" || r.conclusion === "timed_out")
     .map((r) => ({ name: r.name!, url: r.html_url ?? `https://github.com/${OWNER}/${entry.repo}/actions`, at: r.updated_at ?? "" }));
-  return { repo: entry.repo, branch, checkedAt: new Date().toISOString(), failing };
+  const first = [...newest.values()].sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)))[0];
+  const latest = first
+    ? { name: first.name!, conclusion: String(first.conclusion), at: first.updated_at ?? "", url: first.html_url ?? "" }
+    : null;
+  return { repo: entry.repo, branch, checkedAt: new Date().toISOString(), failing, latest };
 }
 
 export async function refreshCi(fetcher: CiFetcher = realFetch): Promise<void> {
