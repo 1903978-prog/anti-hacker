@@ -3,14 +3,18 @@
 # axe-core at 1440/390/360 px). Render is set to deploy only when these
 # checks pass (render.yaml: autoDeployTrigger: checksPass).
 #
-# Cost: the repo is private, so runs use the free GitHub Actions allowance
-# (2,000 minutes a month on GitHub Free). One run takes about 2-3 minutes.
+# Cost: the repo is public, so Actions minutes are free; one run takes about
+# 2-3 minutes. Session branches (claude/**) never run on push: CI runs on the
+# PR that ships and on the integration push that Render waits for. A newer
+# commit cancels the older run. Docs-only changes skip it.
 name: CI
 
 on:
   push:
     branches: [integration]
+    paths-ignore: ["docs/**", "README.md", "CLAUDE.md"]
   pull_request:
+    paths-ignore: ["docs/**", "README.md", "CLAUDE.md"]
   workflow_dispatch:
 
 concurrency:

@@ -46,3 +46,12 @@ touches a target may exist or run until that layer approves it.
 
 Node/Express 5 + (React client later) · better-sqlite3 for the store · zod for
 validation · TypeScript (tsx to run, vitest to test) · hosted on Render.
+
+## GitHub Actions rules (Livio, 28/10)
+
+- No workflow runs on push to `claude/**` or other session branches. CI runs on pull requests, on the push to `integration` (Render waits for it) and on manual dispatch.
+- Every workflow has a `concurrency` group with `cancel-in-progress: true`, and docs-only changes skip CI (`paths-ignore`).
+- Live checks run once a night and once after a deploy, never on every push. The keep-awake ping is the one exception (public repo, free, never fails).
+- Render deploys secval, so there is no "Deploy to Fly" workflow here.
+- Never re-run a failed workflow to "see if it passes": reproduce it locally, fix the cause or remove the check.
+- GitHub's own failure e-mails are an account setting (GitHub, Settings, Notifications, Actions); a workflow cannot turn them off.
