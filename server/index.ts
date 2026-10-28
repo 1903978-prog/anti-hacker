@@ -3,6 +3,7 @@ import { createApp } from "./app.js";
 import { startScheduler } from "./schedule/weekly.js";
 import { startUptimeChecker } from "./health/uptime.js";
 import { loadReportFiles } from "./health/seed.js";
+import { startCiWatch } from "./health/ci.js";
 import { startRestoreDrill } from "./backup/drill.js";
 import { startDropboxWatch } from "./backup/dropbox.js";
 import { startIntegrityWatch } from "./integrity.js";
@@ -30,6 +31,8 @@ startUptimeChecker(db);
 startRestoreDrill(db);
 // Dropbox: check daily that the PC backup left its Monday copies.
 startDropboxWatch();
+// GitHub build/deploy results cap Reliability and Deploy while a run is red.
+startCiWatch();
 // Health reports kept in the repo (reports/*-health.md) appear as estimates.
 for (const r of loadReportFiles(db)) {
   // eslint-disable-next-line no-console
