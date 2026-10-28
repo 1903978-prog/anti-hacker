@@ -10,11 +10,8 @@
 name: CI
 
 on:
-  push:
-    branches: [integration]
-    paths-ignore: ["docs/**", "README.md", "CLAUDE.md"]
   pull_request:
-    paths-ignore: ["docs/**", "README.md", "CLAUDE.md"]
+    paths-ignore: ["**.md", "docs/**"]
   workflow_dispatch:
 
 concurrency:
