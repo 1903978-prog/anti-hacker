@@ -4,7 +4,6 @@ import { startScheduler } from "./schedule/weekly.js";
 import { startUptimeChecker } from "./health/uptime.js";
 import { loadReportFiles } from "./health/seed.js";
 import { startCiWatch } from "./health/ci.js";
-import { startDailyDigest } from "./notify/daily.js";
 import { startRestoreDrill } from "./backup/drill.js";
 import { startDropboxWatch } from "./backup/dropbox.js";
 import { startIntegrityWatch } from "./integrity.js";
@@ -34,8 +33,8 @@ startRestoreDrill(db);
 startDropboxWatch();
 // GitHub build/deploy results cap Reliability and Deploy while a run is red.
 startCiWatch();
-// One daily production-health e-mail from 07:00 UTC.
-startDailyDigest(db);
+// The daily health e-mail is OFF (Livio 28/10: not asked for). The text is still
+// available at GET /api/digest/preview; startDailyDigest() must stay uncalled.
 // Health reports kept in the repo (reports/*-health.md) appear as estimates.
 for (const r of loadReportFiles(db)) {
   // eslint-disable-next-line no-console
