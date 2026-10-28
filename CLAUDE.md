@@ -46,3 +46,8 @@ touches a target may exist or run until that layer approves it.
 
 Node/Express 5 + (React client later) · better-sqlite3 for the store · zod for
 validation · TypeScript (tsx to run, vitest to test) · hosted on Render.
+
+## GITHUB ACTIONS: COST AND E-MAIL RULES (permanent, Livio, 28/10/2026)
+- No workflow on pushes to `claude/**` or other session branches, and none on every pull request. The only automatic CI run is the push to `integration` (Render deploys only after it passes; docs-only pushes skip it) plus manual dispatch; a newer commit cancels an older run.
+- Never re-run a failed workflow: reproduce it locally. Keep `ubuntu-24.04` pinned (Playwright cannot install on newer images).
+- Failed runs on branches must not e-mail Livio; only a live-site-down alert may. A new workflow states its trigger and minutes per run in its header.

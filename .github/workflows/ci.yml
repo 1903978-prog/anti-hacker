@@ -8,9 +8,13 @@
 name: CI
 
 on:
+  # 28/10/2026 (Livio: Actions cost + "Run failed" mails): no run on session branches or on every
+  # pull request. The one automatic run is the push to integration, because Render deploys that
+  # commit only after this check passes (render.yaml autoDeployTrigger: checksPass). Docs-only
+  # pushes skip it. Anything else: start it by hand (workflow_dispatch).
   push:
     branches: [integration]
-  pull_request:
+    paths-ignore: ["**.md", "docs/**"]
   workflow_dispatch:
 
 concurrency:
