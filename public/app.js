@@ -524,10 +524,10 @@ function renderApp(a) {
     : a.areas
     .filter((ar) => ar.applies !== false)
     .map((ar) => {
-      const main = ar.measured || ar.estimate;
-      const second = ar.measured && ar.estimate ? scoreHtml(ar.estimate, false) : "";
+      const main = ar.measured;
+      const second = ar.estimate ? `<div class="alt">written note, not counted:</div>` + scoreHtml(ar.estimate, false) : "";
       return `<div class="area"><div class="name">${esc(ar.label)}</div>${
-        main ? scoreHtml(main, true) + second : '<div class="alt">no evidence yet</div>'
+        (main ? scoreHtml(main, true) : '<div class="alt">not measured</div>') + second
       }</div>`;
     })
     .join("");
@@ -570,8 +570,11 @@ let openHost = null;
 function cellHtml(a, ar) {
   const label = `data-label="${esc(SHORT[ar.key] || ar.label)}"`;
   if (ar.applies === false) return `<td class="cell none" ${label} title="${esc(ar.label)}: not rated for this app">-</td>`;
-  const s = ar.measured || ar.estimate;
-  if (!s) return `<td class="cell none" ${label} title="${esc(ar.label)}: no evidence yet">–</td>`;
+  const s = ar.measured;
+  if (!s) {
+    const note = ar.estimate ? ` A written estimate of ${ar.estimate.score} exists but is not counted.` : "";
+    return `<td class="cell none" ${label} title="${esc(ar.label)}: not measured.${esc(note)}" data-open="${esc(a.host)}">not measured</td>`;
+  }
   const mark = s.source === "measured" ? "M" : "E";
   const tip = `${ar.label}: ${s.score}% (${s.source}, ${String(s.at || "").slice(0, 10)})\n${s.evidence.join("\n")}`;
   return `<td class="cell ${tone(s.score)} ${s.source}" ${label} title="${esc(tip)}" data-open="${esc(a.host)}">${s.score}%<sup>${s.failingNow ? "failing now" : mark}</sup></td>`;
@@ -863,15 +866,15 @@ async function buildFailedReport() {
     const a = scores.get(host);
     const sc = a
       ? a.areas
-          .filter((ar) => ar.applies !== false && (ar.measured || ar.estimate))
-          .map((ar) => `${SHORT[ar.key] || ar.label} ${(ar.measured || ar.estimate).score}%`)
+          .filter((ar) => ar.applies !== false)
+          .map((ar) => `${SHORT[ar.key] || ar.label} ${ar.measured ? ar.measured.score + "%" : "not measured"}`)
           .join(", ")
       : "";
     const sevRank = { high: 0, medium: 1, low: 2, info: 3 };
     fails.sort((x, y) => sevRank[x.severity] - sevRank[y.severity]);
     const out = [`## ${host}: ${fails.length} failed of ${d.total} tests` + (a && a.overall !== null ? ` (overall ${a.overall}%)` : "")];
     out.push(`Last scan: ${d.lastScan ? day(d.lastScan.finishedAt) + " (" + d.lastScan.mode + ")" : "not scanned yet"}`);
-    if (sc) out.push(`Scores (E = estimate): ${sc}`);
+    if (sc) out.push(`Scores (measured only): ${sc}`);
     if (!fails.length) out.push("No failed tests.");
     fails.forEach((c, i) => {
       out.push(`${i + 1}. [${c.group === "health" ? "health" : c.severity}] ${c.groupLabel}: ${c.title}`);

@@ -112,7 +112,7 @@ describe("pasted reports", () => {
     expect(app.areas).toHaveLength(14);
     expect(app.areas.find((a) => a.key === "seo")).toMatchObject({ applies: false, estimate: null });
     expect(app.areas.find((a) => a.key === "privacy")!.estimate).toBeNull();
-    expect(app.overall).toBe(79);
+    expect(app.overall).toBeNull(); // estimates never lift the overall
   });
 });
 
@@ -231,7 +231,7 @@ describe("report files", () => {
     expect(s).toMatchObject({ applies: true, estimate: { score: 55, source: "estimate" } });
     expect(s.estimate!.evidence).toHaveLength(3); // source line + one per rule
     expect(een.areas.find((a) => a.key === "geo")!.estimate!.score).toBe(45);
-    expect(een.overall).toBe(80); // SEO and GEO not counted
+    expect(een.overall).toBeNull(); // estimates are not counted
     const comp = dashboard(db).find((a) => a.host === "compplan.onrender.com")!;
     expect(comp.areas.find((a) => a.key === "seo")).toMatchObject({ applies: false, estimate: null });
   });
@@ -253,10 +253,10 @@ describe("report files", () => {
     const s = comp.areas.find((a) => a.key === "secrets")!;
     expect(s).toMatchObject({ applies: true, estimate: { score: 60, source: "estimate" } });
     expect(s.estimate!.evidence).toHaveLength(3); // source line + one per rule
-    expect(comp.overall).toBe(70);
+    expect(comp.overall).toBeNull();
     const een = dashboard(db).find((a) => a.host === "eendigo.com")!;
     expect(een.areas.find((a) => a.key === "secrets")).toMatchObject({ applies: false, estimate: null });
-    expect(een.overall).toBe(80);
+    expect(een.overall).toBeNull();
   });
 
   it("rates Personal Data in Code apart from Privacy and Code, counted in the overall", () => {
@@ -278,7 +278,7 @@ describe("report files", () => {
     expect(p.estimate!.evidence).toHaveLength(3); // source line + one per rule
     expect(comp.areas.find((a) => a.key === "privacy")!.estimate!.score).toBe(80);
     expect(comp.areas.find((a) => a.key === "code")!.estimate!.score).toBe(60);
-    expect(comp.overall).toBe(60);
+    expect(comp.overall).toBeNull();
     const een = dashboard(db).find((a) => a.host === "eendigo.com")!;
     expect(een.areas.find((a) => a.key === "personal")).toMatchObject({ applies: false, estimate: null });
   });

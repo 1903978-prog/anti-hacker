@@ -48,3 +48,17 @@ describe("live build signals", () => {
     expect(green.areas.find((a) => a.key === "deploy")!.measured).toBeNull();
   });
 });
+
+describe("measured only", () => {
+  it("a green main branch gives Deploy a measured 100; without a signal Deploy is not measured and the overall ignores estimates", () => {
+    const db = freshDb();
+    saveReport(db, "10bonds.com", "Deployment & Operational Readiness: 92 - fine\nCode Quality: 90 - fine", "t");
+    const green = () => ({ repo: "10bonds", branch: "main", checkedAt: "2026-10-28T06:00:00Z", failing: [] });
+    const on = dashboard(db, new Date(), green).find((a) => a.host === "10bonds.com")!;
+    expect(on.areas.find((a) => a.key === "deploy")!.measured).toMatchObject({ score: 100, source: "measured" });
+    expect(on.overall).toBe(100);
+    const off = dashboard(db, new Date(), () => null).find((a) => a.host === "10bonds.com")!;
+    expect(off.areas.find((a) => a.key === "deploy")!.measured).toBeNull();
+    expect(off.overall).toBeNull();
+  });
+});
