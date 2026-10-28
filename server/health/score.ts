@@ -1,6 +1,7 @@
 import type { DB } from "../db.js";
 import { AREAS, INFRA, appliesTo, dashboardHosts, listEstimates, listInfra, shipperFrom, type StoredEstimate } from "./report.js";
 import { listUptime, type UptimeCheck } from "./uptime.js";
+import { FAILING_CAP, getCiSignal, type CiSignal } from "./ci.js";
 
 /**
  * A score backed by evidence. "measured" means secval checked it itself;
@@ -12,6 +13,8 @@ export interface Score {
   source: "measured" | "estimate";
   at: string;
   evidence: string[];
+  /** Set when GitHub shows a failing run on the app's main branch (score is capped). */
+  failingNow?: Array<{ name: string; url: string }>;
 }
 
 export interface AreaScores {
@@ -185,7 +188,7 @@ function infraFacts(db: DB, host: string, checks7d: UptimeCheck[]): InfraFact[] 
 }
 
 /** Builds the whole dashboard: one entry per allowlisted app. */
-export function dashboard(db: DB, now: Date = new Date()): AppHealth[] {
+export function dashboard(db: DB, now: Date = new Date(), ci: (host: string) => CiSignal | null = getCiSignal): AppHealth[] {
   const since7d = new Date(now.getTime() - 7 * DAY).toISOString();
 
   return dashboardHosts(db).map((h) => {
@@ -213,15 +216,27 @@ export function dashboard(db: DB, now: Date = new Date()): AppHealth[] {
       };
     };
 
+    const failing = ci(e.domain)?.failing ?? [];
     const areas = AREAS.map((a) => {
       const applies = appliesTo(a.key, e.domain);
-      return {
-        key: a.key,
-        label: a.label,
-        applies,
-        measured: applies ? measured[a.key] ?? null : null,
-        estimate: applies ? latestEstimate(a.key) : null,
-      };
+      const estimate = applies ? latestEstimate(a.key) : null;
+      let m = applies ? measured[a.key] ?? null : null;
+      // Real red builds beat hand-written scores: cap Reliability and Deploy.
+      if (applies && failing.length && (a.key === "reliability" || a.key === "deploy")) {
+        const best = m ?? estimate;
+        m = {
+          score: Math.min(best?.score ?? 100, FAILING_CAP),
+          source: "measured",
+          at: ci(e.domain)!.checkedAt,
+          evidence: [
+            `FAILING NOW on GitHub (${ci(e.domain)!.repo}, ${ci(e.domain)!.branch}): ${failing.map((f) => `${f.name} ${f.url}`).join("; ")}`,
+            `Score capped at ${FAILING_CAP} until the run is green again.`,
+            ...(best ? [`Before the cap: ${best.score} (${best.source}).`] : []),
+          ],
+          failingNow: failing.map((f) => ({ name: f.name, url: f.url })),
+        };
+      }
+      return { key: a.key, label: a.label, applies, measured: m, estimate };
     });
     // Overall: average of each area's best-known score (measured wins).
     // SEO and GEO are left out so every app's overall stays comparable.

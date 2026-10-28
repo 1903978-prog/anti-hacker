@@ -435,8 +435,11 @@ function scoreHtml(s, main) {
   const ev = `<details><summary>why</summary><ul>${s.evidence
     .map((e) => `<li>${esc(e)}</li>`)
     .join("")}<li>${day(s.at)}</li></ul></details>`;
+  const fail = (s.failingNow || [])
+    .map((f) => `<div class="note"><b>Failing now:</b> <a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.name)}</a></div>`)
+    .join("");
   return main
-    ? `<div class="num ${tone(s.score)}">${s.score}<span class="tag ${s.source}">${s.source}</span></div>${ev}`
+    ? `<div class="num ${tone(s.score)}">${s.score}<span class="tag ${s.source}">${s.source}</span></div>${fail}${ev}`
     : `<div class="alt">${s.score} <span class="tag ${s.source}">${s.source}</span></div>${ev}`;
 }
 
@@ -571,7 +574,7 @@ function cellHtml(a, ar) {
   if (!s) return `<td class="cell none" ${label} title="${esc(ar.label)}: no evidence yet">–</td>`;
   const mark = s.source === "measured" ? "M" : "E";
   const tip = `${ar.label}: ${s.score}% (${s.source}, ${String(s.at || "").slice(0, 10)})\n${s.evidence.join("\n")}`;
-  return `<td class="cell ${tone(s.score)} ${s.source}" ${label} title="${esc(tip)}" data-open="${esc(a.host)}">${s.score}%<sup>${mark}</sup></td>`;
+  return `<td class="cell ${tone(s.score)} ${s.source}" ${label} title="${esc(tip)}" data-open="${esc(a.host)}">${s.score}%<sup>${s.failingNow ? "failing now" : mark}</sup></td>`;
 }
 
 function renderTable(apps) {
