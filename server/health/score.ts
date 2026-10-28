@@ -236,13 +236,25 @@ export function dashboard(db: DB, now: Date = new Date(), ci: (host: string) => 
           failingNow: failing.map((f) => ({ name: f.name, url: f.url })),
         };
       }
+      // Deploy is measured from the app's own GitHub runs: green = 100.
+      if (applies && a.key === "deploy" && !m && ci(e.domain) && !failing.length) {
+        const c = ci(e.domain)!;
+        m = {
+          score: 100,
+          source: "measured",
+          at: c.checkedAt,
+          evidence: [`Every workflow's newest finished run on ${c.repo} ${c.branch} is green (checks, deploy, live checks).`,
+            "Rollback and runbook quality are not measured."],
+        };
+      }
       return { key: a.key, label: a.label, applies, measured: m, estimate };
     });
-    // Overall: average of each area's best-known score (measured wins).
-    // SEO and GEO are left out so every app's overall stays comparable.
+    // Overall: average of the MEASURED scores only (Livio 28/10: no hand-written
+    // estimate may lift a number). SEO and GEO are left out so every app's
+    // overall stays comparable.
     const best = areas
       .filter((a) => !OUTSIDE_OVERALL.has(a.key))
-      .map((a) => (a.measured ?? a.estimate)?.score)
+      .map((a) => a.measured?.score)
       .filter((s): s is number => typeof s === "number");
     // "Also in the last report" comes from the newest health report, not an SEO one.
     const newestReport = estimates.find((s) => !OUTSIDE_OVERALL.has(s.area))?.createdAt;
