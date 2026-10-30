@@ -11,6 +11,21 @@
 
 (Enforced by the Stop hook in `.claude/settings.json` → `.claude/hooks/livio_time_check.py`. This is the only copy of the time rules in this repo.)
 
+## Rule 2 — Request IDs and release proof (second priority after time protection)
+1. Every new request from Livio gets a permanent ID before any work starts: <REPO-PREFIX>-<4-digit running number> (10B, LMO, NEX, CPP, SEC …). Never reuse or renumber an ID.
+2. Log each ID in docs/requests.md (one row): ID · date · request in Livio's words (short) · status (open / in progress / done / dropped) · commits · release.
+3. Session replies to Livio start with the ID(s) they are working on.
+4. docs/core-functions.md lists the app's key existing functions (max ~25), each with a fast check (test, script or URL check). Create it now if missing.
+5. Every release (fly deploy / ship) writes a release note in docs/releases.md AND in the reply to Livio with three lists:
+   - Completed: IDs finished in this release
+   - Tested: IDs and how each was tested (test name or live check on production)
+   - Not broken: core functions checked this release, each pass/fail
+   A release with any core function failing is not shipped (Fly apps: roll back).
+6. Open IDs older than 7 days are listed at the end of every release note.
+7. Checks stay fast: targeted tests plus the core-function checks, under 2 minutes total.
+
+(Repo prefix here: SEC.)
+
 ---
 
 # secval — standing rules for Claude
