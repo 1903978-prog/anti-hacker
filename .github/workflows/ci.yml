@@ -10,6 +10,9 @@
 name: CI
 
 on:
+  push:
+    branches: [integration]
+    paths-ignore: ["**.md", "docs/**"]
   pull_request:
     paths-ignore: ["**.md", "docs/**"]
   workflow_dispatch:
