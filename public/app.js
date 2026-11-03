@@ -344,6 +344,26 @@ async function refreshDropbox() {
   el("dropboxText").innerHTML = `<span class="badge${cls}">${esc(label)}</span> ${esc(body.message)}${lines}${table}` +
     ` · <a href="${esc(body.link)}" target="_blank" rel="noopener">open Dropbox</a>`;
 }
+let lenovoLoaded = false;
+async function refreshLenovo(run) {
+  const { ok, body } = run ? await api("/api/lenovo/check", { method: "POST", body: "{}" }) : await api("/api/lenovo");
+  if (!ok || !Array.isArray(body)) return;
+  const label = { "not-connected": "not connected", ok: "connected", alert: "alert", fail: "FAIL", "not-measured": "not measured" };
+  const conn = body.filter((a) => a.status !== "not-connected");
+  el("lenovoText").textContent = conn.length ? `${conn.length} app(s) use the Lenovo.` : "No app uses the Lenovo.";
+  el("lenovoList").innerHTML = body.map((a) => {
+    const cls = a.status === "ok" ? " ok" : a.status === "alert" || a.status === "fail" ? " bad" : "";
+    const detail = (a.checks || []).map((c) => `<div class="note" style="margin:0">${c.status === "pass" ? "✓" : "✗"} ${esc(c.title)}: ${esc(c.detail)}</div>`).join("");
+    const when = a.checkedAt ? ` · checked ${esc(new Date(a.checkedAt).toLocaleString())}` : "";
+    return `<div style="margin:6px 0"><b>${esc(a.app)}</b> <span class="badge${cls}">${esc(label[a.status] || a.status)}</span> <span class="note" style="margin:0">${esc(a.summary)}${when}</span>${detail}</div>`;
+  }).join("");
+}
+el("lenovoBtn").onclick = async () => {
+  el("lenovoBtn").disabled = true;
+  el("lenovoText").textContent = "Checking the Lenovo (up to 2 minutes)…";
+  await refreshLenovo(true);
+  el("lenovoBtn").disabled = false;
+};
 let rollbackArmed = null;
 async function refreshRollback() {
   const { ok, body } = await api("/api/deploys");
@@ -392,6 +412,7 @@ function refreshAll() {
   refreshDashboard();
   if (currentTab === "tests") refreshTests();
   if (currentTab === "usage") refreshUsage();
+
 }
 
 el("tokenSave").onclick = async () => {
@@ -761,6 +782,7 @@ function showTab(name) {
   for (const a of document.querySelectorAll("nav.tabs a")) a.setAttribute("aria-selected", String(a.dataset.tab === tab));
   try { localStorage.setItem("secval_tab", tab); } catch { /* not remembered */ }
   if (tab === "tests" && signedIn) refreshTests();
+  if (tab === "settings" && signedIn && !lenovoLoaded) { lenovoLoaded = true; refreshLenovo(false); }
   if (tab === "usage" && signedIn) refreshUsage();
 }
 function storedTab() {
