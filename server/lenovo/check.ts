@@ -214,7 +214,11 @@ export function lenovoForHost(
 // (compplan does: verdict + plain sentence) is read from there. This runs lazily when the dashboard or the Lenovo list is
 // requested and the last reading is older than 5 minutes (no timer), so the column never stays "not measured" until someone
 // presses the button. A full check (button) is kept for 1 hour before the passive reading may replace it.
-const VERSION_URLS: Record<string, string> = { compplan: "https://compplan.onrender.com/api/version" };
+const VERSION_URLS: Record<string, string> = {
+  compplan: "https://compplan.onrender.com/api/version",
+  nexus: "https://nexus-eendigo.fly.dev/api/version",
+  "lm-op-model": "https://lm-op-model.fly.dev/api/version",
+};
 const PASSIVE_EVERY_MS = 5 * 60_000, FULL_KEEP_MS = 60 * 60_000;
 const passiveAt = new Map<string, number>();
 
