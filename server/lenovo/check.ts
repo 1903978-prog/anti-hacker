@@ -195,6 +195,7 @@ export async function runLenovoChecks(
 
 export function resetLenovoCache(): void {
   last.clear();
+  passiveAt.clear();
 }
 
 /** Which tracked app a dashboard host belongs to (10bonds.com -> 10bonds, nexus-eendigo.fly.dev -> nexus). */
@@ -207,4 +208,47 @@ export function lenovoForHost(
   if (!app) return { status: "not-connected", summary: "Not connected to the Lenovo." };
   const r = lenovoOverview(env).find((x) => x.app === app)!;
   return { status: r.status, summary: r.summary };
+}
+
+// Passive status (no model call, no secrets): a connected app that publishes a Lenovo health block on its public /api/version
+// (compplan does: verdict + plain sentence) is read from there. This runs lazily when the dashboard or the Lenovo list is
+// requested and the last reading is older than 5 minutes (no timer), so the column never stays "not measured" until someone
+// presses the button. A full check (button) is kept for 1 hour before the passive reading may replace it.
+const VERSION_URLS: Record<string, string> = {
+  compplan: "https://compplan.onrender.com/api/version",
+  nexus: "https://nexus-eendigo.fly.dev/api/version",
+  "lm-op-model": "https://lm-op-model.fly.dev/api/version",
+};
+const PASSIVE_EVERY_MS = 5 * 60_000, FULL_KEEP_MS = 60 * 60_000;
+const passiveAt = new Map<string, number>();
+
+export function verdictToStatus(verdict: unknown): LenovoStatus {
+  if (verdict === "online") return "ok";
+  if (verdict === "offline") return "fail";
+  if (verdict === "gateway_down_worker_up" || verdict === "ollama_down_on_lenovo") return "alert";
+  return "not-measured";
+}
+
+export async function refreshPassive(
+  env: Record<string, string | undefined> = process.env,
+  deps: LenovoDeps = {},
+): Promise<void> {
+  const connected = deps.connected ?? connectedApps(env);
+  const f = deps.fetch ?? realFetch;
+  const now = (deps.now ?? Date.now)();
+  await Promise.all(connected.filter((a) => VERSION_URLS[a] && LENOVO_APPS.includes(a)).map(async (app) => {
+    if (now - (passiveAt.get(app) ?? 0) < PASSIVE_EVERY_MS) return;
+    passiveAt.set(app, now);
+    const full = last.get(app);
+    if (full?.checks.length && full.checkedAt && now - Date.parse(full.checkedAt) < FULL_KEEP_MS) return;
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 8_000);
+    try {
+      const r = await f(VERSION_URLS[app]!, { method: "GET", headers: {}, signal: ctl.signal });
+      const j = JSON.parse(await r.text()) as { lenovo?: { verdict?: unknown; say?: unknown } };
+      if (r.status !== 200 || !j.lenovo) { last.set(app, { app, status: "not-measured", summary: `The app's /api/version has no Lenovo block (HTTP ${r.status}).`, checkedAt: new Date(now).toISOString(), checks: [] }); return; }
+      last.set(app, { app, status: verdictToStatus(j.lenovo.verdict), summary: String(j.lenovo.say ?? j.lenovo.verdict ?? "").slice(0, 300), checkedAt: new Date(now).toISOString(), checks: [] });
+    } catch {
+      last.set(app, { app, status: "not-measured", summary: "Could not read the app's /api/version just now.", checkedAt: new Date(now).toISOString(), checks: [] });
+    } finally { clearTimeout(timer); }
+  }));
 }

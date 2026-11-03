@@ -25,7 +25,7 @@ import { dashboardHosts, guessApp, listEstimates, saveReport } from "./health/re
 import { checkAllUptime } from "./health/uptime.js";
 import { allUsage } from "./usage/providers.js";
 import { previewDigest } from "./notify/daily.js";
-import { lenovoForHost, lenovoOverview, runLenovoChecks, type LenovoFetch } from "./lenovo/check.js";
+import { lenovoForHost, lenovoOverview, refreshPassive, runLenovoChecks, type LenovoFetch } from "./lenovo/check.js";
 
 export interface AppOptions {
   /** Secret token required for every API request (bearer header or sign-in cookie). */
@@ -260,7 +260,8 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
   });
 
   // --- Lenovo (local Ollama) connection per app ---------------------------
-  app.get("/api/lenovo", (_req, res) => {
+  app.get("/api/lenovo", async (_req, res) => {
+    await refreshPassive(options.lenovoEnv ?? process.env, { fetch: options.lenovoFetch }).catch(() => {});
     res.json(lenovoOverview(options.lenovoEnv ?? process.env));
   });
 
@@ -283,8 +284,9 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
   });
 
   // --- Health dashboard -----------------------------------------------------
-  app.get("/api/dashboard", (_req, res) => {
+  app.get("/api/dashboard", async (_req, res) => {
     const env = options.lenovoEnv ?? process.env;
+    await refreshPassive(env, { fetch: options.lenovoFetch }).catch(() => {});
     res.json(dashboard(db).map((a) => ({ ...a, lenovo: lenovoForHost(a.host, env) })));
   });
 
