@@ -46,6 +46,14 @@ const realFetch: LenovoFetch = async (url, init) => {
   return { status: r.status, text: () => r.text() };
 };
 
+function missingVars(env: Record<string, string | undefined>): string[] {
+  return [
+    !(env.OLLAMA_BASE_URL ?? "").trim() && "OLLAMA_BASE_URL",
+    !env.OLLAMA_CF_ACCESS_CLIENT_ID && "OLLAMA_CF_ACCESS_CLIENT_ID",
+    !env.OLLAMA_CF_ACCESS_CLIENT_SECRET && "OLLAMA_CF_ACCESS_CLIENT_SECRET",
+  ].filter(Boolean) as string[];
+}
+
 export function connectedApps(env: Record<string, string | undefined> = process.env): string[] {
   const raw = env.LENOVO_CONNECTED_APPS;
   if (!raw) return DEFAULT_CONNECTED;
@@ -162,7 +170,14 @@ export function lenovoOverview(env: Record<string, string | undefined> = process
     if (!connected.includes(app)) {
       return { app, status: "not-connected" as const, summary: "Not connected to the Lenovo (not a failure).", checkedAt: null, checks: [] };
     }
-    return last.get(app) ?? { app, status: "not-measured" as const, summary: "not measured", checkedAt: null, checks: [] };
+    const prev = last.get(app);
+    if (prev) return prev;
+    // No network call yet, but missing keys are already known: say so.
+    const missing = missingVars(env);
+    if (missing.length) {
+      return { app, status: "alert" as const, summary: `Missing in secval: ${missing.join(", ")}.`, checkedAt: null, checks: [] };
+    }
+    return { app, status: "not-measured" as const, summary: "not measured", checkedAt: null, checks: [] };
   });
 }
 

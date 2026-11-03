@@ -612,7 +612,7 @@ function lenovoCell(a) {
   const label = 'data-label="Lenovo AI"';
   const tip = esc("Lenovo AI: " + l.summary);
   const open = `data-open="${esc(a.host)}"`;
-  if (l.status === "not-connected") return `<td class="cell none" ${label} title="${tip}" ${open}>No</td>`;
+  if (l.status === "not-connected") return `<td class="cell none" ${label} title="${tip}" ${open}>not connected</td>`;
   if (l.status === "ok") return `<td class="cell good" ${label} title="${tip}" ${open}>Yes</td>`;
   if (l.status === "alert" || l.status === "fail") return `<td class="cell bad" ${label} title="${tip}" ${open}>Yes, failing</td>`;
   return `<td class="cell none" ${label} title="${tip}" ${open}>not measured</td>`;

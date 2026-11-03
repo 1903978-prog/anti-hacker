@@ -68,7 +68,9 @@ describe("lenovo check", () => {
 
   it("overview shows 'not measured' before any run", () => {
     const o = lenovoOverview({});
-    expect(o.find((a) => a.app === "compplan")!.status).toBe("not-measured");
+    expect(o.find((a) => a.app === "compplan")!.status).toBe("alert");
+    expect(o.find((a) => a.app === "compplan")!.summary).toContain("OLLAMA_BASE_URL");
+    expect(lenovoOverview(ENV).find((a) => a.app === "compplan")!.status).toBe("not-measured");
     expect(o.find((a) => a.app === "nexus")!.status).toBe("not-connected");
   });
 
@@ -85,6 +87,7 @@ describe("lenovo check", () => {
     expect(lenovoForHost("10bonds.com", ENV).status).toBe("not-connected");
     expect(lenovoForHost("nexus-eendigo.fly.dev", ENV).status).toBe("not-connected");
     expect(lenovoForHost("compplan.onrender.com", ENV).status).toBe("not-measured");
+    expect(lenovoForHost("compplan.onrender.com", {}).status).toBe("alert");
     const app = createApp(openDb(":memory:"), { apiToken: "tok", lenovoEnv: ENV, lenovoFetch: fake({ pull: 200 }) });
     await request(app).post("/api/lenovo/check").set("authorization", "Bearer tok").send({}).expect(200);
     const d = await request(app).get("/api/dashboard").set("authorization", "Bearer tok").expect(200);
