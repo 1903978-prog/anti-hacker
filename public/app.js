@@ -592,9 +592,14 @@ function cellHtml(a, ar) {
   const label = `data-label="${esc(SHORT[ar.key] || ar.label)}"`;
   if (ar.applies === false) return `<td class="cell none" ${label} title="${esc(ar.label)}: not rated for this app">-</td>`;
   const s = ar.measured;
+  if (!s && ar.estimate) {
+    // Written estimate: grey "E", never counted in the overall score.
+    const e = ar.estimate;
+    const tip = `${ar.label}: ${e.score}% ESTIMATE from a written report (${String(e.at || "").slice(0, 10)}), not measured and not counted in the overall score.\n${e.evidence.join("\n")}`;
+    return `<td class="cell none est" ${label} title="${esc(tip)}" data-open="${esc(a.host)}">${e.score}%<sup>E</sup></td>`;
+  }
   if (!s) {
-    const note = ar.estimate ? ` A written estimate of ${ar.estimate.score} exists but is not counted.` : "";
-    return `<td class="cell none" ${label} title="${esc(ar.label)}: not measured.${esc(note)}" data-open="${esc(a.host)}">not measured</td>`;
+    return `<td class="cell none" ${label} title="${esc(ar.label)}: not measured, no estimate" data-open="${esc(a.host)}">not measured</td>`;
   }
   const mark = s.source === "measured" ? "M" : "E";
   const tip = `${ar.label}: ${s.score}% (${s.source}, ${String(s.at || "").slice(0, 10)})\n${s.evidence.join("\n")}`;

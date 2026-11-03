@@ -347,3 +347,13 @@ describe("dashboard API", () => {
     expect(dash.body.length).toBeGreaterThan(0);
   });
 });
+
+describe("dashboard cell for estimates", () => {
+  it("draws a grey E cell for an estimate and keeps 'not measured' only when no evidence exists", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
+    expect(src).toContain("cell none est");
+    expect(src).toContain("<sup>E</sup>");
+    expect(src).toContain("not measured, no estimate");
+  });
+});
