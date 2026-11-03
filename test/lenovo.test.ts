@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import request from "supertest";
 import { openDb } from "../server/db.js";
 import { createApp } from "../server/app.js";
-import { checkApp, lenovoForHost, lenovoOverview, resetLenovoCache, type LenovoFetch } from "../server/lenovo/check.js";
+import { checkApp, lenovoForHost, lenovoOverview, refreshPassive, resetLenovoCache, type LenovoFetch } from "../server/lenovo/check.js";
 
 const ENV = {
   OLLAMA_BASE_URL: "https://lenovo.example.com/",
@@ -91,5 +91,22 @@ describe("lenovo check", () => {
     const row = (h: string) => d.body.find((a: { host: string }) => a.host === h);
     expect(row("compplan.onrender.com").lenovo.status).toBe("fail");
     expect(row("lm-op-model.fly.dev").lenovo.status).toBe("not-connected");
+  });
+});
+
+describe("lenovo passive status from /api/version", () => {
+  const ver = (lenovo: unknown): LenovoFetch => async () => ({ status: 200, text: async () => JSON.stringify({ lenovo }) });
+  it("online verdict shows ok without any model call or secret", async () => {
+    await refreshPassive({}, { fetch: ver({ verdict: "online", say: "Lenovo online." }) });
+    const r = lenovoOverview({}).find((x) => x.app === "compplan")!;
+    expect(r.status).toBe("ok");
+    expect(r.summary).toBe("Lenovo online.");
+  });
+  it("offline is a failure and a missing block stays not measured", async () => {
+    await refreshPassive({}, { fetch: ver({ verdict: "offline", say: "down" }) });
+    expect(lenovoOverview({}).find((x) => x.app === "compplan")!.status).toBe("fail");
+    resetLenovoCache();
+    await refreshPassive({}, { fetch: ver(undefined) });
+    expect(lenovoOverview({}).find((x) => x.app === "compplan")!.status).toBe("not-measured");
   });
 });
