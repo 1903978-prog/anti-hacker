@@ -25,7 +25,7 @@ import { dashboardHosts, guessApp, listEstimates, saveReport } from "./health/re
 import { checkAllUptime } from "./health/uptime.js";
 import { allUsage } from "./usage/providers.js";
 import { previewDigest } from "./notify/daily.js";
-import { lenovoOverview, runLenovoChecks, type LenovoFetch } from "./lenovo/check.js";
+import { lenovoForHost, lenovoOverview, runLenovoChecks, type LenovoFetch } from "./lenovo/check.js";
 
 export interface AppOptions {
   /** Secret token required for every API request (bearer header or sign-in cookie). */
@@ -284,7 +284,8 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
 
   // --- Health dashboard -----------------------------------------------------
   app.get("/api/dashboard", (_req, res) => {
-    res.json(dashboard(db));
+    const env = options.lenovoEnv ?? process.env;
+    res.json(dashboard(db).map((a) => ({ ...a, lenovo: lenovoForHost(a.host, env) })));
   });
 
   app.get("/api/dashboard/history/:host", (req, res) => {
