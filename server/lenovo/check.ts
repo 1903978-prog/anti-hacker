@@ -25,7 +25,8 @@ export interface LenovoAppResult {
 }
 
 export const LENOVO_APPS = ["compplan", "lm-op-model", "nexus", "10bonds", "eendigo", "secval"];
-const DEFAULT_CONNECTED = ["compplan"];
+// compplan (Render), nexus and lm-op-model (Fly) all have Ollama code in their own repos (checked 03/11).
+const DEFAULT_CONNECTED = ["compplan", "nexus", "lm-op-model"];
 export const CHAT_ALERT_MS = 120_000;
 const MODEL = "qwen3.5:2b";
 
@@ -37,7 +38,7 @@ export type LenovoFetch = (
 export interface LenovoDeps {
   fetch?: LenovoFetch;
   now?: () => number;
-  /** Connected app list (defaults to env LENOVO_CONNECTED_APPS, else compplan). */
+  /** Connected app list (defaults to env LENOVO_CONNECTED_APPS, else compplan, nexus, lm-op-model). */
   connected?: string[];
 }
 

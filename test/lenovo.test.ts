@@ -26,7 +26,7 @@ beforeEach(() => resetLenovoCache());
 
 describe("lenovo check", () => {
   it("apps that do not use the Lenovo are 'not connected', never a failure", async () => {
-    for (const app of ["lm-op-model", "nexus", "10bonds", "eendigo", "secval"]) {
+    for (const app of ["10bonds", "eendigo", "secval"]) {
       const r = await checkApp(app, {}, { fetch: async () => { throw new Error("must not call"); } });
       expect(r.status).toBe("not-connected");
     }
@@ -71,7 +71,8 @@ describe("lenovo check", () => {
     expect(o.find((a) => a.app === "compplan")!.status).toBe("alert");
     expect(o.find((a) => a.app === "compplan")!.summary).toContain("OLLAMA_BASE_URL");
     expect(lenovoOverview(ENV).find((a) => a.app === "compplan")!.status).toBe("not-measured");
-    expect(o.find((a) => a.app === "nexus")!.status).toBe("not-connected");
+    expect(o.find((a) => a.app === "nexus")!.status).toBe("alert");
+    expect(o.find((a) => a.app === "10bonds")!.status).toBe("not-connected");
   });
 
   it("API: overview and run need the token and return results", async () => {
@@ -85,7 +86,7 @@ describe("lenovo check", () => {
 
   it("dashboard column: No / not measured / Yes / Yes, failing per host", async () => {
     expect(lenovoForHost("10bonds.com", ENV).status).toBe("not-connected");
-    expect(lenovoForHost("nexus-eendigo.fly.dev", ENV).status).toBe("not-connected");
+    expect(lenovoForHost("nexus-eendigo.fly.dev", ENV).status).toBe("not-measured");
     expect(lenovoForHost("compplan.onrender.com", ENV).status).toBe("not-measured");
     expect(lenovoForHost("compplan.onrender.com", {}).status).toBe("alert");
     const app = createApp(openDb(":memory:"), { apiToken: "tok", lenovoEnv: ENV, lenovoFetch: fake({ pull: 200 }) });
@@ -93,6 +94,6 @@ describe("lenovo check", () => {
     const d = await request(app).get("/api/dashboard").set("authorization", "Bearer tok").expect(200);
     const row = (h: string) => d.body.find((a: { host: string }) => a.host === h);
     expect(row("compplan.onrender.com").lenovo.status).toBe("fail");
-    expect(row("lm-op-model.fly.dev").lenovo.status).toBe("not-connected");
+    expect(row("lm-op-model.fly.dev").lenovo.status).toBe("fail");
   });
 });
