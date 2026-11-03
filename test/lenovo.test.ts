@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import request from "supertest";
 import { openDb } from "../server/db.js";
 import { createApp } from "../server/app.js";
-import { checkApp, lenovoOverview, resetLenovoCache, type LenovoFetch } from "../server/lenovo/check.js";
+import { checkApp, lenovoForHost, lenovoOverview, resetLenovoCache, type LenovoFetch } from "../server/lenovo/check.js";
 
 const ENV = {
   OLLAMA_BASE_URL: "https://lenovo.example.com/",
@@ -79,5 +79,17 @@ describe("lenovo check", () => {
     expect(run.body.find((a: { app: string }) => a.app === "compplan").status).toBe("ok");
     const again = await request(app).get("/api/lenovo").set("authorization", "Bearer tok").expect(200);
     expect(again.body.find((a: { app: string }) => a.app === "compplan").status).toBe("ok");
+  });
+
+  it("dashboard column: No / not measured / Yes / Yes, failing per host", async () => {
+    expect(lenovoForHost("10bonds.com", ENV).status).toBe("not-connected");
+    expect(lenovoForHost("nexus-eendigo.fly.dev", ENV).status).toBe("not-connected");
+    expect(lenovoForHost("compplan.onrender.com", ENV).status).toBe("not-measured");
+    const app = createApp(openDb(":memory:"), { apiToken: "tok", lenovoEnv: ENV, lenovoFetch: fake({ pull: 200 }) });
+    await request(app).post("/api/lenovo/check").set("authorization", "Bearer tok").send({}).expect(200);
+    const d = await request(app).get("/api/dashboard").set("authorization", "Bearer tok").expect(200);
+    const row = (h: string) => d.body.find((a: { host: string }) => a.host === h);
+    expect(row("compplan.onrender.com").lenovo.status).toBe("fail");
+    expect(row("lm-op-model.fly.dev").lenovo.status).toBe("not-connected");
   });
 });

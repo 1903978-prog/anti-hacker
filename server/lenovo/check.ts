@@ -180,3 +180,15 @@ export async function runLenovoChecks(
 export function resetLenovoCache(): void {
   last.clear();
 }
+
+/** Which tracked app a dashboard host belongs to (10bonds.com -> 10bonds, nexus-eendigo.fly.dev -> nexus). */
+export function lenovoForHost(
+  host: string,
+  env: Record<string, string | undefined> = process.env,
+): { status: LenovoStatus; summary: string } {
+  const label = host.toLowerCase().split(".")[0]!;
+  const app = LENOVO_APPS.find((a) => label === a || label.startsWith(a));
+  if (!app) return { status: "not-connected", summary: "Not connected to the Lenovo." };
+  const r = lenovoOverview(env).find((x) => x.app === app)!;
+  return { status: r.status, summary: r.summary };
+}

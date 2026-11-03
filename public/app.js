@@ -601,17 +601,29 @@ function cellHtml(a, ar) {
   return `<td class="cell ${tone(s.score)} ${s.source}" ${label} title="${esc(tip)}" data-open="${esc(a.host)}">${s.score}%<sup>${s.failingNow ? "failing now" : mark}</sup></td>`;
 }
 
+// "Lenovo AI" column: Yes / No per app (connected to the Lenovo's local AI or not).
+function lenovoCell(a) {
+  const l = a.lenovo || { status: "not-measured", summary: "not measured" };
+  const label = 'data-label="Lenovo AI"';
+  const tip = esc("Lenovo AI: " + l.summary);
+  const open = `data-open="${esc(a.host)}"`;
+  if (l.status === "not-connected") return `<td class="cell none" ${label} title="${tip}" ${open}>No</td>`;
+  if (l.status === "ok") return `<td class="cell good" ${label} title="${tip}" ${open}>Yes</td>`;
+  if (l.status === "alert" || l.status === "fail") return `<td class="cell bad" ${label} title="${tip}" ${open}>Yes, failing</td>`;
+  return `<td class="cell none" ${label} title="${tip}" ${open}>not measured</td>`;
+}
+
 function renderTable(apps) {
   if (!apps.length) return "No apps on the allowlist yet.";
   const head = apps[0].areas
     .map((ar) => `<th title="${esc(ar.label)}">${esc(SHORT[ar.key] || ar.label)}</th>`)
-    .join("");
+    .join("") + '<th title="Is the Lenovo local AI connected to this app?">Lenovo AI</th>';
   const rows = apps
     .map(
       (a) => `<tr>
         <th class="appname"><button class="link" data-open="${esc(a.host)}">${esc(a.host)}</button></th>
         ${a.overall === null ? '<td class="cell none" data-label="Overall">–</td>' : `<td class="cell ${tone(a.overall)} overallc" data-label="Overall">${a.overall}%</td>`}
-        ${a.areas.map((ar) => cellHtml(a, ar)).join("")}
+        ${a.areas.map((ar) => cellHtml(a, ar)).join("")}${lenovoCell(a)}
       </tr>`,
     )
     .join("");
