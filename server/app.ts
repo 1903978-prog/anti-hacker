@@ -25,6 +25,7 @@ import { dashboardHosts, guessApp, listEstimates, saveReport } from "./health/re
 import { checkAllUptime } from "./health/uptime.js";
 import { allUsage } from "./usage/providers.js";
 import { previewDigest } from "./notify/daily.js";
+import { lenovoOverview, runLenovoChecks, type LenovoFetch } from "./lenovo/check.js";
 
 export interface AppOptions {
   /** Secret token required for every API request (bearer header or sign-in cookie). */
@@ -33,6 +34,9 @@ export interface AppOptions {
   renderFetch?: RenderFetcher;
   /** Environment for the Render rollback (defaults to process.env). */
   renderEnv?: Record<string, string | undefined>;
+  /** Lenovo check: environment and network caller (tests hand in fakes). */
+  lenovoEnv?: Record<string, string | undefined>;
+  lenovoFetch?: LenovoFetch;
 }
 import { DEFAULT_WEEKLY, getLastRun, runWeeklySweep } from "./schedule/weekly.js";
 import { backupMode, backupStatus, runRestoreDrill } from "./backup/drill.js";
@@ -64,7 +68,7 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
 
   // Control-plane protection: rate limit all API traffic, and require a bearer
   // token for every API request, reads included (scans, allowlist, audit, …).
-  app.use("/api", rateLimit({ windowMs: 60_000, max: 120 }));
+  app.use("/api", rateLimit({ windowMs: 60_000, max: 240 }));
   app.use("/api", noStore());
   const wrongTokens = failedAuthLimiter({ windowMs: 60_000, max: 10 });
   app.use("/api", sessionRoutes(apiToken, wrongTokens));
@@ -253,6 +257,15 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
       detail: result.deploy ? { commit: result.deploy.commit, status: result.deploy.status } : null,
     });
     res.status(result.ok ? 200 : 409).json(result);
+  });
+
+  // --- Lenovo (local Ollama) connection per app ---------------------------
+  app.get("/api/lenovo", (_req, res) => {
+    res.json(lenovoOverview(options.lenovoEnv ?? process.env));
+  });
+
+  app.post("/api/lenovo/check", async (_req, res) => {
+    res.json(await runLenovoChecks(options.lenovoEnv ?? process.env, { fetch: options.lenovoFetch }));
   });
 
   // --- Schedule (weekly automatic sweep) ------------------------------------
