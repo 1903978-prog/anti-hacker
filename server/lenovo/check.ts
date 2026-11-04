@@ -28,7 +28,7 @@ export const LENOVO_APPS = ["compplan", "lm-op-model", "nexus", "10bonds", "eend
 // compplan (Render), nexus and lm-op-model (Fly) all have Ollama code in their own repos (checked 03/11).
 const DEFAULT_CONNECTED = ["compplan", "nexus", "lm-op-model"];
 export const CHAT_ALERT_MS = 120_000;
-const MODEL = "qwen3.5:2b";
+const MODEL = "qwen3:8b";   // the only model allowed on the Lenovo (Livio, 04 Nov 2026)
 
 export type LenovoFetch = (
   url: string,
@@ -142,7 +142,7 @@ export async function checkApp(
     "POST",
     "/api/chat",
     { ...authHeaders, "content-type": "application/json" },
-    JSON.stringify({ model: MODEL, stream: false, think: false, messages: [{ role: "user", content: "Say OK" }] }),
+    JSON.stringify({ model: MODEL, stream: false, think: false, keep_alive: "30m", messages: [{ role: "user", content: "Say OK" }] }),
     CHAT_ALERT_MS + 5_000,
   );
   const ms = now() - t0;
