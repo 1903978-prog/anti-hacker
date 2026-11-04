@@ -152,3 +152,25 @@ describe("lenovo live question test", () => {
     expect(lenovoForHost("compplan.onrender.com", ENV).summary).toContain('answered: "The capital of Italy is Rome."');
   });
 });
+
+describe("lenovo flapping (4/11/2026)", () => {
+  const ver = (verdict: string): LenovoFetch => async () => ({ status: 200, text: async () => JSON.stringify({ lenovo: { verdict, say: verdict } }) });
+  const cp = () => lenovoForHost("compplan.onrender.com", {}).status;
+
+  it("one bad reading after a good one stays green; the second consecutive one turns it red", async () => {
+    const t = 1_000_000_000_000;
+    await refreshPassive({}, { fetch: ver("online"), now: () => t });
+    expect(cp()).toBe("ok");
+    await refreshPassive({}, { fetch: ver("offline"), now: () => t + 6 * 60_000 });
+    expect(cp()).toBe("ok");
+    await refreshPassive({}, { fetch: ver("offline"), now: () => t + 8 * 60_000 });
+    expect(cp()).toBe("fail");
+  });
+
+  it("a bad reading is retried once straight away and a good retry wins", async () => {
+    let n = 0;
+    const flaky: LenovoFetch = async () => ({ status: 200, text: async () => JSON.stringify({ lenovo: { verdict: n++ === 0 ? "offline" : "online", say: "x" } }) });
+    await refreshPassive({}, { fetch: flaky, now: () => 2_000_000_000_000 });
+    expect(cp()).toBe("ok");
+  });
+});

@@ -260,6 +260,7 @@ export function resetLenovoCache(): void {
   last.clear();
   lastQ.clear();
   passiveAt.clear();
+  badStreak.clear();
 }
 
 /** Which tracked app a dashboard host belongs to (10bonds.com -> 10bonds, nexus-eendigo.fly.dev -> nexus). */
@@ -270,8 +271,13 @@ export function lenovoForHost(
   const label = host.toLowerCase().split(".")[0]!;
   const app = LENOVO_APPS.find((a) => label === a || label.startsWith(a));
   if (!app) return { status: "not-connected", summary: "Not connected to the Lenovo." };
-  const r = lenovoOverview(env).find((x) => x.app === app)!;
+  let r = lenovoOverview(env).find((x) => x.app === app)!;
   const q = lastQ.get(app);
+  // A real answer from the Lenovo in the last 30 minutes outranks a passive "failing" reading (the app's in-memory health
+  // record can say offline after one missed call even though questions still get answered).
+  if ((r.status === "alert" || r.status === "fail") && q?.status === "ok" && q.at && (deps_now() - Date.parse(q.at)) < RECENT_ANSWER_MS && !r.checks.length) {
+    r = { ...r, status: "ok", summary: `Answered a real question at ${q.at.slice(11, 16)} UTC; the app's own status says: ${r.summary}` };
+  }
   const qText = !q || q.status === "not-measured" ? "" : q.status === "ok" ? ` Test question "${q.question}" answered: "${q.answer}" (${((q.ms ?? 0) / 1000).toFixed(1)} s).` : ` Test question failed: ${q.reason}`;
   return { status: r.status, summary: r.summary + qText };
 }
@@ -285,7 +291,10 @@ const VERSION_URLS: Record<string, string> = {
   nexus: "https://nexus-eendigo.fly.dev/api/version",
   "lm-op-model": "https://lm-op-model.fly.dev/api/version",
 };
-const PASSIVE_EVERY_MS = 5 * 60_000, FULL_KEEP_MS = 60 * 60_000;
+const PASSIVE_EVERY_MS = 5 * 60_000, FULL_KEEP_MS = 60 * 60_000, BAD_RECHECK_MS = 60_000;
+export const RECENT_ANSWER_MS = 30 * 60_000;
+const deps_now = () => Date.now();
+const badStreak = new Map<string, number>();
 const passiveAt = new Map<string, number>();
 
 export function verdictToStatus(verdict: unknown): LenovoStatus {
@@ -303,18 +312,36 @@ export async function refreshPassive(
   const f = deps.fetch ?? realFetch;
   const now = (deps.now ?? Date.now)();
   await Promise.all(connected.filter((a) => VERSION_URLS[a] && LENOVO_APPS.includes(a)).map(async (app) => {
-    if (now - (passiveAt.get(app) ?? 0) < PASSIVE_EVERY_MS) return;
+    const every = badStreak.get(app) ? BAD_RECHECK_MS : PASSIVE_EVERY_MS;
+    if (now - (passiveAt.get(app) ?? 0) < every) return;
     passiveAt.set(app, now);
     const full = last.get(app);
     if (full?.checks.length && full.checkedAt && now - Date.parse(full.checkedAt) < FULL_KEEP_MS) return;
-    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 8_000);
-    try {
-      const r = await f(VERSION_URLS[app]!, { method: "GET", headers: {}, signal: ctl.signal });
-      const j = JSON.parse(await r.text()) as { lenovo?: { verdict?: unknown; say?: unknown } };
-      if (r.status !== 200 || !j.lenovo) { last.set(app, { app, status: "not-measured", summary: `The app's /api/version has no Lenovo block (HTTP ${r.status}).`, checkedAt: new Date(now).toISOString(), checks: [] }); return; }
-      last.set(app, { app, status: verdictToStatus(j.lenovo.verdict), summary: String(j.lenovo.say ?? j.lenovo.verdict ?? "").slice(0, 300), checkedAt: new Date(now).toISOString(), checks: [] });
-    } catch {
-      last.set(app, { app, status: "not-measured", summary: "Could not read the app's /api/version just now.", checkedAt: new Date(now).toISOString(), checks: [] });
-    } finally { clearTimeout(timer); }
+    const read = async (): Promise<LenovoAppResult> => {
+      const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 8_000);
+      const at = new Date(now).toISOString();
+      try {
+        const r = await f(VERSION_URLS[app]!, { method: "GET", headers: {}, signal: ctl.signal });
+        const j = JSON.parse(await r.text()) as { lenovo?: { verdict?: unknown; say?: unknown } };
+        if (r.status !== 200 || !j.lenovo) return { app, status: "not-measured", summary: `The app's /api/version has no Lenovo block (HTTP ${r.status}).`, checkedAt: at, checks: [] };
+        return { app, status: verdictToStatus(j.lenovo.verdict), summary: String(j.lenovo.say ?? j.lenovo.verdict ?? "").slice(0, 300), checkedAt: at, checks: [] };
+      } catch {
+        return { app, status: "not-measured", summary: "Could not read the app's /api/version just now.", checkedAt: at, checks: [] };
+      } finally { clearTimeout(timer); }
+    };
+    const isBad = (x: LenovoAppResult) => x.status === "alert" || x.status === "fail";
+    let res = await read();
+    if (isBad(res)) { const again = await read(); if (!isBad(again)) res = again; } // retry once right away
+    const prev = last.get(app);
+    if (isBad(res)) {
+      const n = (badStreak.get(app) ?? 0) + 1;
+      badStreak.set(app, n);
+      // One bad reading in a row is not shown as failing: keep the last good reading (with its time) until a second one.
+      if (n < 2 && prev && prev.status === "ok") {
+        last.set(app, { ...prev, summary: `${prev.summary.replace(/ \(last good.*$/, "")} (last good ${prev.checkedAt?.slice(11, 16) ?? "?"} UTC; one miss just now, rechecking)` });
+        return;
+      }
+    } else badStreak.delete(app);
+    last.set(app, res);
   }));
 }
