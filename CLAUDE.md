@@ -13,6 +13,12 @@
 
 ---
 
+# LENOVO MODEL RULE (Livio, 04 Nov 2026, standing)
+
+On the Lenovo use ONLY `qwen3:8b`. Never request, load or warm up `qwen3.5:2b` or any other model. Every chat request sets `keep_alive`, and no call may trigger a model load (no model-listing or pull that loads). Displayed dates are written like `03 Nov 2026`.
+
+---
+
 # secval — standing rules for Claude
 
 **What this is:** an authorized continuous security-validation platform — a
