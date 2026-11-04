@@ -358,10 +358,20 @@ async function refreshLenovo(run) {
     return `<div style="margin:6px 0"><b>${esc(a.app)}</b> <span class="badge${cls}">${esc(label[a.status] || a.status)}</span> <span class="note" style="margin:0">${esc(a.summary)}${when}</span>${detail}</div>`;
   }).join("");
 }
+async function refreshLenovoQuestions() {
+  const { ok, body } = await api("/api/lenovo/questions");
+  if (!ok || !Array.isArray(body)) return;
+  if (!body.length) { el("lenovoQ").textContent = "No app uses the Lenovo."; return; }
+  const badge = (q) => q.status === "ok" ? '<span class="badge ok">ok</span>' : q.status === "fail" ? '<span class="badge bad">failing</span>' : '<span class="badge">not measured</span>';
+  el("lenovoQ").innerHTML = '<div style="overflow-x:auto"><table><thead><tr><th>App</th><th>Question</th><th>Answer received</th><th>Result</th><th>Time</th></tr></thead><tbody>' +
+    body.map((q) => `<tr><td>${esc(q.app)}</td><td>${esc(q.question)}</td><td>${esc(q.answer || "-")}</td><td>${badge(q)}${q.reason && q.status !== "ok" ? " " + esc(q.reason) : ""}</td><td>${q.at ? esc(new Date(q.at).toLocaleString()) + (q.ms != null ? " · " + (q.ms / 1000).toFixed(1) + " s" : "") : "-"}</td></tr>`).join("") +
+    "</tbody></table></div>";
+}
 el("lenovoBtn").onclick = async () => {
   el("lenovoBtn").disabled = true;
   el("lenovoText").textContent = "Checking the Lenovo (up to 2 minutes)…";
   await refreshLenovo(true);
+  await refreshLenovoQuestions();
   el("lenovoBtn").disabled = false;
 };
 let rollbackArmed = null;
@@ -799,7 +809,7 @@ function showTab(name) {
   for (const a of document.querySelectorAll("nav.tabs a")) a.setAttribute("aria-selected", String(a.dataset.tab === tab));
   try { localStorage.setItem("secval_tab", tab); } catch { /* not remembered */ }
   if (tab === "tests" && signedIn) refreshTests();
-  if (tab === "settings" && signedIn && !lenovoLoaded) { lenovoLoaded = true; refreshLenovo(false); }
+  if (tab === "settings" && signedIn && !lenovoLoaded) { lenovoLoaded = true; refreshLenovo(false); refreshLenovoQuestions(); }
   if (tab === "usage" && signedIn) refreshUsage();
 }
 function storedTab() {

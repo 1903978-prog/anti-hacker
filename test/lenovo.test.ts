@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import request from "supertest";
 import { openDb } from "../server/db.js";
 import { createApp } from "../server/app.js";
-import { checkApp, lenovoForHost, lenovoOverview, refreshPassive, resetLenovoCache, type LenovoFetch } from "../server/lenovo/check.js";
+import { askApp, checkApp, lenovoForHost, lenovoOverview, refreshPassive, resetLenovoCache, type LenovoFetch } from "../server/lenovo/check.js";
 
 const ENV = {
   OLLAMA_BASE_URL: "https://lenovo.example.com/",
@@ -112,5 +112,43 @@ describe("lenovo passive status from /api/version", () => {
     resetLenovoCache();
     await refreshPassive({}, { fetch: ver(undefined) });
     expect(lenovoOverview({}).find((x) => x.app === "compplan")!.status).toBe("not-measured");
+  });
+});
+
+describe("lenovo live question test", () => {
+  const selftest = (over: { status?: number; body?: unknown } = {}): LenovoFetch => async (url, init) => {
+    const path = new URL(url).pathname;
+    if (path === "/api/lenovo-selftest") {
+      if (init.headers["x-lenovo-selftest"] !== "super-secret-xyz") return { status: 403, text: async () => "{}" };
+      const host = new URL(url).hostname;
+      const body = over.body ?? (host.startsWith("nexus") ? { ok: false, answer: "", reason: "unreachable: cannot be reached", ms: 40 } : { ok: true, answer: "The capital of Italy is Rome.", reason: "", ms: 1234 });
+      return { status: over.status ?? 200, text: async () => JSON.stringify(body) };
+    }
+    return fake()(url, init);
+  };
+
+  it("shows the answer per app, failing apps with their reason, never the secret", async () => {
+    const app = createApp(openDb(":memory:"), { apiToken: "tok", lenovoEnv: ENV, lenovoFetch: selftest() });
+    await request(app).get("/api/lenovo/questions").expect(401);
+    const run = await request(app).post("/api/lenovo/questions").set("authorization", "Bearer tok").send({}).expect(200);
+    const row = (a: string) => run.body.find((q: { app: string }) => q.app === a);
+    expect(row("compplan")).toMatchObject({ status: "ok", question: "What is the capital of Italy?", answer: "The capital of Italy is Rome.", ms: 1234 });
+    expect(row("nexus")).toMatchObject({ status: "fail", reason: expect.stringContaining("unreachable") });
+    expect(JSON.stringify(run.body)).not.toContain("super-secret-xyz");
+    const again = await request(app).get("/api/lenovo/questions").set("authorization", "Bearer tok").expect(200);
+    expect(again.body).toHaveLength(3);
+  });
+
+  it("plain reasons when the app is not updated yet or the token differs", async () => {
+    const q = (s: number) => askApp("compplan", ENV, { fetch: selftest({ status: s }) });
+    expect((await q(404)).reason).toContain("not deployed");
+    expect((await q(403)).status).toBe("fail");
+    expect((await askApp("compplan", {}, { fetch: selftest() })).status).toBe("not-measured");
+  });
+
+  it("the Lenovo check also runs the question and the dashboard tooltip carries the answer", async () => {
+    const app = createApp(openDb(":memory:"), { apiToken: "tok", lenovoEnv: ENV, lenovoFetch: selftest() });
+    await request(app).post("/api/lenovo/check").set("authorization", "Bearer tok").send({}).expect(200);
+    expect(lenovoForHost("compplan.onrender.com", ENV).summary).toContain('answered: "The capital of Italy is Rome."');
   });
 });
