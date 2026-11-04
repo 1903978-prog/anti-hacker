@@ -1,4 +1,4 @@
-/* global isBigCost */
+/* global isBigCost, formatDate, formatDateTime */
 // secval control-plane UI. The secret token (the server's SECVAL_API_TOKEN)
 // is typed once into a small box on the page (no pop-up). The server swaps it
 // for a sign-in cookie that page scripts cannot read, so the token itself is
@@ -265,7 +265,7 @@ async function refreshScans() {
         .map(
           (s) => `
       <tr><td><code>${esc(s.target)}</code></td><td>${esc(s.status)}</td>
-      <td>${s.findingsCount} finding(s)</td><td class="muted">${esc(s.startedAt.replace("T", " ").slice(0, 19))}</td></tr>`,
+      <td>${s.findingsCount} finding(s)</td><td class="muted">${esc(formatDateTime(s.startedAt))}</td></tr>`,
         )
         .join("")
     : `<tr><td class="muted">no scans yet</td></tr>`;
@@ -277,7 +277,7 @@ async function refreshAudit() {
   el("auditTable").querySelector("tbody").innerHTML = body
     .map(
       (a) => `
-      <tr><td class="muted">${esc(a.ts.replace("T", " ").slice(0, 19))}</td>
+      <tr><td class="muted">${esc(formatDateTime(a.ts))}</td>
       <td>${esc(a.action)}</td><td>${esc(a.target || "")}</td>
       <td><span class="sev ${a.decision === "deny" ? "high" : "info"}">${esc(a.decision)}</span></td></tr>`,
     )
@@ -288,7 +288,7 @@ async function refreshSchedule() {
   const { ok, body } = await api("/api/schedule");
   if (!ok) return;
   el("scheduleText").textContent =
-    body.description + (body.lastRun ? ` · last run ${body.lastRun}` : " · not run yet");
+    body.description + (body.lastRun ? ` · last run ${formatDateTime(body.lastRun) || body.lastRun}` : " · not run yet");
 }
 el("runNowBtn").onclick = async () => {
   el("runNowBtn").disabled = true;
@@ -317,7 +317,7 @@ async function refreshBackup() {
   const drill = !d
     ? "no restore test yet (the first runs a few minutes after start)"
     : (d.ok ? "last restore test passed" : "last restore test FAILED: " + d.detail) +
-      " on " + new Date(d.at).toLocaleString();
+      " on " + formatDateTime(d.at);
   el("backupText").innerHTML =
     `<span class="badge${body.healthy ? " ok" : ""}">${body.healthy ? "healthy" : "check"}</span> ` +
     esc(BACKUP_MODE[body.mode] || body.mode) + " · " + esc(drill);
@@ -329,7 +329,7 @@ async function refreshDropbox() {
   const cls = body.status === "ok" ? " ok" : "";
   const label = { ok: "ok", amber: "missing copy", "not-connected": "not connected", error: "error" }[body.status] || body.status;
   const lines = (body.apps || []).filter((a) => a.status !== "ok").map((a) => `<div><b>${esc(a.app)}</b>: ${esc(a.message)}</div>`).join("");
-  const fmt = (iso) => iso ? new Date(iso).toLocaleString("en-GB", { timeZone: "Europe/Paris", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+  const fmt = (iso) => iso ? formatDateTime(iso, "Europe/Paris") : "";
   const cell = (iso, na) => {
     if (na) return `<td>${na}</td>`;
     if (!iso) return `<td><span class="badge" style="color:var(--bad,#d33)">none found</span></td>`;
@@ -354,7 +354,7 @@ async function refreshLenovo(run) {
   el("lenovoList").innerHTML = body.map((a) => {
     const cls = a.status === "ok" ? " ok" : a.status === "alert" || a.status === "fail" ? " bad" : "";
     const detail = (a.checks || []).map((c) => `<div class="note" style="margin:0">${c.status === "pass" ? "✓" : "✗"} ${esc(c.title)}: ${esc(c.detail)}</div>`).join("");
-    const when = a.checkedAt ? ` · checked ${esc(new Date(a.checkedAt).toLocaleString())}` : "";
+    const when = a.checkedAt ? ` · checked ${esc(formatDateTime(a.checkedAt))}` : "";
     return `<div style="margin:6px 0"><b>${esc(a.app)}</b> <span class="badge${cls}">${esc(label[a.status] || a.status)}</span> <span class="note" style="margin:0">${esc(a.summary)}${when}</span>${detail}</div>`;
   }).join("");
 }
@@ -364,7 +364,7 @@ async function refreshLenovoQuestions() {
   if (!body.length) { el("lenovoQ").textContent = "No app uses the Lenovo."; return; }
   const badge = (q) => q.status === "ok" ? '<span class="badge ok">ok</span>' : q.status === "fail" ? '<span class="badge bad">failing</span>' : '<span class="badge">not measured</span>';
   el("lenovoQ").innerHTML = '<div style="overflow-x:auto"><table><thead><tr><th>App</th><th>Question</th><th>Answer received</th><th>Result</th><th>Time</th></tr></thead><tbody>' +
-    body.map((q) => `<tr><td>${esc(q.app)}</td><td>${esc(q.question)}</td><td>${esc(q.answer || "-")}</td><td>${badge(q)}${q.reason && q.status !== "ok" ? " " + esc(q.reason) : ""}</td><td>${q.at ? esc(new Date(q.at).toLocaleString()) + (q.ms != null ? " · " + (q.ms / 1000).toFixed(1) + " s" : "") : "-"}</td></tr>`).join("") +
+    body.map((q) => `<tr><td>${esc(q.app)}</td><td>${esc(q.question)}</td><td>${esc(q.answer || "-")}</td><td>${badge(q)}${q.reason && q.status !== "ok" ? " " + esc(q.reason) : ""}</td><td>${q.at ? esc(formatDateTime(q.at)) + (q.ms != null ? " · " + (q.ms / 1000).toFixed(1) + " s" : "") : "-"}</td></tr>`).join("") +
     "</tbody></table></div>";
 }
 el("lenovoBtn").onclick = async () => {
@@ -383,7 +383,7 @@ async function refreshRollback() {
     `<span class="badge${body.status === "ok" ? " ok" : ""}">${esc(label)}</span> ${esc(body.message)}` +
     ` · <a href="${esc(body.link)}" target="_blank" rel="noopener">open Render deploys</a>`;
   el("rollbackList").innerHTML = (body.deploys || []).map((d) => {
-    const when = d.createdAt ? new Date(d.createdAt).toLocaleString() : "";
+    const when = d.createdAt ? formatDateTime(d.createdAt) : "";
     const state = d.current ? "live now" : d.status;
     const btn = d.canRollBack
       ? `<button class="ghost" data-rb="${esc(d.id)}">${rollbackArmed === d.id ? "Really roll back?" : "Roll back to this"}</button>`
@@ -460,7 +460,7 @@ refreshKillSwitch();
 // score (secval checked it) when there is one, else the latest pasted
 // estimate. Clicking an app or a cell opens its evidence and infrastructure.
 const tone = (n) => (n >= 85 ? "good" : n >= 65 ? "mid" : "bad");
-const day = (iso) => esc(String(iso || "").slice(0, 10));
+const day = (iso) => esc(formatDate(iso));
 
 function scoreHtml(s, main) {
   const ev = `<details><summary>why</summary><ul>${s.evidence
@@ -605,14 +605,14 @@ function cellHtml(a, ar) {
   if (!s && ar.estimate) {
     // Written estimate: grey "E", never counted in the overall score.
     const e = ar.estimate;
-    const tip = `${ar.label}: ${e.score}% ESTIMATE from a written report (${String(e.at || "").slice(0, 10)}), not measured and not counted in the overall score.\n${e.evidence.join("\n")}`;
+    const tip = `${ar.label}: ${e.score}% ESTIMATE from a written report (${formatDate(e.at)}), not measured and not counted in the overall score.\n${e.evidence.join("\n")}`;
     return `<td class="cell none est" ${label} title="${esc(tip)}" data-open="${esc(a.host)}">${e.score}%<sup>E</sup></td>`;
   }
   if (!s) {
     return `<td class="cell none" ${label} title="${esc(ar.label)}: not measured, no estimate" data-open="${esc(a.host)}">not measured</td>`;
   }
   const mark = s.source === "measured" ? "M" : "E";
-  const tip = `${ar.label}: ${s.score}% (${s.source}, ${String(s.at || "").slice(0, 10)})\n${s.evidence.join("\n")}`;
+  const tip = `${ar.label}: ${s.score}% (${s.source}, ${formatDate(s.at)})\n${s.evidence.join("\n")}`;
   return `<td class="cell ${tone(s.score)} ${s.source}" ${label} title="${esc(tip)}" data-open="${esc(a.host)}">${s.score}%<sup>${s.failingNow ? "failing now" : mark}</sup></td>`;
 }
 
@@ -787,7 +787,7 @@ async function refreshUsage(force) {
       </div>`,
     )
     .join("")}</div>`;
-  el("usageMsg").textContent = "Last checked " + new Date(body.cachedAt).toLocaleString();
+  el("usageMsg").textContent = "Last checked " + formatDateTime(body.cachedAt);
 }
 el("usageRefresh").onclick = async () => {
   el("usageRefresh").disabled = true;
@@ -931,7 +931,7 @@ async function buildFailedReport() {
     });
     sections.push(out.join("\n"));
   }
-  lines.push(`secval failed-tests report, ${new Date().toISOString().slice(0, 10)}`);
+  lines.push(`secval failed-tests report, ${formatDate(new Date())}`);
   lines.push(`${total} failed across ${apps.body.length} apps. Newest scan: ${newest ? day(newest) : "none yet"}.`);
   lines.push("Please fix these one by one, worst first.", "");
   return lines.join("\n") + sections.join("\n\n") + "\n";
