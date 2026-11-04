@@ -25,7 +25,7 @@ import { dashboardHosts, guessApp, listEstimates, saveReport } from "./health/re
 import { checkAllUptime } from "./health/uptime.js";
 import { allUsage } from "./usage/providers.js";
 import { previewDigest } from "./notify/daily.js";
-import { lenovoForHost, lenovoOverview, refreshPassive, runLenovoChecks, type LenovoFetch } from "./lenovo/check.js";
+import { lenovoForHost, lenovoOverview, questionOverview, refreshPassive, runLenovoChecks, runQuestionTests, type LenovoFetch } from "./lenovo/check.js";
 
 export interface AppOptions {
   /** Secret token required for every API request (bearer header or sign-in cookie). */
@@ -263,6 +263,14 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
   app.get("/api/lenovo", async (_req, res) => {
     await refreshPassive(options.lenovoEnv ?? process.env, { fetch: options.lenovoFetch }).catch(() => {});
     res.json(lenovoOverview(options.lenovoEnv ?? process.env));
+  });
+
+  app.get("/api/lenovo/questions", (_req, res) => {
+    res.json(questionOverview(options.lenovoEnv ?? process.env));
+  });
+
+  app.post("/api/lenovo/questions", async (_req, res) => {
+    res.json(await runQuestionTests(options.lenovoEnv ?? process.env, { fetch: options.lenovoFetch }));
   });
 
   app.post("/api/lenovo/check", async (_req, res) => {

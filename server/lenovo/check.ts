@@ -162,6 +162,68 @@ export async function checkApp(
   return { app, status, summary, checkedAt, checks };
 }
 
+// --- Live question test (4/11/2026, Livio): each connected app is asked to send a real fixed question to the Lenovo through its own
+// client, and the answer it got is shown per app. The app endpoint is fixed-prompt, rate limited and secret-protected (header
+// x-lenovo-selftest = LENOVO_SELFTEST_TOKEN, else the Lenovo service secret). Only the answer text (max 200 chars) is kept; secrets never.
+export const QUESTION = "What is the capital of Italy?";
+export interface QuestionResult {
+  app: string;
+  question: string;
+  answer: string;
+  status: "ok" | "fail" | "not-measured";
+  reason: string;
+  ms: number | null;
+  at: string | null;
+}
+const SELFTEST_URLS: Record<string, string> = {
+  compplan: "https://compplan.onrender.com/api/lenovo-selftest",
+  nexus: "https://nexus-eendigo.fly.dev/api/lenovo-selftest",
+  "lm-op-model": "https://lm-op-model.fly.dev/api/lenovo-selftest",
+};
+const lastQ = new Map<string, QuestionResult>();
+
+export async function askApp(app: string, env: Record<string, string | undefined>, deps: LenovoDeps = {}): Promise<QuestionResult> {
+  const f = deps.fetch ?? realFetch;
+  const at = new Date().toISOString();
+  const mk = (status: QuestionResult["status"], reason: string, answer = "", ms: number | null = null): QuestionResult => ({ app, question: QUESTION, answer, status, reason, ms, at });
+  const token = env.LENOVO_SELFTEST_TOKEN || env.OLLAMA_CF_ACCESS_CLIENT_SECRET || "";
+  if (!token) return mk("not-measured", "Missing in secval: LENOVO_SELFTEST_TOKEN (or OLLAMA_CF_ACCESS_CLIENT_SECRET).");
+  const url = SELFTEST_URLS[app];
+  if (!url) return mk("not-measured", "No test address for this app.");
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 75_000);
+  const t0 = (deps.now ?? Date.now)();
+  try {
+    const r = await f(url, { method: "POST", headers: { "x-lenovo-selftest": token, "content-type": "application/json" }, body: "{}", signal: ctl.signal });
+    const text = await r.text();
+    if (r.status === 404) return mk("not-measured", "The app does not have the test yet (HTTP 404): the new version is not deployed.");
+    if (r.status === 503) return mk("not-measured", "The app has no test token set (HTTP 503).");
+    if (r.status === 403) return mk("fail", "The app refused secval's test token (HTTP 403): the token differs between secval and the app.");
+    if (r.status === 429) return mk("not-measured", "Asked too soon after the last test (HTTP 429): try again in 20 seconds.");
+    if (r.status !== 200) return mk("fail", `The app answered HTTP ${r.status}.`);
+    let j: Record<string, unknown>;
+    try { j = JSON.parse(text) as Record<string, unknown>; } catch { return mk("fail", "The app's reply was not readable."); }
+    const answer = String(j.answer ?? "").slice(0, 200);
+    const ms = typeof j.ms === "number" ? j.ms : (deps.now ?? Date.now)() - t0;
+    return j.ok === true ? mk("ok", "", answer, ms) : mk("fail", String(j.reason ?? "no reason given").slice(0, 200), answer, ms);
+  } catch {
+    return mk("fail", "No answer from the app (down, asleep or too slow).");
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export function questionOverview(env: Record<string, string | undefined> = process.env, connected = connectedApps(env)): QuestionResult[] {
+  return connected.filter((a) => LENOVO_APPS.includes(a)).map((app) =>
+    lastQ.get(app) ?? { app, question: QUESTION, answer: "", status: "not-measured" as const, reason: "not measured", ms: null, at: null });
+}
+
+export async function runQuestionTests(env: Record<string, string | undefined> = process.env, deps: LenovoDeps = {}): Promise<QuestionResult[]> {
+  const connected = deps.connected ?? connectedApps(env);
+  await Promise.all(connected.filter((a) => LENOVO_APPS.includes(a)).map(async (app) => { lastQ.set(app, await askApp(app, env, deps)); }));
+  return questionOverview(env, connected);
+}
+
 // Live checks cost a real model answer, so they run on demand (button or
 // nightly), and the page shows the last result; before any run: not measured.
 const last = new Map<string, LenovoAppResult>();
@@ -190,11 +252,13 @@ export async function runLenovoChecks(
   for (const app of connected) {
     if (LENOVO_APPS.includes(app)) last.set(app, await checkApp(app, env, { ...deps, connected }));
   }
+  await runQuestionTests(env, { ...deps, connected });
   return lenovoOverview(env, connected);
 }
 
 export function resetLenovoCache(): void {
   last.clear();
+  lastQ.clear();
   passiveAt.clear();
 }
 
@@ -207,7 +271,9 @@ export function lenovoForHost(
   const app = LENOVO_APPS.find((a) => label === a || label.startsWith(a));
   if (!app) return { status: "not-connected", summary: "Not connected to the Lenovo." };
   const r = lenovoOverview(env).find((x) => x.app === app)!;
-  return { status: r.status, summary: r.summary };
+  const q = lastQ.get(app);
+  const qText = !q || q.status === "not-measured" ? "" : q.status === "ok" ? ` Test question "${q.question}" answered: "${q.answer}" (${((q.ms ?? 0) / 1000).toFixed(1)} s).` : ` Test question failed: ${q.reason}`;
+  return { status: r.status, summary: r.summary + qText };
 }
 
 // Passive status (no model call, no secrets): a connected app that publishes a Lenovo health block on its public /api/version
