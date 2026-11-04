@@ -22,6 +22,8 @@ touches a target may exist or run until that layer approves it.
 
 ## Hard rules (never break these)
 
+0. **Date format (Livio, 4 Nov 2026):** every date shown to people is written "03 Nov 2026" (day with 2 digits, English 3-letter month, 4-digit year; with time: "03 Nov 2026, 14:05"). Use `public/dates.js` (browser) or `server/util/dates.ts` (server). Never `toLocaleString()` or raw ISO in the UI. Stored data and API values stay ISO.
+
 1. **One branch.** All work merges into the `integration` branch. Do not
    create other long-lived branches.
 2. **No ship without the word.** Do **not** open a PR, push to a remote, or
