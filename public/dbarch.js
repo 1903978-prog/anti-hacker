@@ -101,6 +101,7 @@ function dbAppDetail(appKey) {
   return `<h3>${esc(a.label)}</h3><p>${neon}</p>
     <p class="note">Neon project <code>${esc(a.projectId)}</code>. Schema change since approved baseline: ${esc(a.schemaChange ?? "N/V")}.</p>
     ${dbPerms(d)}
+    <p><button class="ghost" data-grants="${esc(appKey)}">Show required column grants (SQL)</button></p><pre id="dbGrants" class="dbsql" hidden></pre>
     <p><strong>Baseline counts: manual (05 Nov 2026) against the latest live scan</strong></p>
     <div class="tablewrap"><table><thead><tr><th>Metric</th><th>Manual</th><th>Live</th><th>Result</th></tr></thead><tbody>${rec || '<tr><td colspan="4">No live scan yet: N/V</td></tr>'}</tbody></table></div>
     <p><strong>FK candidate inventory</strong> (${inv.length} columns${inv.length > 60 ? ", first 60 shown" : ""}). A name ending in _id is never treated as proof of a missing foreign key.</p>
@@ -199,6 +200,15 @@ async function dbConnTest() {
 el("dbConn").onclick = dbConnTest;
 
 document.addEventListener("click", (e) => {
+  const g = e.target.closest("[data-grants]");
+  if (g && el("dbGrants")) {
+    api(`/api/dbarch/${encodeURIComponent(g.dataset.grants)}/grants`).then(({ body }) => {
+      const pre = el("dbGrants");
+      pre.hidden = false;
+      pre.textContent = body.sql || body.message || "Not available (N/V).";
+    });
+    return;
+  }
   const t = e.target.closest("[data-cell],[data-finding],[data-open-app]");
   if (!t || !el("dbCards")) return;
   if (t.dataset.cell) { const [group, key] = t.dataset.cell.split(":"); dbSelected = { kind: "cell", app: t.dataset.app, group, key }; }

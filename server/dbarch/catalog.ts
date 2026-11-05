@@ -1,6 +1,6 @@
 import type { Catalog, TableInfo } from "./types.js";
 import { createHash } from "node:crypto";
-import { readOnly, type RoQueryable } from "./readonly.js";
+import { isolated, readOnly, type RoQueryable } from "./readonly.js";
 
 const S = "public";
 const LEDGER_NAMES = ["schema_migrations", "_prisma_migrations", "__drizzle_migrations", "knex_migrations", "migrations", "_migrations", "alembic_version", "flyway_schema_history"];
@@ -24,9 +24,11 @@ export async function collectCatalog(rawClient: RoQueryable, now: Date = new Dat
       WHERE n.nspname = $1 AND c.relkind IN ('r','p') ORDER BY c.relname`,
     [S],
   );
+  // pg_attribute (not information_schema.columns) so columns stay visible to a login that has no table privileges.
   const colRows = await q(
-    `SELECT table_name AS t, column_name AS n, data_type AS ty, is_nullable AS nl
-       FROM information_schema.columns WHERE table_schema = $1 ORDER BY table_name, ordinal_position`,
+    `SELECT c.relname AS t, a.attname::text AS n, format_type(a.atttypid, NULL) AS ty, (NOT a.attnotnull) AS nl
+       FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = $1 AND c.relkind IN ('r','p') AND a.attnum > 0 AND NOT a.attisdropped ORDER BY c.relname, a.attnum`,
     [S],
   );
   const fkRows = await q(
@@ -61,20 +63,24 @@ export async function collectCatalog(rawClient: RoQueryable, now: Date = new Dat
     [S],
   );
   const grantRows = await q(
-    `SELECT DISTINCT table_name AS tbl FROM information_schema.role_table_grants WHERE table_schema = $1 AND grantee = 'PUBLIC'`,
+    `SELECT c.relname AS tbl FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = $1 AND c.relkind IN ('r','p') AND EXISTS (SELECT 1 FROM aclexplode(c.relacl) x WHERE x.grantee = 0)`,
     [S],
   );
 
   const names = new Set(tableRows.map((r) => String(r.tbl ?? r.name)));
   const ledgers = LEDGER_NAMES.filter((n) => names.has(n));
   let latest: string | null = null;
+  let ledgerColumn: string | null = null;
   if (ledgers.length) {
     // Version label only. Identifier comes from our fixed allowlist above.
     const colCandidates = ["version", "id", "name", "migration_name", "installed_rank"];
     const cols = colRows.filter((r) => r.t === ledgers[0]).map((r) => String(r.n));
     const col = colCandidates.find((x) => cols.includes(x));
     if (col) {
-      const r = await q(`SELECT max("${col}")::text AS v FROM "${ledgers[0]}"`).catch(() => []);
+      ledgerColumn = col;
+      // Needs a column grant; without one (least privilege) the version simply stays unread.
+      const r = await isolated(rawClient, `SELECT max("${col}")::text AS v FROM "${ledgers[0]}"`).then((x) => x.rows).catch(() => []);
       latest = r.length && r[0]!.v != null ? String(r[0]!.v).slice(0, 80) : null;
     }
   }
@@ -95,7 +101,7 @@ export async function collectCatalog(rawClient: RoQueryable, now: Date = new Dat
   return {
     collectedAt: now.toISOString(),
     tables,
-    columns: colRows.map((r) => ({ table: String(r.t), name: String(r.n), type: String(r.ty), nullable: r.nl === "YES" })),
+    columns: colRows.map((r) => ({ table: String(r.t), name: String(r.n), type: String(r.ty), nullable: Boolean(r.nl) })),
     foreignKeys: fkRows.map((r) => ({
       name: String(r.name), table: String(r.tbl), columns: (r.cols as string[]) ?? [], refTable: String(r.ref), refColumns: (r.refcols as string[]) ?? [], validated: Boolean(r.valid),
     })),
@@ -108,6 +114,7 @@ export async function collectCatalog(rawClient: RoQueryable, now: Date = new Dat
     publicGrantTables: grantRows.map((r) => String(r.tbl)),
     migrationLedgers: ledgers,
     migrationLatest: latest,
+    migrationLedgerColumn: ledgerColumn,
     sessionReadOnly,
   };
 }

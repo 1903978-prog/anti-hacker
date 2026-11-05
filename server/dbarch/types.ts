@@ -65,6 +65,8 @@ export interface Catalog {
   migrationLedgers: string[];
   /** Newest version recorded in a ledger, if readable. */
   migrationLatest: string | null;
+  /** Column of the ledger holding the version (needs a column grant to be read). */
+  migrationLedgerColumn: string | null;
   /** True when the monitoring session proved it is read-only (transaction_read_only = on). */
   sessionReadOnly: boolean | null;
 }

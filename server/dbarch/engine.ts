@@ -3,6 +3,7 @@ import { APPS, CALC_VERSION, HISTORICAL_BASELINE, TARGETS } from "./apps.js";
 import { collectCatalog, schemaFingerprint } from "./catalog.js";
 import { ConnectError, type Connector, type Session } from "./connect.js";
 import { buildChecks, runChecks } from "./checks.js";
+import { requiredGrants, type RequiredGrants } from "./grants.js";
 import { buildInventory } from "./inventory.js";
 import { readNeonSettings, type FetchFn } from "./neon.js";
 import { buildRecommendations, isComplete, lintDraftSql } from "./recommendations.js";
@@ -39,6 +40,7 @@ export interface AppResult {
   catalog: { tables: number; primaryKeys: number; foreignKeys: number; indexes: number; idColumnsWithoutFk: number; rlsTables: number; uniqueOrCheck: number; migrationLedgers: string[]; migrationLatest: string | null; sessionReadOnly: boolean | null };
   neon: NeonSettings | null;
   permissions: PermissionReport | null;
+  grants: RequiredGrants;
   reconcile: Array<{ metric: string; reference: number | boolean | null; live: number | boolean | null; matches: boolean | null }>;
   inventory: FkCandidate[];
   checks: StoredCheck[];
@@ -111,7 +113,7 @@ export async function runScan(db: DB, app: AppKey, tier: "quick" | "deep", deps:
     const neon = await readNeonSettings(cfg.neonProjectId, deps.env.SECVAL_NEON_API_TOKEN, deps.neonFetch);
     const inventory = buildInventory(app, cat);
     const defs = buildChecks(app, cat, inventory);
-    const fresh = await runChecks(session, cat, defs, { tier, deadline: startedAt.getTime() + (tier === "deep" ? 300_000 : 60_000) });
+    const fresh = await runChecks(session, cat, defs, { tier, deadline: startedAt.getTime() + (tier === "deep" ? 300_000 : 60_000), now: () => deps.now().getTime() });
 
     const previous = getLatest(db, app);
     const prev = previous?.result as unknown as AppResult | undefined;
@@ -166,7 +168,7 @@ export async function runScan(db: DB, app: AppKey, tier: "quick" | "deep", deps:
 
     const result: AppResult = {
       app, label: cfg.label, projectId: cfg.neonProjectId, collectedAt: iso, tier, calcVersion: CALC_VERSION, fingerprint, schemaChange,
-      architecture: { ...arch, criteria }, readiness: { ...rd, rows: ready }, catalog: catSummary, neon, permissions, reconcile: rec, inventory, checks, recommendations: recs,
+      architecture: { ...arch, criteria }, readiness: { ...rd, rows: ready }, catalog: catSummary, neon, permissions, grants: requiredGrants(defs, cat.migrationLedgers[0] && cat.migrationLedgerColumn ? { table: cat.migrationLedgers[0], column: cat.migrationLedgerColumn } : null), reconcile: rec, inventory, checks, recommendations: recs,
     };
 
     const partial = !neon || checks.some((c) => c.outcome === "ERROR") || arch.coverage < 1;

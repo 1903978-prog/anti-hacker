@@ -37,3 +37,22 @@ export function ident(name: string): string {
   if (!/^[A-Za-z_][A-Za-z0-9_$]*$/.test(name)) throw new ReadOnlyViolation(`unsafe identifier: ${name.slice(0, 40)}`);
   return `"${name}"`;
 }
+
+/**
+ * Runs one read-only statement inside a SAVEPOINT, so a refused statement
+ * (for example "permission denied" under least privilege) does not abort the
+ * session's transaction and the next check can still run.
+ */
+export async function isolated(raw: RoQueryable, sql: string, params?: unknown[]): Promise<{ rows: Array<Record<string, unknown>> }> {
+  const guarded = readOnly(raw);
+  assertReadOnlySql(sql);
+  await raw.query("SAVEPOINT secval_stmt");
+  try {
+    const out = await guarded.query(sql, params);
+    await raw.query("RELEASE SAVEPOINT secval_stmt");
+    return out;
+  } catch (e) {
+    await raw.query("ROLLBACK TO SAVEPOINT secval_stmt").catch(() => undefined);
+    throw e;
+  }
+}

@@ -7,6 +7,7 @@ import { checkStaleness, runAll, runScan, type Deps } from "./engine.js";
 import { activeAttestations, addAttestation, getLatest, listAlerts, validAttestationKey } from "./store.js";
 import { buildView } from "./view.js";
 import { testConnectivity } from "./connectivity.js";
+import { grantsSql } from "./grants.js";
 import { appendAudit } from "../audit/log.js";
 import { STALE_AFTER_MS } from "./apps.js";
 import type { AppKey } from "./types.js";
@@ -49,6 +50,16 @@ export function dbarchRoutes(app: Express, db: DB, deps: Deps = defaultDeps()): 
     const latest = getLatest(db, k.data);
     if (!latest) { res.json({ app: k.data, detail: null, message: "No verified scan yet (N/V)." }); return; }
     res.json({ app: k.data, scanId: latest.scan_id, updatedAt: latest.updated_at, detail: latest.result });
+  });
+
+  // The exact least-privilege column GRANT script for the latest scan (plain text, to review and run as the table owner).
+  app.get("/api/dbarch/:app/grants", (req, res) => {
+    const k = appKey.safeParse(req.params.app);
+    if (!k.success) { res.status(404).json({ error: "unknown app" }); return; }
+    const latest = getLatest(db, k.data);
+    const g = (latest?.result as { grants?: { columns: string[]; skipped: string[] } } | undefined)?.grants;
+    if (!g) { res.json({ app: k.data, sql: null, message: "No verified scan yet (N/V): run a scan with the metadata-only login first." }); return; }
+    res.json({ app: k.data, sql: grantsSql(g, deps.now().toISOString().slice(0, 10)), columns: g.columns.length, skipped: g.skipped });
   });
 
   app.get("/api/dbarch/alerts", (req, res) => {

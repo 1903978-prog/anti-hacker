@@ -26,13 +26,14 @@ export class FakePg implements Session, RoQueryable {
 
   async query(sql: string): Promise<{ rows: Array<Record<string, unknown>> }> {
     this.log.push(sql);
+    if (/^(SAVEPOINT|RELEASE SAVEPOINT|ROLLBACK TO SAVEPOINT)/.test(sql)) return { rows: [] };
     const t = this.tables;
     if (/rolsuper/.test(sql)) {
-      return { rows: [{ rolsuper: false, rolcreatedb: false, rolcreaterole: false, rolbypassrls: false, rolreplication: false, db_create: false, schema_create: false, writable_tables: 0, owned_objects: 0, memberships: "", selectable_tables: t.length, tls: true, ...this.opts.perms }] };
+      return { rows: [{ rolsuper: false, rolcreatedb: false, rolcreaterole: false, rolbypassrls: false, rolreplication: false, db_create: false, schema_create: false, writable_tables: 0, owned_objects: 0, memberships: "", table_wide_select: 0, readable_columns: 10, sensitive_readable: 0, other_schemas: 0, tls: true, ...this.opts.perms }] };
     }
     if (/transaction_read_only/.test(sql)) return { rows: [{ v: this.opts.readOnly === false ? "off" : "on" }] };
     if (/has_pk/.test(sql)) return { rows: t.map((x) => ({ name: x.name, est: x.estRows ?? x.rows?.length ?? 0, has_pk: !!x.pk })) };
-    if (/information_schema\.columns/.test(sql)) return { rows: t.flatMap((x) => x.columns.map(([n, ty]) => ({ t: x.name, n, ty, nl: "YES" }))) };
+    if (/format_type/.test(sql)) return { rows: t.flatMap((x) => x.columns.map(([n, ty]) => ({ t: x.name, n, ty, nl: true }))) };
     if (/contype = 'f'/.test(sql)) {
       return { rows: t.flatMap((x) => (x.fks ?? []).map((f) => ({ name: `${x.name}_${f.col}_fkey`, tbl: x.name, ref: f.refTable, valid: true, cols: [f.col], refcols: [f.refCol] }))) };
     }
@@ -49,7 +50,7 @@ export class FakePg implements Session, RoQueryable {
     }
     if (/FROM pg_trigger/.test(sql)) return { rows: t.flatMap((x) => (x.triggers ?? []).map((n) => ({ tbl: x.name, name: n }))) };
     if (/relrowsecurity/.test(sql)) return { rows: t.filter((x) => x.rls).map((x) => ({ tbl: x.name })) };
-    if (/role_table_grants/.test(sql)) return { rows: t.filter((x) => x.publicGrant).map((x) => ({ tbl: x.name })) };
+    if (/aclexplode/.test(sql)) return { rows: t.filter((x) => x.publicGrant).map((x) => ({ tbl: x.name })) };
     if (/max\("/.test(sql)) return { rows: [{ v: this.opts.ledgerVersion ?? "0002" }] };
     const m = /c\."(\w+)" IS NOT NULL\) AS examined.*FROM "(\w+)" p WHERE p\."(\w+)" = .*FROM "(\w+)" c$/s.exec(sql);
     if (m) {

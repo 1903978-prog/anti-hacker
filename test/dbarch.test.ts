@@ -71,7 +71,7 @@ describe("dbarch: scan scenarios (fixtures, no live database)", () => {
     expect(r.dbs.size).toBe(3);
     for (const pg of r.dbs.values()) {
       expect(pg.log.length).toBeGreaterThan(8);
-      for (const sql of pg.log) expect(() => assertReadOnlySql(sql)).not.toThrow(); // 12. no modifications possible
+      for (const sql of pg.log.filter((q) => !/SAVEPOINT/.test(q))) expect(() => assertReadOnlySql(sql)).not.toThrow(); // 12. no modifications possible (SAVEPOINT is session control, not data access)
       expect(pg.closed).toBe(true);
     }
     const v = buildView(db, ENV, r.clock.t);
@@ -241,6 +241,16 @@ describe("dbarch: scan scenarios (fixtures, no live database)", () => {
     expect(c.evidence).toContain("from deep audit");
   }));
 
+  it("the total-time budget stops new checks and says so", async () => {
+    const tables = sampleTables();
+    const r = rig(() => tables);
+    let calls = 0;
+    r.deps.now = () => new Date(T0.getTime() + (calls++ > 40 ? 400_000 : 0)); // the clock jumps past the 300 s deep budget mid-scan
+    await runScan(db, "atlas", "deep", r.deps);
+    const d = getLatest(db, "atlas")!.result as unknown as AppResult;
+    expect(d.checks.every((c) => c.outcome === "PASS" || c.evidence.includes("time budget"))).toBe(true);
+  });
+
   it("attestations are time-bound, visible and never overwrite the measured value", async () => {
     const r = rig();
     await runScan(db, "atlas", "deep", r.deps);
@@ -268,7 +278,7 @@ describe("dbarch: scoring is deterministic and reproducible by hand", () => {
   const ev = (over: Partial<Evidence>): Evidence => ({
     cat: {
       collectedAt: "x", tables: [1, 2, 3, 4].map((n) => ({ name: `t${n}`, estRows: 10, columns: ["id", "created_at"], hasPrimaryKey: n <= 3 })),
-      columns: [], foreignKeys: [], indexes: [], constraints: [], triggers: [], rlsEnabledTables: [], publicGrantTables: [], migrationLedgers: [], migrationLatest: null, sessionReadOnly: true,
+      columns: [], foreignKeys: [], indexes: [], constraints: [], triggers: [], rlsEnabledTables: [], publicGrantTables: [], migrationLedgers: [], migrationLatest: null, migrationLedgerColumn: null, sessionReadOnly: true,
     },
     inventory: [], checksDefined: 0, checks: [], neon: { branchName: "main", branchId: "b", protected: false, historyRetentionSeconds: 6 * 3600 }, schemaChange: "first", deepAuditAgeHours: null,
     attest: { authzReview: null, restoreTest: null, independentlyVerified: false }, recommendationsTotal: 0, recommendationsComplete: 0, draftsTotal: 0, draftsSafe: 0, needsMigration: 0, hasPrevious: false, permissions: null, ...over,
@@ -370,6 +380,8 @@ describe.skipIf(!process.env.SECVAL_TEST_PG_URL)("dbarch: real Postgres catalog 
 import { readFileSync } from "node:fs";
 import pgLib from "pg";
 import { verifyPermissions } from "../server/dbarch/permissions.js";
+import { isolated } from "../server/dbarch/readonly.js";
+import { grantsSql, requiredGrants } from "../server/dbarch/grants.js";
 import { assertTlsRequired } from "../server/dbarch/connect.js";
 import { testConnectivity } from "../server/dbarch/connectivity.js";
 describe.skipIf(!process.env.SECVAL_TEST_PG_URL)("dbarch: least-privilege role on a real Postgres", () => {
@@ -377,36 +389,110 @@ describe.skipIf(!process.env.SECVAL_TEST_PG_URL)("dbarch: least-privilege role o
   const as = (user: string) => { const u = new URL(admin); u.username = user; u.password = "pw"; return u.toString(); };
   const dbName = () => new URL(admin).pathname.slice(1);
   async function run(sql: string) { const c = new pgLib.Client({ connectionString: admin }); await c.connect(); try { await c.query(sql); } finally { await c.end(); } }
-
-  it("the documented script yields a role that passes every permission check and cannot write", async () => {
+  const reset = async () => {
+    await run("REVOKE ALL ON notes FROM PUBLIC"); // the fixture's planted PUBLIC grant is tested separately below
+    await run("DROP OWNED BY secval_monitor").catch(() => undefined);
+    await run("DROP ROLE IF EXISTS secval_monitor");
     const owner = new URL(admin).username;
-    const script = readFileSync("docs/sql/dbarch-monitor-role.sql", "utf8").replace("<PASSWORD>", "pw").replaceAll("<DB_NAME>", dbName()).replace("<OWNER_ROLE>", owner);
-    await run("DROP OWNED BY secval_monitor; DROP ROLE IF EXISTS secval_monitor").catch(() => undefined);
-    await run(script);
+    await run(readFileSync("docs/sql/dbarch-monitor-role.sql", "utf8").replace("<PASSWORD>", "pw").replaceAll("<DB_NAME>", dbName()).replace("<OWNER_ROLE>", owner));
+  };
+  const deps = (user: string): Deps => ({ env: { SECVAL_DBARCH_URL_ATLAS: as(user) }, now: () => new Date(), connect: pgConnector });
+
+  it("step 1 (metadata only): passes every permission check, reads no data, cannot write", async () => {
+    await reset();
     const s = await pgConnector(as("secval_monitor"));
     try {
       const rep = await verifyPermissions(s);
       expect(rep.checks.filter((c) => c.ok === false && c.id !== "tls")).toEqual([]); // local scratch server has no TLS; production TLS is enforced by the client
       expect(rep.leastPrivilege).toBe(true);
-      expect(rep.selectableTables).toBeGreaterThan(3);
-      expect((await collectCatalog(s)).tables.length).toBeGreaterThan(3);
-      await expect(s.query("DELETE FROM clients")).rejects.toThrow(/read-only|permission denied/); // the server itself refuses (this aborts the session's transaction)
+      expect(rep.readableColumns).toBe(0);
+      const cat = await collectCatalog(s);
+      expect(cat.tables.length).toBeGreaterThan(3); // metadata visible with no table privilege
+      expect(cat.columns.length).toBeGreaterThan(10);
+      expect(cat.publicGrantTables).toEqual([]);
+      await expect(s.query("SELECT count(*) FROM clients")).rejects.toThrow(/permission denied/); // no data access at all
     } finally { await s.close(); }
+    const s2 = await pgConnector(as("secval_monitor"));
+    try { await expect(s2.query("DELETE FROM clients")).rejects.toThrow(/read-only|permission denied/); } finally { await s2.close(); }
+  });
+
+  it("scan before grants: metadata scores work, orphan checks say N/V because of least privilege", async () => {
+    await reset();
+    const db = freshDb();
+    const out = await runScan(db, "atlas", "deep", deps("secval_monitor"));
+    expect(out.status).toBe("partial");
+    const d = getLatest(db, "atlas")!.result as unknown as AppResult;
+    expect(d.catalog.tables).toBeGreaterThan(3);
+    expect(d.checks.length).toBeGreaterThan(0);
+    expect(d.checks.every((c) => c.outcome === "UNVERIFIED" && c.evidence.includes("No SELECT grant"))).toBe(true);
+    expect(d.grants.columns).toContain("projects.client_id");
+    expect(d.grants.columns).toContain("clients.id");
+  });
+
+  it("step 2: the generated column grants enable the checks and the planted orphan is found; still read-only", async () => {
+    await reset();
+    const db = freshDb();
+    await runScan(db, "atlas", "deep", deps("secval_monitor"));
+    const g = (getLatest(db, "atlas")!.result as unknown as AppResult).grants;
+    const sql = grantsSql(g, "2026-11-05");
+    expect(sql).not.toMatch(/ON ALL TABLES|ALL PRIVILEGES|DEFAULT PRIVILEGES|GRANT SELECT ON /i);
+    await run(sql);
+    const later = deps("secval_monitor");
+    later.now = () => new Date(Date.now() + 120_000);
+    await runScan(db, "atlas", "deep", later);
+    const d = getLatest(db, "atlas")!.result as unknown as AppResult;
+    const c = d.checks.find((x) => x.checkId === "orph:projects.client_id")!;
+    expect(c.failures).toBe(1);
+    expect(d.permissions?.leastPrivilege).toBe(true);
+    expect(d.permissions?.readableColumns).toBe(g.columns.length);
+    const s = await pgConnector(as("secval_monitor"));
+    try {
+      await expect(isolated(s, "SELECT name FROM clients")).rejects.toThrow(/permission denied/); // a non-key column stays unreadable
+      await expect(isolated(s, "SELECT amount FROM invoices")).rejects.toThrow(/permission denied/);
+    } finally { await s.close(); }
+  });
+
+  it("blanket SELECT, a sensitive column, another schema or a write grant each make the login fail and the scan refuse", async () => {
+    for (const [grant, failing] of [
+      ["GRANT SELECT ON clients TO secval_monitor", "wide_select"],
+      ["GRANT SELECT (secret_token) ON secrets_demo TO secval_monitor", "sensitive"],
+      ["GRANT INSERT ON clients TO secval_monitor", "writable"],
+      ["GRANT SELECT ON notes TO PUBLIC", "wide_select"], // a pre-existing PUBLIC grant also gives the login whole-table read
+      ["GRANT USAGE ON SCHEMA other_demo TO secval_monitor", "schemas"],
+    ] as const) {
+      await reset();
+      await run("CREATE TABLE IF NOT EXISTS secrets_demo (id int PRIMARY KEY, secret_token text); CREATE SCHEMA IF NOT EXISTS other_demo");
+      await run(grant);
+      const s = await pgConnector(as("secval_monitor"));
+      try {
+        const rep = await verifyPermissions(s);
+        expect(rep.leastPrivilege, grant).toBe(false);
+        expect(rep.checks.find((c) => c.id === failing)!.ok, grant).toBe(false);
+      } finally { await s.close(); }
+      const db = freshDb();
+      expect(await runScan(db, "atlas", "quick", deps("secval_monitor"))).toMatchObject({ status: "error", message: "monitoring login has privileges it must not have; scan refused" });
+    }
+    await run("DROP TABLE IF EXISTS secrets_demo; DROP SCHEMA IF EXISTS other_demo");
+  });
+
+  it("the connectivity stages pass for the metadata-only login", async () => {
+    await reset();
     const ok = await testConnectivity("atlas", { SECVAL_DBARCH_URL_ATLAS: as("secval_monitor") }, pgConnector);
     expect(ok.ok).toBe(true);
     expect(ok.stages.map((x) => x.id)).toEqual(["configured", "format", "tls_setting", "dns", "tcp", "login", "permissions"]);
   });
+});
 
-  it("a login with a write privilege is detected and the scan is refused", async () => {
-    await run("DROP ROLE IF EXISTS secval_bad; CREATE ROLE secval_bad LOGIN PASSWORD 'pw'");
-    await run(`GRANT CONNECT ON DATABASE ${dbName()} TO secval_bad; GRANT USAGE ON SCHEMA public TO secval_bad; GRANT SELECT, INSERT ON clients TO secval_bad`);
-    const s = await pgConnector(as("secval_bad"));
-    try { expect((await verifyPermissions(s)).leastPrivilege).toBe(false); } finally { await s.close(); }
-    const db = freshDb();
-    const out = await runScan(db, "atlas", "quick", { env: { SECVAL_DBARCH_URL_ATLAS: as("secval_bad") }, now: () => new Date(), connect: pgConnector });
-    expect(out).toEqual({ app: "atlas", status: "error", message: "monitoring login has privileges it must not have; scan refused" });
-    expect((db.prepare(`SELECT kind FROM dbarch_alerts`).all() as Array<{ kind: string }>).map((a) => a.kind)).toContain("role-too-privileged");
-    await run("DROP OWNED BY secval_bad; DROP ROLE secval_bad");
+describe("dbarch: column-level grant generation", () => {
+  const def = (t: string, c: string, pt: string, pc: string) => ({ child: { table: t, column: c }, parent: { table: pt, column: pc } }) as never;
+  it("requests key columns only, never blanket or default privileges, and holds back sensitive-looking names", () => {
+    const g = requiredGrants([def("projects", "client_id", "clients", "id"), def("mail", "email_id", "users", "id")], { table: "schema_migrations", column: "version" });
+    expect(g.columns).toEqual(["clients.id", "mail.email_id".replace("mail.email_id", "projects.client_id"), "schema_migrations.version", "users.id"].sort());
+    expect(g.skipped).toEqual(["mail.email_id"]);
+    const sql = grantsSql(g, "2026-11-05");
+    expect(sql).toContain('GRANT SELECT ("id") ON "clients" TO secval_monitor;');
+    expect(sql).toContain("-- NOT granted");
+    expect(sql).not.toMatch(/ALL TABLES|DEFAULT PRIVILEGES|GRANT SELECT ON /);
   });
 });
 

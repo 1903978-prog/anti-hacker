@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { AppKey, Catalog, CheckDef, CheckResult, FkCandidate, Severity } from "./types.js";
-import { ident, readOnly, type RoQueryable } from "./readonly.js";
+import { ident, isolated, type RoQueryable } from "./readonly.js";
 import { family } from "./inventory.js";
 
 /** Safe budgets: aggregated counts only, bounded number and size of checks. */
@@ -72,7 +72,6 @@ export async function runChecks(
   defs: ReturnType<typeof buildChecks>,
   opts: RunOptions,
 ): Promise<CheckResult[]> {
-  const client = readOnly(rawClient);
   const budget = BUDGET[opts.tier];
   const rows = new Map(cat.tables.map((t) => [t.name, t.estRows]));
   const eligible = defs.filter((d) => opts.tier === "deep" || d.tier === "quick");
@@ -95,7 +94,7 @@ export async function runChecks(
     }
     ran++;
     try {
-      const r = await client.query(orphanSql(d));
+      const r = await isolated(rawClient, orphanSql(d));
       const examined = Number(r.rows[0]?.examined ?? 0);
       const failures = Number(r.rows[0]?.failures ?? 0);
       const confirmed = d.classification === "mandatory" || d.classification === "optional";
@@ -111,7 +110,11 @@ export async function runChecks(
               ? `${failures} of ${examined} rows have no parent.`
               : `${failures} of ${examined} rows have no matching ${d.parent.table} row, but the relationship is not classified yet, so this is not a confirmed defect.`,
       });
-    } catch {
+    } catch (e) {
+      if ((e as { code?: string })?.code === "42501") {
+        results.push({ ...base, outcome: "UNVERIFIED", rowsExamined: null, failures: null, evidence: "No SELECT grant on the key columns yet (least privilege). Apply the generated column grants to enable this check." });
+        continue;
+      }
       results.push({ ...base, outcome: "ERROR", rowsExamined: null, failures: null, evidence: "The check could not run (timeout or permission). Details are not shown." });
     }
   }
