@@ -1,4 +1,4 @@
-/* global isBigCost */
+/* global isBigCost, loadDbarch */
 // secval control-plane UI. The secret token (the server's SECVAL_API_TOKEN)
 // is typed once into a small box on the page (no pop-up). The server swaps it
 // for a sign-in cookie that page scripts cannot read, so the token itself is
@@ -800,7 +800,7 @@ el("usageRefresh").onclick = async () => {
 // #tests, #usage, #backup, #settings) picks the menu, so links and reloads keep it; the last one
 // used is remembered in this browser. The token box sits above the menus, so it
 // shows whichever menu is open.
-const TABS = ["health", "scans", "tests", "usage", "backup", "settings"];
+const TABS = ["health", "scans", "tests", "usage", "database", "backup", "settings"];
 let currentTab = "health";
 function showTab(name) {
   const tab = TABS.includes(name) ? name : "health";
@@ -811,6 +811,7 @@ function showTab(name) {
   if (tab === "tests" && signedIn) refreshTests();
   if (tab === "settings" && signedIn && !lenovoLoaded) { lenovoLoaded = true; refreshLenovo(false); refreshLenovoQuestions(); }
   if (tab === "usage" && signedIn) refreshUsage();
+  if (tab === "database" && signedIn && typeof loadDbarch === "function") loadDbarch();
 }
 function storedTab() {
   try { return localStorage.getItem("secval_tab"); } catch { return null; }

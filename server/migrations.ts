@@ -109,6 +109,72 @@ export const MIGRATIONS: Migration[] = [
     );
     `,
   },
+  {
+    // Database Architecture & Integrity module. Scan history and alerts are
+    // append-only; the full latest result per app is replaced each scan.
+    version: 5,
+    name: "database architecture scorecard",
+    sql: `
+    CREATE TABLE IF NOT EXISTS dbarch_scans (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      app           TEXT NOT NULL,
+      tier          TEXT NOT NULL CHECK (tier IN ('quick','deep')),
+      started_at    TEXT NOT NULL,
+      finished_at   TEXT NOT NULL,
+      status        TEXT NOT NULL CHECK (status IN ('ok','partial','error')),
+      error_label   TEXT,
+      calc_version  TEXT NOT NULL,
+      fingerprint   TEXT,
+      arch_score    REAL CHECK (arch_score IS NULL OR arch_score BETWEEN 0 AND 10),
+      arch_coverage REAL,
+      ready_score   REAL CHECK (ready_score IS NULL OR ready_score BETWEEN 0 AND 10),
+      ready_coverage REAL,
+      summary_json  TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS dbarch_scans_app_id ON dbarch_scans (app, id);
+    CREATE TRIGGER IF NOT EXISTS dbarch_scans_no_update BEFORE UPDATE ON dbarch_scans
+      BEGIN SELECT RAISE(ABORT, 'dbarch_scans is append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS dbarch_scans_no_delete BEFORE DELETE ON dbarch_scans
+      BEGIN SELECT RAISE(ABORT, 'dbarch_scans is append-only'); END;
+    CREATE TABLE IF NOT EXISTS dbarch_latest (
+      app         TEXT PRIMARY KEY,
+      scan_id     INTEGER NOT NULL,
+      updated_at  TEXT NOT NULL,
+      deep_at     TEXT,
+      result_json TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS dbarch_alerts (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      app        TEXT NOT NULL,
+      scan_id    INTEGER,
+      kind       TEXT NOT NULL,
+      severity   TEXT NOT NULL,
+      message    TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS dbarch_alerts_app_id ON dbarch_alerts (app, id);
+    CREATE TRIGGER IF NOT EXISTS dbarch_alerts_no_update BEFORE UPDATE ON dbarch_alerts
+      BEGIN SELECT RAISE(ABORT, 'dbarch_alerts is append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS dbarch_alerts_no_delete BEFORE DELETE ON dbarch_alerts
+      BEGIN SELECT RAISE(ABORT, 'dbarch_alerts is append-only'); END;
+    CREATE TABLE IF NOT EXISTS dbarch_attestations (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      app         TEXT NOT NULL,
+      key         TEXT NOT NULL,
+      value       REAL,
+      detail      TEXT,
+      reason      TEXT NOT NULL,
+      approved_by TEXT NOT NULL,
+      created_at  TEXT NOT NULL,
+      expires_at  TEXT
+    );
+    CREATE INDEX IF NOT EXISTS dbarch_attest_app_key ON dbarch_attestations (app, key, id);
+    CREATE TRIGGER IF NOT EXISTS dbarch_attest_no_update BEFORE UPDATE ON dbarch_attestations
+      BEGIN SELECT RAISE(ABORT, 'dbarch_attestations is append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS dbarch_attest_no_delete BEFORE DELETE ON dbarch_attestations
+      BEGIN SELECT RAISE(ABORT, 'dbarch_attestations is append-only'); END;
+    `,
+  },
 ];
 
 /** Applies every migration the database has not seen yet; returns their versions. */

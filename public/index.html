@@ -53,6 +53,29 @@
       nav.tabs { display: flex; gap: 4px; padding: 0 16px; border-bottom: 1px solid var(--border); background: var(--surface); overflow-x: auto; position: sticky; top: 0; z-index: 5; }
       nav.tabs a { padding: 12px 14px; color: var(--muted); text-decoration: none; font-weight: 600; font-size: 14px; white-space: nowrap; border-bottom: 2px solid transparent; }
       nav.tabs a[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+      .linklike { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; text-align: left; cursor: pointer; text-decoration: underline; }
+      .dbcards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+      .dbcard { border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+      .dbpair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 8px 0; }
+      .dbl { font-size: 12px; color: var(--muted); }
+      .dbn { font-size: 30px; font-weight: 700; line-height: 1.1; } .dbn small { font-size: 13px; font-weight: 400; color: var(--muted); }
+      .dbn.good, .dbcell.good .dbv { color: var(--good); } .dbn.mid, .dbcell.mid .dbv { color: var(--medium); } .dbn.bad, .dbcell.bad .dbv { color: var(--high); } .dbn.nv, .dbcell.nv .dbv { color: var(--muted); }
+      .dbrow { display: grid; grid-template-columns: minmax(130px, 1.5fr) repeat(3, 1fr); gap: 6px; align-items: stretch; padding: 5px 0; border-bottom: 1px solid var(--border); }
+      .dbhead { color: var(--muted); font-weight: 600; font-size: 13px; }
+      .dblabel { align-self: center; font-size: 14px; }
+      .dbcell { display: flex; flex-direction: column; gap: 1px; text-align: left; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 5px 7px; min-width: 0; }
+      .dbcell:hover, .dbcell:focus-visible { border-color: var(--accent); }
+      .dbapp { display: none; font-size: 11px; color: var(--muted); }
+      .dbv { font-size: 18px; font-weight: 700; } .dbv small { font-size: 11px; font-weight: 400; color: var(--muted); }
+      .dbst, .dbd { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+      .dbsql { background: var(--bg); padding: 10px; border-radius: 8px; overflow-x: auto; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+      .spark { color: var(--accent); display: block; }
+      @media (max-width: 640px) {
+        .dbhead { display: none; }
+        .dbrow { grid-template-columns: repeat(3, 1fr); }
+        .dblabel { grid-column: 1 / -1; font-weight: 600; }
+        .dbapp { display: block; }
+      }
       textarea { width: 100%; min-height: 110px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: 13px/1.4 ui-monospace, monospace; resize: vertical; margin-bottom: 8px; }
       .app { border-top: 1px solid var(--border); padding: 12px 0; }
       .app:first-of-type { border-top: 0; padding-top: 0; }
@@ -146,6 +169,7 @@
       <a href="#scans" data-tab="scans" role="tab">Security scans</a>
       <a href="#tests" data-tab="tests" role="tab">All tests</a>
       <a href="#usage" data-tab="usage" role="tab">Usage</a>
+      <a href="#database" data-tab="database" role="tab">Database</a>
       <a href="#backup" data-tab="backup" role="tab">Backup</a>
       <a href="#settings" data-tab="settings" role="tab">Settings</a>
     </nav>
@@ -273,6 +297,57 @@
       </div>
       </section>
 
+      <section data-panel="database" hidden>
+      <div class="card">
+        <h2>Database Architecture &amp; Integrity</h2>
+        <div class="note" style="margin:-6px 0 12px">
+          Scores come from read-only checks of the three Neon databases. <strong>N/V</strong> = no verified evidence (never shown as zero or green).
+          Missing evidence lowers coverage and cannot raise a score. Nothing here changes a monitored database.
+        </div>
+        <div id="dbCards" class="dbcards"><div class="muted">Loading…</div></div>
+        <div class="row" style="margin-top:10px;align-items:center">
+          <span id="dbMsg" class="note" style="flex:1;margin:0"></span>
+          <button id="dbConn" class="ghost">Test connections</button>
+          <button id="dbQuick" class="ghost">Quick Refresh</button>
+          <button id="dbDeep" class="ghost">Deep Audit</button>
+        </div>
+        <div id="dbConnOut"></div>
+        <div id="dbMeta" class="note"></div>
+      </div>
+      <div class="card"><h2>Remediation readiness (7 deliverables)</h2><div class="note" style="margin:-6px 0 8px">Progress in auditing, planning, validating and preparing safe improvements. Capped at 8 until independently verified. Each cell: score, state, change since the previous verified scan.</div><div id="dbRemed"></div></div>
+      <div class="card"><h2>Architecture quality (10 criteria)</h2><div class="note" style="margin:-6px 0 8px">Strength of the existing design. Target 8.5. Weights add up to 100.</div><div id="dbArch"></div></div>
+      <div class="card"><h2>Details</h2><div id="dbDetail"></div></div>
+      <div class="card">
+        <h2>Prioritised findings and corrective actions</h2>
+        <div class="row">
+          <select id="dbFilterApp" aria-label="Filter by app"><option value="all">All apps</option><option value="atlas">ATLAS</option><option value="lm-op-model">LM OpModel</option><option value="nexus">Nexus</option></select>
+          <select id="dbFilterSev" aria-label="Filter by priority"><option value="all">All priorities</option><option value="P0">P0</option><option value="P1">P1</option><option value="P2">P2</option><option value="P3">P3</option></select>
+        </div>
+        <div id="dbFindings"></div>
+      </div>
+      <div class="card"><h2>Alerts</h2><div class="note" style="margin:-6px 0 8px">Shown here and in the audit trail only. No e-mail is sent by this module.</div><div id="dbAlerts"></div></div>
+      <div class="card">
+        <h2>Record a human review</h2>
+        <div class="note" style="margin:-6px 0 8px">Time-bound and auditable. It is shown next to the raw measurement and never replaces it.</div>
+        <div class="row">
+          <select id="dbAttApp" aria-label="App"><option value="atlas">ATLAS</option><option value="lm-op-model">LM OpModel</option><option value="nexus">Nexus</option></select>
+          <select id="dbAttKey" aria-label="What is being recorded">
+            <option value="authz_review">Access-control design reviewed (0-10)</option>
+            <option value="restore_test">Restore test done (0-10)</option>
+            <option value="independent_verify">Independent verification done (1 = yes)</option>
+            <option value="schema_ack">Approve current schema (type its fingerprint below)</option>
+          </select>
+        </div>
+        <div class="row">
+          <input id="dbAttValue" type="number" min="0" max="10" step="0.5" placeholder="Value 0-10" aria-label="Value" />
+          <input id="dbAttDays" type="number" min="1" max="90" value="30" aria-label="Valid for days" />
+          <input id="dbAttDetail" type="text" placeholder="Schema fingerprint (approve only)" aria-label="Schema fingerprint" />
+        </div>
+        <textarea id="dbAttReason" placeholder="Why (at least 5 characters)" aria-label="Reason"></textarea>
+        <div class="row"><button id="dbAttBtn">Save review</button><span id="dbAttMsg" class="note" style="flex:1"></span></div>
+      </div>
+      </section>
+
       <section data-panel="backup" hidden>
       <div class="card">
         <h2>Backup</h2>
@@ -330,5 +405,6 @@
 
     <script src="/money.js" defer></script>
     <script src="/app.js" defer></script>
+    <script src="/dbarch.js" defer></script>
   </body>
 </html>
