@@ -14,9 +14,9 @@ Total time about 10 minutes per database.
 
 1. Open the project link, click **SQL Editor** in the left menu.
 2. At the top choose the **production branch** (the one marked default) and the database your app uses (usually `neondb`). Write the database name down.
-3. Paste `SELECT DISTINCT tableowner FROM pg_tables WHERE schemaname = 'public';` and click **Run**. Write the name shown (usually `neondb_owner`). Expected: one row.
-4. In your password manager generate a 32-character password with letters and digits only. Keep it there. Do not type it anywhere else yet.
-5. Open `docs/sql/dbarch-monitor-role.sql` (in the PR: https://github.com/1903978-prog/anti-hacker/blob/feature/db-architecture-scorecard/docs/sql/dbarch-monitor-role.sql), copy it into the SQL Editor and replace the three placeholders: `<PASSWORD>` (step 4), `<DB_NAME>` (step 2), `<OWNER_ROLE>` (step 3). Click **Run**. Expected: no red error; the commands finish with CREATE ROLE, ALTER ROLE, GRANT.
+3. In your password manager generate a 32-character password with letters and digits only. Keep it there. Do not type it anywhere else yet.
+4. Open `docs/sql/dbarch-monitor-role.sql` (v2, least privilege; in the PR: https://github.com/1903978-prog/anti-hacker/blob/fix/dbarch-least-privilege/docs/sql/dbarch-monitor-role.sql), copy it into the SQL Editor and replace the two placeholders: `<PASSWORD>` (step 3) and `<DB_NAME>` (step 2). Click **Run**. Expected: no red error. The login can read ONLY key columns (ids, keys, foreign keys, migration version), no names, e-mails or notes, and not any table created later (re-run section 3 of the file after a schema change).
+5. **Pre-merge check, needs no deploy and no password:** copy `docs/sql/dbarch-monitor-verify.sql` into the same editor and click **Run**. Expected: every row says PASS (two INFO rows are for reading). Any FAIL: stop and tell me the row text.
 6. Build the connection string (keep it in your password manager):
    `postgresql://secval_monitor:PASSWORD@HOST/DB_NAME?sslmode=require`
    HOST: on the project page click **Connect**, switch **Connection pooling** off and copy only the host part (looks like `ep-name-12345.region.aws.neon.tech`). The `?sslmode=require` at the end is mandatory: secval refuses a remote connection without it.
@@ -28,7 +28,7 @@ Total time about 10 minutes per database.
    - `SECVAL_DBARCH_URL_ATLAS`
    - `SECVAL_DBARCH_URL_LM_OP_MODEL`
    - `SECVAL_DBARCH_URL_NEXUS`
-3. Click **Save Changes**. Render restarts secval; that is expected. (Nothing goes into GitHub or the code.)
+3. Look at the button next to Save: if the menu offers **Save only** (no deploy), use it; otherwise Save will restart secval once (about a minute; monitoring pauses briefly, not a code deploy). Render's exact wording could not be checked from the build sandbox: if only "Save, rebuild, and deploy" exists, stop and tell me. Nothing goes into GitHub or the code.
 4. No Neon API token is needed or requested now.
 
 ## Part 3: test from the server
@@ -40,6 +40,6 @@ Total time about 10 minutes per database.
 
 Minimum reply to me: "Test connections: ATLAS ok / LM ok / Nexus ok" (or the FAIL line).
 
-## Optional tightening later
+## Isolation
 
-Replace the table-wide SELECT with column-level SELECT on only the key columns the orphan checks read. Secval only ever returns counts, but column grants would also limit what the login could read if it were ever misused.
+One login per Neon project and each Render variable holds one project's string, so ATLAS, LM OpModel and Nexus cannot read each other. Within a project the login has no rights on other databases (verify INFO row).

@@ -16,10 +16,11 @@ const DANGEROUS_ROLES = ["neon_superuser", "pg_write_all_data", "pg_execute_serv
 export const PERMISSION_SQL = `SELECT r.rolsuper, r.rolcreatedb, r.rolcreaterole, r.rolbypassrls, r.rolreplication,
   has_database_privilege(current_user, current_database(), 'CREATE') AS db_create,
   has_schema_privilege(current_user, 'public', 'CREATE') AS schema_create,
-  (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind IN ('r','p') AND (has_table_privilege(current_user, c.oid, 'INSERT') OR has_table_privilege(current_user, c.oid, 'UPDATE') OR has_table_privilege(current_user, c.oid, 'DELETE') OR has_table_privilege(current_user, c.oid, 'TRUNCATE') OR has_table_privilege(current_user, c.oid, 'REFERENCES') OR has_table_privilege(current_user, c.oid, 'TRIGGER'))) AS writable_tables,
+  (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind IN ('r','p') AND (has_any_column_privilege(current_user, c.oid, 'INSERT') OR has_any_column_privilege(current_user, c.oid, 'UPDATE') OR has_table_privilege(current_user, c.oid, 'DELETE') OR has_table_privilege(current_user, c.oid, 'TRUNCATE') OR has_any_column_privilege(current_user, c.oid, 'REFERENCES') OR has_table_privilege(current_user, c.oid, 'TRIGGER'))) AS writable_tables,
   (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relowner = r.oid) AS owned_objects,
   (SELECT coalesce(string_agg(g.rolname::text, ','), '') FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid WHERE m.member = r.oid) AS memberships,
-  (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind IN ('r','p') AND has_table_privilege(current_user, c.oid, 'SELECT')) AS selectable_tables,
+  (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind IN ('r','p') AND has_any_column_privilege(current_user, c.oid, 'SELECT')) AS selectable_tables,
+  (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind IN ('r','p') AND has_table_privilege(current_user, c.oid, 'SELECT')) AS whole_table_select,
   (SELECT s.ssl FROM pg_stat_ssl s WHERE s.pid = pg_backend_pid()) AS tls
 FROM pg_roles r WHERE r.rolname = current_user`;
 
@@ -43,9 +44,10 @@ export async function verifyPermissions(rawClient: RoQueryable, now: Date = new 
     { id: "owner", label: "Owns no objects in public", ok: n(r.owned_objects) === 0, detail: `${n(r.owned_objects)} owned object(s)` },
     { id: "roles", label: "Member of no privileged role", ok: bad.length === 0, detail: bad.length ? `member of ${bad.join(", ")}` : memberships.length ? `member of ${memberships.join(", ")} (not privileged)` : "no memberships" },
     { id: "select", label: "Has SELECT on tables it must read", ok: n(r.selectable_tables) > 0, detail: `${n(r.selectable_tables)} table(s) readable` },
+    { id: "column_only", label: "SELECT is limited to key columns (no whole-table SELECT)", ok: n(r.whole_table_select) === 0, detail: `${n(r.whole_table_select)} table(s) readable in full; use docs/sql/dbarch-monitor-role.sql v2` },
     { id: "tls", label: "Connection uses TLS", ok: r.tls === null || r.tls === undefined ? null : Boolean(r.tls), detail: "pg_stat_ssl (the client also refuses plaintext for any remote host)" },
   ];
-  const hard = checks.filter((x) => x.id !== "tls" && x.id !== "select");
+  const hard = checks.filter((x) => x.id !== "tls" && x.id !== "select" && x.id !== "column_only");
   return {
     checkedAt: now.toISOString(),
     leastPrivilege: hard.every((x) => x.ok === true),

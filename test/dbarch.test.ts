@@ -445,6 +445,15 @@ describe("dbarch: TLS and connectivity stages (no network)", () => {
     expect(out.status).toBe("error");
     expect(getLatest(db, "atlas")).toBeNull();
   });
+  it("a whole-table SELECT is flagged as a warning (column_only) but does not fail closed; key-column-only passes", async () => {
+    const wide = async () => new FakePg(sampleTables(), { perms: { whole_table_select: 3 } });
+    const w = await testConnectivity("atlas", { SECVAL_DBARCH_URL_ATLAS: url }, wide, net());
+    expect(w.permissions?.checks.find((c) => c.id === "column_only")?.ok).toBe(false);
+    expect(w.permissions?.leastPrivilege).toBe(true);
+    const narrow = async () => new FakePg(sampleTables(), { perms: { whole_table_select: 0 } });
+    const n = await testConnectivity("atlas", { SECVAL_DBARCH_URL_ATLAS: url }, narrow, net());
+    expect(n.permissions?.checks.find((c) => c.id === "column_only")?.ok).toBe(true);
+  });
   it("the connectivity endpoint requires auth and returns stages only", async () => {
     const db = freshDb();
     const app = createApp(db, { apiToken: "t", dbarch: { env: { SECVAL_DBARCH_URL_ATLAS: "postgresql://u:SECRETPW@localhost/db" }, now: () => T0, connect: async () => new FakePg(sampleTables()), net: { resolve: async () => undefined, tcp: async () => undefined } } });
