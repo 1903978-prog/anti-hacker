@@ -37,12 +37,16 @@ export interface AppOptions {
   /** Lenovo check: environment and network caller (tests hand in fakes). */
   lenovoEnv?: Record<string, string | undefined>;
   lenovoFetch?: LenovoFetch;
+  /** Database scorecard: connector, env and clock (tests hand in fakes). */
+  dbarch?: DbarchDeps;
 }
 import { DEFAULT_WEEKLY, getLastRun, runWeeklySweep } from "./schedule/weekly.js";
 import { backupMode, backupStatus, runRestoreDrill } from "./backup/drill.js";
 import { dropboxStatus } from "./backup/dropbox.js";
 import { lastIntegrity, refreshIntegrity } from "./integrity.js";
 import { bigBodyBypass, qualityRoutes } from "./quality/routes.js";
+import { dbarchRoutes, defaultDeps as dbarchDefaultDeps } from "./dbarch/routes.js";
+import { runAll as dbarchRunAll, type Deps as DbarchDeps } from "./dbarch/engine.js";
 import { listDeploys, rollbackTo, type RenderFetcher } from "./deploy/rollback.js";
 
 // Until a real auth layer exists, the actor is a fixed operator identity.
@@ -97,6 +101,8 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
   });
 
   qualityRoutes(app, db);
+  const dbarchDeps = options.dbarch ?? dbarchDefaultDeps();
+  dbarchRoutes(app, db, dbarchDeps);
 
   // --- Allowlist management -------------------------------------------------
   app.get("/api/allowlist", (_req, res) => {
@@ -321,6 +327,9 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
 
   app.post("/api/dashboard/check-now", async (_req, res) => {
     const checks = await checkAllUptime(db);
+    // The same Refresh also starts a Quick Refresh of the database scorecard.
+    // Not awaited: it is bounded (timeouts, budgets) and never blocks this reply.
+    void dbarchRunAll(db, "quick", dbarchDeps).catch(() => {});
     res.json({ checked: checks.length });
   });
 
