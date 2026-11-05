@@ -35,6 +35,8 @@ Projects: ATLAS `autumn-sun-22098033`, LM OpModel `long-frog-83686748`, Nexus `s
 
 Both options run the same code that will run in production against the same three databases, using a throwaway in-memory store. They connect read-only and verify permissions first.
 
+**Option 0: privilege check in the Neon SQL Editor (folded in from the audit thread's PR #46; fastest, needs no password, no computer setup, no deploy).** After Part 1 (and Part 3 once grants exist), open `docs/sql/dbarch-monitor-verify.sql`, paste it in the SQL Editor of the same database and click **Run**. Expected: every row says PASS (two INFO rows are for reading). It only inspects privileges; it never connects as the login. Any FAIL: stop and send me the row text. Before Part 3 the check "no whole-table / only key columns" passes trivially because the login can read nothing yet.
+
 **Option 1: standalone script, no deployment.** On a computer that can reach Neon (your PC): get Node 20+, then in a terminal:
 ```
 git clone --branch feature/db-architecture-scorecard https://github.com/1903978-prog/anti-hacker
