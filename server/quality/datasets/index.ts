@@ -1,4 +1,5 @@
 import type { DatasetSpec } from "../types.js";
+import { COMPPLAN_SPECS } from "./compplan.js";
 
 /**
  * Registry of per-dataset rules. One file per app under this folder, each
@@ -7,6 +8,12 @@ import type { DatasetSpec } from "../types.js";
  * decided by judgment at run time. A dataset with no spec is scored UNVERIFIED.
  */
 const SPECS = new Map<string, DatasetSpec>();
+
+registerSpecsEarly();
+
+function registerSpecsEarly(): void {
+  for (const s of COMPPLAN_SPECS) SPECS.set(s.id, s);
+}
 
 export function registerSpecs(specs: DatasetSpec[]): void {
   for (const s of specs) SPECS.set(s.id, s);

@@ -244,3 +244,29 @@ describe("quality persistence and API", () => {
     expect(big.status).toBeGreaterThanOrEqual(400); // rejected (existing handler answers 500 for oversized bodies)
   });
 });
+
+describe("compplan dataset specs", () => {
+  it("hubspot_contacts is registered and scores a clean refresh with a baseline", async () => {
+    const { getSpec } = await import("../server/quality/datasets/index.js");
+    const spec = getSpec("compplan.hubspot_contacts")!;
+    expect(spec).toBeDefined();
+    const recs = Array.from({ length: 10 }, (_, i) => ({
+      hubspot_id: `h${i}`, email: `a${i}@x.com`, company_hubspot_id: i % 2 ? "c1" : null,
+      synced_at: "2026-11-05T08:00:00Z", created_at: "2026-10-01T00:00:00Z", updated_at: "2026-11-05T08:00:00Z",
+    }));
+    const s = sub({ dataset: "compplan.hubspot_contacts", app: "compplan", records: recs, authoritative: { h0: { email: "a0@x.com" }, h1: { email: "a1@x.com" } }, references: { hubspot_companies: ["c1"] } });
+    const r = evaluate(spec, s, buildBaseline(spec, recs), DEFAULT_POLICY, NOW);
+    expect(r.dimensions.find((d) => d.id === "consistency")?.state).toBe("not_applicable");
+    expect(r.dimensions.find((d) => d.id === "accuracy")?.state).toBe("scored");
+    expect(r.score).toBe(100);
+    expect(r.status).toBe("Excellent");
+    // Without HubSpot values to compare, accuracy is UNVERIFIED and the run has too little evidence for a score.
+    const noAuth = evaluate(spec, { ...s, authoritative: undefined }, buildBaseline(spec, recs), DEFAULT_POLICY, NOW);
+    expect(noAuth.status).toBe("UNVERIFIED");
+    // First run, no baseline: change integrity (3 of 90) is UNVERIFIED and counts 0, so 96.7 not 100.
+    expect(evaluate(spec, s, null, DEFAULT_POLICY, NOW).score).toBe(96.7);
+    // A link to a company that does not exist is critical.
+    const bad = evaluate(spec, { ...s, references: { hubspot_companies: ["other"] } }, buildBaseline(spec, recs), DEFAULT_POLICY, NOW);
+    expect(bad.critical).toBe(true);
+  });
+});
