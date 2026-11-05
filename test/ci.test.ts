@@ -57,6 +57,8 @@ describe("measured only", () => {
     const on = dashboard(db, new Date(), green).find((a) => a.host === "10bonds.com")!;
     expect(on.areas.find((a) => a.key === "deploy")!.measured).toMatchObject({ score: 100, source: "measured" });
     expect(on.overall).toBe(100);
+    // 100 comes from the measured areas only; the report must say how few that is
+    expect(on.coverage.measured).toBeLessThan(on.coverage.rated);
     const off = dashboard(db, new Date(), () => null).find((a) => a.host === "10bonds.com")!;
     expect(off.areas.find((a) => a.key === "deploy")!.measured).toBeNull();
     expect(off.overall).toBeNull();
