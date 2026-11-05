@@ -42,6 +42,7 @@ import { DEFAULT_WEEKLY, getLastRun, runWeeklySweep } from "./schedule/weekly.js
 import { backupMode, backupStatus, runRestoreDrill } from "./backup/drill.js";
 import { dropboxStatus } from "./backup/dropbox.js";
 import { lastIntegrity, refreshIntegrity } from "./integrity.js";
+import { bigBodyBypass, qualityRoutes } from "./quality/routes.js";
 import { listDeploys, rollbackTo, type RenderFetcher } from "./deploy/rollback.js";
 
 // Until a real auth layer exists, the actor is a fixed operator identity.
@@ -64,7 +65,7 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
   app.use(securityHeaders());
   // Smaller pages and scripts: the first visit after a cold start is the slow one.
   app.use(compression());
-  app.use(express.json({ limit: "32kb" }));
+  app.use(bigBodyBypass(express.json({ limit: "32kb" })));
 
   // Control-plane protection: rate limit all API traffic, and require a bearer
   // token for every API request, reads included (scans, allowlist, audit, …).
@@ -94,6 +95,8 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
     const s = Date.now() - Date.parse(prev.at) > 60_000 ? refreshIntegrity(db) : prev;
     res.status(s.ok ? 200 : 503).json(s);
   });
+
+  qualityRoutes(app, db);
 
   // --- Allowlist management -------------------------------------------------
   app.get("/api/allowlist", (_req, res) => {

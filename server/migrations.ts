@@ -62,6 +62,53 @@ export const MIGRATIONS: Migration[] = [
       rule("uptime_checks", "ok", "NEW.ok IN (0, 1)", "uptime_checks.ok must be 0 or 1"),
     ].join("\n"),
   },
+  {
+    // Data-quality audit: one immutable row per Refresh, plus the last
+    // trustworthy snapshot (record fingerprints only, never values).
+    version: 4,
+    name: "data quality runs and snapshots",
+    sql: `
+    CREATE TABLE IF NOT EXISTS quality_runs (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id         TEXT NOT NULL UNIQUE,
+      app            TEXT NOT NULL,
+      module         TEXT NOT NULL,
+      page           TEXT NOT NULL,
+      dataset        TEXT NOT NULL,
+      dataset_code   TEXT,
+      table_name     TEXT NOT NULL,
+      source_system  TEXT NOT NULL,
+      initiator      TEXT NOT NULL,
+      kind           TEXT NOT NULL,
+      started_at     TEXT NOT NULL,
+      finished_at    TEXT NOT NULL,
+      evaluated_at   TEXT NOT NULL,
+      outcome        TEXT NOT NULL CHECK (outcome IN ('PASS','FAIL','UNVERIFIED')),
+      status         TEXT NOT NULL,
+      score          REAL CHECK (score IS NULL OR score BETWEEN 0 AND 100),
+      raw_score      REAL,
+      coverage       REAL NOT NULL,
+      critical       INTEGER NOT NULL CHECK (critical IN (0, 1)),
+      policy_version TEXT NOT NULL,
+      spec_version   TEXT,
+      record_count   INTEGER NOT NULL,
+      result_json    TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS quality_runs_dataset_id ON quality_runs (dataset, id);
+    CREATE INDEX IF NOT EXISTS quality_runs_app_id ON quality_runs (app, id);
+    CREATE TRIGGER IF NOT EXISTS quality_runs_no_update BEFORE UPDATE ON quality_runs
+      BEGIN SELECT RAISE(ABORT, 'quality_runs is append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS quality_runs_no_delete BEFORE DELETE ON quality_runs
+      BEGIN SELECT RAISE(ABORT, 'quality_runs is append-only'); END;
+    CREATE TABLE IF NOT EXISTS quality_snapshots (
+      dataset      TEXT PRIMARY KEY,
+      job_id       TEXT NOT NULL,
+      taken_at     TEXT NOT NULL,
+      record_count INTEGER NOT NULL,
+      fingerprints TEXT NOT NULL
+    );
+    `,
+  },
 ];
 
 /** Applies every migration the database has not seen yet; returns their versions. */
