@@ -1,3 +1,4 @@
+import type { PermissionReport } from "./permissions.js";
 import type { Catalog, CheckResult, CriterionScore, FkCandidate, NeonSettings, SubScore, VerifyState } from "./types.js";
 
 /**
@@ -49,6 +50,7 @@ export interface Evidence {
   draftsSafe: number;
   needsMigration: number;
   hasPrevious: boolean;
+  permissions: PermissionReport | null;
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -250,7 +252,8 @@ export function scoreReadiness(ev: Evidence, metricsReconcile: { matched: number
       sub("history", "Previous verified snapshot available", 3, ev.hasPrevious ? 3 : null, "3 once at least one earlier snapshot exists", { hasPrevious: ev.hasPrevious }, "scan history"),
     ]),
     rows("safeguards", [
-      sub("ro", "Monitoring session proven read-only", 3, cat.sessionReadOnly === null ? null : cat.sessionReadOnly ? 3 : 0, "3 if transaction_read_only = on", { readOnly: cat.sessionReadOnly }, "pg session setting"),
+      sub("ro", "Monitoring session proven read-only", 2, cat.sessionReadOnly === null ? null : cat.sessionReadOnly ? 2 : 0, "2 if transaction_read_only = on", { readOnly: cat.sessionReadOnly }, "pg session setting"),
+      sub("least_priv", "Monitoring login has no write/DDL/admin privilege", 3, ev.permissions?.leastPrivilege == null ? null : ev.permissions.leastPrivilege ? 3 : 0, "3 if every effective-permission check passed (has_*_privilege), else 0", { leastPrivilege: ev.permissions?.leastPrivilege ?? null, tls: ev.permissions?.tls ?? null }, "pg privilege functions"),
       sub("branch_known", "Production branch identified", 2, ev.neon?.branchName ? 2 : null, "2 if the default branch was read", { branch: ev.neon?.branchName ?? null }, "Neon API"),
       sub("branch_prot", "Production branch protected", 3, ev.neon?.protected == null ? null : ev.neon.protected ? 3 : 0, "3 if protected", { protected: ev.neon?.protected ?? null }, "Neon API"),
       sub("retention", "History retention >= 24 h", 2, ev.neon?.historyRetentionSeconds == null ? null : ev.neon.historyRetentionSeconds >= 86400 ? 2 : 0, "2 if retention >= 24h", { hours: ev.neon?.historyRetentionSeconds == null ? null : ev.neon.historyRetentionSeconds / 3600 }, "Neon API"),

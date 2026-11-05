@@ -60,6 +60,9 @@ export function orphanSql(d: CheckDef): string {
 
 export interface RunOptions {
   tier: "quick" | "deep";
+  /** Epoch ms after which no new check starts (total time budget). */
+  deadline?: number;
+  now?: () => number;
 }
 
 /** Runs the checks of the chosen tier within budget; each result is an aggregate (counts only). */
@@ -84,6 +87,10 @@ export async function runChecks(
     }
     if (est > budget.maxChildRows) {
       results.push({ ...base, outcome: "UNVERIFIED", rowsExamined: null, failures: null, evidence: `Skipped: ${d.child.table} is estimated at ${est} rows, above the ${opts.tier} scan budget.` });
+      continue;
+    }
+    if (opts.deadline !== undefined && (opts.now ?? Date.now)() > opts.deadline) {
+      results.push({ ...base, outcome: "UNVERIFIED", rowsExamined: null, failures: null, evidence: "Skipped: time budget for this scan reached." });
       continue;
     }
     ran++;

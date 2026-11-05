@@ -46,7 +46,7 @@ function dbCard(a) {
       <div><div class="dbl">Remediation readiness</div><div class="dbn ${dbTone(R.score, R.target)}">${dbNum(R.score)}<small>/10</small></div>
         <div class="note">target ${R.target} · ${dbBadge(R.state)}<br>coverage ${Math.round(R.coverage * 100)}%<br>${esc(dbDelta(R.delta))}</div></div>
     </div>
-    <div class="note">Last refresh: ${esc(dbDate(a.lastScanAt, true))}${a.lastError ? ` · <span class="sev high">last attempt failed: ${esc(a.lastError)}</span>` : ""}</div>
+    <div class="note">Last successful scan: ${esc(dbDate(a.lastScanAt, true))}${a.lastError ? ` · <span class="sev high">last attempt failed: ${esc(a.lastError)}</span>` : ""}</div>
     <div class="note"><span class="tag">historical manual baseline</span> architecture ${hist.architecture}/10 on ${esc(dbDate(hist.asOf))} (reference only, not a measurement)</div>
     <div class="note">7-day: ${dbNum(A.trend7)} · 30-day: ${dbNum(A.trend30)} · findings P0 ${a.findingCounts.P0 || 0} / P1 ${a.findingCounts.P1 || 0} / P2 ${a.findingCounts.P2 || 0}</div>
     <div>${spark(a.history, "architecture")}</div>
@@ -100,10 +100,19 @@ function dbAppDetail(appKey) {
   const invRows = inv.slice(0, 60).map((i) => `<tr><td>${esc(i.sourceTable)}.${esc(i.sourceColumn)}</td><td>${i.targetTable ? esc(i.targetTable) + "." + esc(i.targetColumn) : "none found"}</td><td>${esc(i.cardinality)}</td><td>${esc(i.classification)}</td><td>${i.orphans === null ? "N/V" : esc(i.orphans)}</td><td>${esc(i.criticality)}</td></tr>`).join("");
   return `<h3>${esc(a.label)}</h3><p>${neon}</p>
     <p class="note">Neon project <code>${esc(a.projectId)}</code>. Schema change since approved baseline: ${esc(a.schemaChange ?? "N/V")}.</p>
+    ${dbPerms(d)}
     <p><strong>Baseline counts: manual (05 Nov 2026) against the latest live scan</strong></p>
     <div class="tablewrap"><table><thead><tr><th>Metric</th><th>Manual</th><th>Live</th><th>Result</th></tr></thead><tbody>${rec || '<tr><td colspan="4">No live scan yet: N/V</td></tr>'}</tbody></table></div>
     <p><strong>FK candidate inventory</strong> (${inv.length} columns${inv.length > 60 ? ", first 60 shown" : ""}). A name ending in _id is never treated as proof of a missing foreign key.</p>
     <div class="tablewrap"><table><thead><tr><th>Source</th><th>Possible target</th><th>Cardinality</th><th>Class</th><th>Orphans</th><th>Criticality</th></tr></thead><tbody>${invRows || '<tr><td colspan="6">None</td></tr>'}</tbody></table></div>`;
+}
+
+function dbPerms(d) {
+  const p = d && d.detail ? d.detail.permissions : null;
+  if (!p) return '<p><strong>Monitoring login permissions:</strong> N/V (no verified scan yet)</p>';
+  const rows = p.checks.map((c) => `<tr><td>${esc(c.label)}</td><td>${c.ok === null ? "N/V" : c.ok ? "pass" : "FAIL"}</td><td>${esc(c.detail)}</td></tr>`).join("");
+  return `<p><strong>Monitoring login: effective permissions</strong> (checked ${esc(dbDate(p.checkedAt, true))}; least privilege: ${p.leastPrivilege === null ? "N/V" : p.leastPrivilege ? "yes" : "NO, scans are refused"})</p>
+    <div class="tablewrap"><table><thead><tr><th>Check</th><th>Result</th><th>Detail</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 function dbFindings() {
@@ -167,15 +176,27 @@ async function loadDbarch() {
 }
 
 async function dbRefresh(mode) {
-  for (const id of ["dbQuick", "dbDeep"]) el(id).disabled = true;
+  for (const id of ["dbQuick", "dbDeep", "dbConn"]) el(id).disabled = true;
   el("dbMsg").textContent = mode === "deep" ? "Running Deep Audit (read-only)…" : "Running Quick Refresh (read-only)…";
   const { ok, body } = await api("/api/dbarch/refresh", { method: "POST", body: JSON.stringify({ mode }) });
-  for (const id of ["dbQuick", "dbDeep"]) el(id).disabled = false;
+  for (const id of ["dbQuick", "dbDeep", "dbConn"]) el(id).disabled = false;
   if (!ok) { el("dbMsg").textContent = "Refresh failed."; return; }
   const bad = body.outcomes.filter((o) => ["error", "unconfigured"].includes(o.status));
   el("dbMsg").textContent = bad.length ? bad.map((o) => `${DB_APPS_SHORT[o.app]}: ${o.message}`).join(" · ") : "Refreshed.";
   await loadDbarch();
 }
+
+async function dbConnTest() {
+  el("dbConn").disabled = true;
+  el("dbMsg").textContent = "Testing each connection from this server (read-only)…";
+  const { ok, body } = await api("/api/dbarch/connectivity", { method: "POST", body: "{}" });
+  el("dbConn").disabled = false;
+  if (!ok) { el("dbMsg").textContent = "Connection test failed to run."; return; }
+  el("dbMsg").textContent = body.reports.every((r) => r.ok) ? "All connections work and are read-only." : "At least one connection needs attention (see below).";
+  el("dbConnOut").innerHTML = body.reports.map((r) => `<div class="app"><strong>${esc(r.label)}</strong> ${r.ok ? '<span class="badge ok">ready</span>' : '<span class="badge">needs attention</span>'}
+    <ul>${r.stages.map((s) => `<li>${s.ok === null ? "N/V" : s.ok ? "pass" : "FAIL"}: ${esc(s.label)} <span class="note">${esc(s.detail)}</span></li>`).join("")}</ul></div>`).join("");
+}
+el("dbConn").onclick = dbConnTest;
 
 document.addEventListener("click", (e) => {
   const t = e.target.closest("[data-cell],[data-finding],[data-open-app]");

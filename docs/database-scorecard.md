@@ -25,7 +25,7 @@ Code: `server/dbarch/` (`readonly.ts` guard, `connect.ts`, `catalog.ts`, `invent
 - Neon API (`SECVAL_NEON_API_TOKEN`, optional) is used with GET only. Secval never changes branch protection, retention or any setting.
 - Draft SQL is stored as text, linted (forward section may only add; DROP only in ROLLBACK) and has no execution path.
 
-## Scoring (calc version `dbarch-1.0.0`)
+## Scoring (calc version `dbarch-1.1.0`)
 
 Rules everywhere: criterion = 10 x earned / possible points; an input that cannot be measured earns 0 **and** lowers coverage; coverage 100% = VERIFIED, 50-99% = PARTIAL, below 50% = N/V (no number). Every sub-score stores its calculation, inputs and source (shown in the UI drill-down).
 
@@ -50,3 +50,7 @@ Historical manual baselines (3.1 / 6.4 / 6.0 and the 05 Nov 2026 counts) are sto
 2. Merge the PR into `integration` (Render deploys). Migration 5 only creates new tables.
 3. Open the Database tab, press Deep Audit, compare against the 05 Nov 2026 counts.
 Rollback: remove the three env vars (module goes quiet, values N/V) or revert the PR; the new tables are inert and can stay.
+
+## Access setup and security review
+
+See `docs/database-scorecard-setup.md` (click-by-click, TLS, Render secrets, one-click "Test connections"), `docs/sql/dbarch-monitor-role.sql` and `docs/database-scorecard-security-review.md`.

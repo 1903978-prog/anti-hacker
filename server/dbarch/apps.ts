@@ -34,7 +34,7 @@ export const HISTORICAL_BASELINE = {
 };
 
 /** Calculation version stamped on every stored score. Bump on ANY change to weights or thresholds. */
-export const CALC_VERSION = "dbarch-1.0.0";
+export const CALC_VERSION = "dbarch-1.1.0";
 
 /** A result older than this is shown STALE (quick refresh runs every 6h, so 2 missed runs = stale). */
 export const STALE_AFTER_MS = 13 * 60 * 60_000;

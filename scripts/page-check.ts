@@ -88,6 +88,8 @@ async function main(): Promise<void> {
           if (tab === "database") {
             // Open a score, an app and a finding: the detail panel must also fit and pass axe.
             await page.locator("button.dbcell").first().waitFor({ timeout: 5000 });
+            await page.click("#dbConn");
+            await page.locator("#dbConnOut .app").first().waitFor({ timeout: 5000 });
             for (const [what, sel] of [["score", "button.dbcell"], ["app", "button[data-open-app]"], ["finding", "button[data-finding]"]] as const) {
               await page.locator(sel).first().click();
               await page.waitForTimeout(150);

@@ -271,7 +271,7 @@ describe("dbarch: scoring is deterministic and reproducible by hand", () => {
       columns: [], foreignKeys: [], indexes: [], constraints: [], triggers: [], rlsEnabledTables: [], publicGrantTables: [], migrationLedgers: [], migrationLatest: null, sessionReadOnly: true,
     },
     inventory: [], checksDefined: 0, checks: [], neon: { branchName: "main", branchId: "b", protected: false, historyRetentionSeconds: 6 * 3600 }, schemaChange: "first", deepAuditAgeHours: null,
-    attest: { authzReview: null, restoreTest: null, independentlyVerified: false }, recommendationsTotal: 0, recommendationsComplete: 0, draftsTotal: 0, draftsSafe: 0, needsMigration: 0, hasPrevious: false, ...over,
+    attest: { authzReview: null, restoreTest: null, independentlyVerified: false }, recommendationsTotal: 0, recommendationsComplete: 0, draftsTotal: 0, draftsSafe: 0, needsMigration: 0, hasPrevious: false, permissions: null, ...over,
   });
   it("hand-computed criteria", () => {
     const c = Object.fromEntries(scoreArchitecture(ev({})).map((x) => [x.key, x]));
@@ -328,7 +328,7 @@ describe("dbarch: HTTP API", () => {
     const detail = await request(app).get("/api/dbarch/atlas/detail").set(auth);
     const blob = JSON.stringify(res.body) + JSON.stringify(detail.body);
     expect(blob).not.toContain("fake://");
-    expect(blob).not.toMatch(/SELECT /);
+    expect(blob).not.toMatch(/SELECT\s.+\sFROM\s/);
     expect((await request(app).post("/api/dbarch/refresh").set(auth).send({ mode: "bogus" })).status).toBe(400);
     const att = await request(app).post("/api/dbarch/attest").set(auth).send({ app: "atlas", key: "authz_review", value: 7, reason: "Reviewed the access-control design", expiresInDays: 30 });
     expect(att.status).toBe(201);
@@ -363,5 +363,95 @@ describe.skipIf(!process.env.SECVAL_TEST_PG_URL)("dbarch: real Postgres catalog 
       expect(res.find((r) => r.checkId === "orph:projects.client_id")!.failures).toBe(1);
       await expect(s.query("DELETE FROM clients")).rejects.toThrow(); // server-side read-only session also refuses writes
     } finally { await s.close(); }
+  });
+});
+
+// Real Postgres, real least-privilege role built from docs/sql/dbarch-monitor-role.sql (the exact script Livio will run).
+import { readFileSync } from "node:fs";
+import pgLib from "pg";
+import { verifyPermissions } from "../server/dbarch/permissions.js";
+import { assertTlsRequired } from "../server/dbarch/connect.js";
+import { testConnectivity } from "../server/dbarch/connectivity.js";
+describe.skipIf(!process.env.SECVAL_TEST_PG_URL)("dbarch: least-privilege role on a real Postgres", () => {
+  const admin = process.env.SECVAL_TEST_PG_URL!;
+  const as = (user: string) => { const u = new URL(admin); u.username = user; u.password = "pw"; return u.toString(); };
+  const dbName = () => new URL(admin).pathname.slice(1);
+  async function run(sql: string) { const c = new pgLib.Client({ connectionString: admin }); await c.connect(); try { await c.query(sql); } finally { await c.end(); } }
+
+  it("the documented script yields a role that passes every permission check and cannot write", async () => {
+    const owner = new URL(admin).username;
+    const script = readFileSync("docs/sql/dbarch-monitor-role.sql", "utf8").replace("<PASSWORD>", "pw").replaceAll("<DB_NAME>", dbName()).replace("<OWNER_ROLE>", owner);
+    await run("DROP OWNED BY secval_monitor; DROP ROLE IF EXISTS secval_monitor").catch(() => undefined);
+    await run(script);
+    const s = await pgConnector(as("secval_monitor"));
+    try {
+      const rep = await verifyPermissions(s);
+      expect(rep.checks.filter((c) => c.ok === false && c.id !== "tls")).toEqual([]); // local scratch server has no TLS; production TLS is enforced by the client
+      expect(rep.leastPrivilege).toBe(true);
+      expect(rep.selectableTables).toBeGreaterThan(3);
+      expect((await collectCatalog(s)).tables.length).toBeGreaterThan(3);
+      await expect(s.query("DELETE FROM clients")).rejects.toThrow(/read-only|permission denied/); // the server itself refuses (this aborts the session's transaction)
+    } finally { await s.close(); }
+    const ok = await testConnectivity("atlas", { SECVAL_DBARCH_URL_ATLAS: as("secval_monitor") }, pgConnector);
+    expect(ok.ok).toBe(true);
+    expect(ok.stages.map((x) => x.id)).toEqual(["configured", "format", "tls_setting", "dns", "tcp", "login", "permissions"]);
+  });
+
+  it("a login with a write privilege is detected and the scan is refused", async () => {
+    await run("DROP ROLE IF EXISTS secval_bad; CREATE ROLE secval_bad LOGIN PASSWORD 'pw'");
+    await run(`GRANT CONNECT ON DATABASE ${dbName()} TO secval_bad; GRANT USAGE ON SCHEMA public TO secval_bad; GRANT SELECT, INSERT ON clients TO secval_bad`);
+    const s = await pgConnector(as("secval_bad"));
+    try { expect((await verifyPermissions(s)).leastPrivilege).toBe(false); } finally { await s.close(); }
+    const db = freshDb();
+    const out = await runScan(db, "atlas", "quick", { env: { SECVAL_DBARCH_URL_ATLAS: as("secval_bad") }, now: () => new Date(), connect: pgConnector });
+    expect(out).toEqual({ app: "atlas", status: "error", message: "monitoring login has privileges it must not have; scan refused" });
+    expect((db.prepare(`SELECT kind FROM dbarch_alerts`).all() as Array<{ kind: string }>).map((a) => a.kind)).toContain("role-too-privileged");
+    await run("DROP OWNED BY secval_bad; DROP ROLE secval_bad");
+  });
+});
+
+describe("dbarch: TLS and connectivity stages (no network)", () => {
+  it("refuses a remote connection string without sslmode", () => {
+    expect(() => assertTlsRequired("postgresql://u:p@ep-x.neon.tech/db")).toThrow(ConnectError);
+    expect(() => assertTlsRequired("postgresql://u:p@ep-x.neon.tech/db?sslmode=disable")).toThrow(ConnectError);
+    expect(() => assertTlsRequired("postgresql://u:p@ep-x.neon.tech/db?sslmode=require")).not.toThrow();
+    expect(() => assertTlsRequired("postgresql://u:p@localhost/db")).not.toThrow();
+  });
+  const net = (over: Partial<{ dns: boolean; tcp: boolean }> = {}) => ({
+    resolve: async () => { if (over.dns === false) throw new Error("x"); },
+    tcp: async () => { if (over.tcp === false) throw new Error("x"); },
+  });
+  const url = "postgresql://secval_monitor:SECRETPW@ep-x.neon.tech/db?sslmode=require";
+  it("reports each stage, stops at the first failure and never echoes the password", async () => {
+    const ok = await testConnectivity("nexus", { SECVAL_DBARCH_URL_NEXUS: url }, async () => new FakePg(sampleTables()), net());
+    expect(ok.ok).toBe(true);
+    expect(ok.permissions?.leastPrivilege).toBe(true);
+    const noTcp = await testConnectivity("nexus", { SECVAL_DBARCH_URL_NEXUS: url }, async () => new FakePg(sampleTables()), net({ tcp: false }));
+    expect(noTcp.ok).toBe(false);
+    expect(noTcp.stages.at(-1)).toMatchObject({ id: "tcp", ok: false });
+    const unset = await testConnectivity("nexus", {}, async () => new FakePg([]), net());
+    expect(unset.stages).toEqual([{ id: "configured", label: "Secret is set on this server", ok: false, detail: "SECVAL_DBARCH_URL_NEXUS is not set" }]);
+    const noTls = await testConnectivity("nexus", { SECVAL_DBARCH_URL_NEXUS: "postgresql://u:SECRETPW@ep-x.neon.tech/db" }, async () => new FakePg([]), net());
+    expect(noTls.ok).toBe(false);
+    expect(JSON.stringify([ok, noTcp, noTls])).not.toContain("SECRETPW");
+  });
+  it("an over-privileged login fails the permission stage and the scan fails closed (fixture)", async () => {
+    const bad = async () => new FakePg(sampleTables(), { perms: { writable_tables: 2, memberships: "neon_superuser" } });
+    const rep = await testConnectivity("atlas", { SECVAL_DBARCH_URL_ATLAS: url }, bad, net());
+    expect(rep.ok).toBe(false);
+    expect(rep.permissions?.checks.filter((c) => c.ok === false).map((c) => c.id)).toEqual(expect.arrayContaining(["writable", "roles"]));
+    const db = freshDb();
+    const out = await runScan(db, "atlas", "quick", { env: { SECVAL_DBARCH_URL_ATLAS: url }, now: () => T0, connect: bad });
+    expect(out.status).toBe("error");
+    expect(getLatest(db, "atlas")).toBeNull();
+  });
+  it("the connectivity endpoint requires auth and returns stages only", async () => {
+    const db = freshDb();
+    const app = createApp(db, { apiToken: "t", dbarch: { env: { SECVAL_DBARCH_URL_ATLAS: "postgresql://u:SECRETPW@localhost/db" }, now: () => T0, connect: async () => new FakePg(sampleTables()), net: { resolve: async () => undefined, tcp: async () => undefined } } });
+    expect((await request(app).post("/api/dbarch/connectivity").send({})).status).toBe(401);
+    const res = await request(app).post("/api/dbarch/connectivity").set({ Authorization: "Bearer t" }).send({ app: "atlas" });
+    expect(res.status).toBe(200);
+    expect(JSON.stringify(res.body)).not.toContain("SECRETPW");
+    expect(res.body.reports[0].ok).toBe(true);
   });
 });

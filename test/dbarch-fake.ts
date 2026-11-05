@@ -20,13 +20,16 @@ export interface FakeTable {
 export class FakePg implements Session, RoQueryable {
   log: string[] = [];
   closed = false;
-  constructor(public tables: FakeTable[], public opts: { readOnly?: boolean; ledgerVersion?: string } = {}) {}
+  constructor(public tables: FakeTable[], public opts: { readOnly?: boolean; ledgerVersion?: string; perms?: Record<string, unknown> } = {}) {}
 
   async close(): Promise<void> { this.closed = true; }
 
   async query(sql: string): Promise<{ rows: Array<Record<string, unknown>> }> {
     this.log.push(sql);
     const t = this.tables;
+    if (/rolsuper/.test(sql)) {
+      return { rows: [{ rolsuper: false, rolcreatedb: false, rolcreaterole: false, rolbypassrls: false, rolreplication: false, db_create: false, schema_create: false, writable_tables: 0, owned_objects: 0, memberships: "", selectable_tables: t.length, tls: true, ...this.opts.perms }] };
+    }
     if (/transaction_read_only/.test(sql)) return { rows: [{ v: this.opts.readOnly === false ? "off" : "on" }] };
     if (/has_pk/.test(sql)) return { rows: t.map((x) => ({ name: x.name, est: x.estRows ?? x.rows?.length ?? 0, has_pk: !!x.pk })) };
     if (/information_schema\.columns/.test(sql)) return { rows: t.flatMap((x) => x.columns.map(([n, ty]) => ({ t: x.name, n, ty, nl: "YES" }))) };

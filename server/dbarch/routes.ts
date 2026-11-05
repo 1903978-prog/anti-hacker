@@ -6,6 +6,8 @@ import { pgConnector } from "./connect.js";
 import { checkStaleness, runAll, runScan, type Deps } from "./engine.js";
 import { activeAttestations, addAttestation, getLatest, listAlerts, validAttestationKey } from "./store.js";
 import { buildView } from "./view.js";
+import { testConnectivity } from "./connectivity.js";
+import { appendAudit } from "../audit/log.js";
 import { STALE_AFTER_MS } from "./apps.js";
 import type { AppKey } from "./types.js";
 
@@ -27,6 +29,17 @@ export function dbarchRoutes(app: Express, db: DB, deps: Deps = defaultDeps()): 
     if (!body.success) { res.status(400).json({ error: "mode must be quick or deep" }); return; }
     const outcomes = body.data.app ? [await runScan(db, body.data.app, body.data.mode, deps)] : await runAll(db, body.data.mode, deps);
     res.json({ outcomes, view: buildView(db, deps.env, deps.now()) });
+  });
+
+  // One-click staged connection test from this server (DNS, TCP, TLS login, effective permissions). Read-only.
+  app.post("/api/dbarch/connectivity", async (req, res) => {
+    const b = z.object({ app: appKey.optional() }).safeParse(req.body ?? {});
+    if (!b.success) { res.status(400).json({ error: "unknown app" }); return; }
+    const keys = b.data.app ? [b.data.app] : (Object.keys(APPS) as AppKey[]);
+    const reports = [];
+    for (const k of keys) reports.push(await testConnectivity(k, deps.env, deps.connect, deps.net, deps.now()));
+    appendAudit(db, { actor: "operator", action: "dbarch.connectivity", decision: "info", reason: reports.map((x) => `${x.app}:${x.ok ? "ok" : "fail"}`).join(" ") });
+    res.json({ reports });
   });
 
   // Full latest detail for one app (inventory, checks, recommendations with draft SQL proposals).

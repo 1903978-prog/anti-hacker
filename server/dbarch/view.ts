@@ -1,5 +1,5 @@
 import type { DB } from "../db.js";
-import { APPS, HISTORICAL_BASELINE, STALE_AFTER_MS, TARGETS } from "./apps.js";
+import { APPS, CALC_VERSION, HISTORICAL_BASELINE, STALE_AFTER_MS, TARGETS } from "./apps.js";
 import type { AppResult } from "./engine.js";
 import { ARCH_WEIGHTS, READINESS_ROWS } from "./scoring.js";
 import { activeAttestations, getLatest, listAlerts, recentScans, type ScanRow } from "./store.js";
@@ -96,7 +96,7 @@ export function buildView(db: DB, env: NodeJS.ProcessEnv, now: Date) {
     };
   });
   return {
-    generatedAt: now.toISOString(), calcVersion: "dbarch-1.0.0",
+    generatedAt: now.toISOString(), calcVersion: CALC_VERSION,
     note: "Scores are measured by secval from read-only catalog queries. Missing evidence shows N/V and lowers coverage; it is never shown as zero or green.",
     targets: TARGETS, weights: ARCH_WEIGHTS, readinessRows: READINESS_ROWS,
     cadence: { quick: "every 6 hours and on Refresh", deep: "every 24 hours and on demand" },

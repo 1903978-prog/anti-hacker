@@ -6,6 +6,8 @@ import { buildChecks, runChecks } from "./checks.js";
 import { buildInventory } from "./inventory.js";
 import { readNeonSettings, type FetchFn } from "./neon.js";
 import { buildRecommendations, isComplete, lintDraftSql } from "./recommendations.js";
+import type { NetOps } from "./connectivity.js";
+import { verifyPermissions, type PermissionReport } from "./permissions.js";
 import { overallFrom, readinessOverall, scoreArchitecture, scoreReadiness, type Evidence, type SchemaChange } from "./scoring.js";
 import {
   activeAttestations, addAlert, attestationsFrom, consecutiveFailures, firstSuccessful, getLatest, insertScan, lastSuccessful, recentAlertOfKind, saveLatest,
@@ -17,6 +19,8 @@ export interface Deps {
   neonFetch?: FetchFn;
   env: NodeJS.ProcessEnv;
   now: () => Date;
+  /** DNS/TCP probes for the connectivity test (tests hand in fakes). */
+  net?: NetOps;
 }
 
 export type StoredCheck = CheckResult & { ranAt: string; carried?: boolean };
@@ -34,6 +38,7 @@ export interface AppResult {
   readiness: { score: number | null; coverage: number; state: string; rows: CriterionScore[] };
   catalog: { tables: number; primaryKeys: number; foreignKeys: number; indexes: number; idColumnsWithoutFk: number; rlsTables: number; uniqueOrCheck: number; migrationLedgers: string[]; migrationLatest: string | null; sessionReadOnly: boolean | null };
   neon: NeonSettings | null;
+  permissions: PermissionReport | null;
   reconcile: Array<{ metric: string; reference: number | boolean | null; live: number | boolean | null; matches: boolean | null }>;
   inventory: FkCandidate[];
   checks: StoredCheck[];
@@ -99,11 +104,14 @@ export async function runScan(db: DB, app: AppKey, tier: "quick" | "deep", deps:
   let session: Session | null = null;
   try {
     session = await deps.connect(conn);
+    // Fail closed: if the login can write, change schema or has admin rights, nothing is scanned.
+    const permissions = await verifyPermissions(session, startedAt);
+    if (permissions.leastPrivilege === false) throw new ConnectError("monitoring login has privileges it must not have; scan refused");
     const cat: Catalog = await collectCatalog(session, startedAt);
     const neon = await readNeonSettings(cfg.neonProjectId, deps.env.SECVAL_NEON_API_TOKEN, deps.neonFetch);
     const inventory = buildInventory(app, cat);
     const defs = buildChecks(app, cat, inventory);
-    const fresh = await runChecks(session, cat, defs, { tier });
+    const fresh = await runChecks(session, cat, defs, { tier, deadline: startedAt.getTime() + (tier === "deep" ? 300_000 : 60_000) });
 
     const previous = getLatest(db, app);
     const prev = previous?.result as unknown as AppResult | undefined;
@@ -143,7 +151,7 @@ export async function runScan(db: DB, app: AppKey, tier: "quick" | "deep", deps:
       attest: attestationsFrom(attest),
       recommendationsTotal: recs.length, recommendationsComplete: recs.filter(isComplete).length,
       draftsTotal: drafts.length, draftsSafe: drafts.filter((r) => lintDraftSql(r.draftSql!).ok && isComplete(r)).length,
-      needsMigration: needs.length, hasPrevious: prevOk !== null,
+      needsMigration: needs.length, hasPrevious: prevOk !== null, permissions,
     };
     const criteria = scoreArchitecture(ev);
     const arch = overallFrom(criteria);
@@ -158,7 +166,7 @@ export async function runScan(db: DB, app: AppKey, tier: "quick" | "deep", deps:
 
     const result: AppResult = {
       app, label: cfg.label, projectId: cfg.neonProjectId, collectedAt: iso, tier, calcVersion: CALC_VERSION, fingerprint, schemaChange,
-      architecture: { ...arch, criteria }, readiness: { ...rd, rows: ready }, catalog: catSummary, neon, reconcile: rec, inventory, checks, recommendations: recs,
+      architecture: { ...arch, criteria }, readiness: { ...rd, rows: ready }, catalog: catSummary, neon, permissions, reconcile: rec, inventory, checks, recommendations: recs,
     };
 
     const partial = !neon || checks.some((c) => c.outcome === "ERROR") || arch.coverage < 1;
@@ -173,6 +181,9 @@ export async function runScan(db: DB, app: AppKey, tier: "quick" | "deep", deps:
     return { app, status: partial ? "partial" : "ok", scanId, alerts: alerts.length };
   } catch (err) {
     const label = err instanceof ConnectError ? err.message : "scan failed (details withheld)";
+    if (label.startsWith("monitoring login has privileges")) {
+      addAlert(db, { app, scanId: null, kind: "role-too-privileged", severity: "P0", message: "The monitoring login has write, DDL or admin privileges. Scans are refused until it is fixed." }, deps.now().toISOString());
+    }
     const iso = deps.now().toISOString();
     insertScan(db, {
       app, tier, started_at: startedAt.toISOString(), finished_at: iso, status: "error", error_label: label, calc_version: CALC_VERSION, fingerprint: null,
