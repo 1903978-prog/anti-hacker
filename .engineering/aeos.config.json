@@ -1,0 +1,33 @@
+{
+  "aeos_version": "1.0.0",
+  "execution_window_hours": 5,
+  "application": "Secval",
+  "repository": "1903978-prog/anti-hacker",
+  "production_environment": "Render (render.yaml); deploys from the integration branch (from CLAUDE.md)",
+  "development_environment": "local / cloud session; branch claude/* (no CI on session branches)",
+  "authorized_branches": [
+    "integration",
+    "claude/*"
+  ],
+  "release_restrictions": [
+    "HOLD (CLAUDE.md rule 2): no PR, no push to a remote, no deploy unless Livio writes the exact words 'ship it'; until then commit locally only",
+    "HOLD: warn Livio before any action that spends GitHub Actions minutes or Render compute",
+    "HOLD: run `npm run verify` before every push; never push red or unrun",
+    "Safety layer (policy engine, allowlist, kill switch, audit trail) can never be bypassed",
+    "Lenovo: only qwen3:8b with keep_alive"
+  ],
+  "data_sensitivity": "Scan targets are Livio's own assets; keep findings only, never the data read from a target",
+  "required_tests": [
+    "tests for the touched module (fast)",
+    "npm run verify before every push"
+  ],
+  "deployment_process": "Render deploys after CI passes on the push to integration; sessions never deploy without the word 'ship it'",
+  "rollback_process": "UNVERIFIED: Render redeploy of previous commit; confirm and document",
+  "critical_workflows": [
+    "policy engine approval before any scan",
+    "ownership allowlist",
+    "kill switch",
+    "append-only audit log"
+  ],
+  "existing_instruction_conflicts": []
+}

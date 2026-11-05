@@ -9,6 +9,16 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 scripts/aeos/aeos.py resume --brief"
+          }
+        ]
+      }
     ]
   }
 }
