@@ -1,6 +1,6 @@
 # Security and database baseline — tick what applies; write N/A with a reason otherwise
 Security: [ ] authN/authZ tested [ ] least privilege [ ] secrets in a secret store [ ] no cross-user/client access [ ] no control disabled to pass tests
-Database: [ ] PK/FK [ ] UNIQUE/NOT NULL/CHECK [ ] controlled migrations [ ] transactions [ ] idempotent retries [ ] indexes [ ] audit history [ ] tested backup + restore [ ] test data separate from production
+Database (Secval, 06 Nov 2026, evidence: selfDbReport in test/dbcheck.test.ts): [x] PK/FK (13/13 tables with PK, 3 FKs, 0 orphans) [x] UNIQUE/NOT NULL/CHECK (5 CHECK, value-rule triggers, migration 3) [x] controlled migrations (server/migrations.ts, 0 pending) [x] transactions (quality validateRefresh) [x] idempotent retries (quality jobId UNIQUE, 409) [x] indexes (every FK indexed) [x] audit history (append-only triggers) [~] tested backup + restore (daily restore drill in code; production result UNVERIFIED) [x] test data separate from production (tests use :memory:)
 AI: [ ] source provenance [ ] authorisation-aware retrieval [ ] evidence check [ ] independent test questions [ ] fail-safe [ ] approved write permissions [ ] approval before external actions
 Frontend: [ ] desktop + mobile [ ] validated forms [ ] loading/error states [ ] no misleading actions or progress
 Operations: [ ] versioned releases [ ] rollback [ ] monitoring/alerts [ ] logs [ ] performance budget [ ] health checks
