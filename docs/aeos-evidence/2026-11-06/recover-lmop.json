@@ -1,0 +1,15 @@
+{
+ "label": "recover-lmop",
+ "kind": "recovery",
+ "application": "LM OpModel",
+ "claude_code": "2.1.318",
+ "permission_mode": "plan",
+ "allowed_tools": [
+  "Read"
+ ],
+ "cost_usd": 0.868,
+ "turns": 1,
+ "is_error": false,
+ "meta": "rc=0 secs=30 head=472d9f4",
+ "result": "- **Last completed:** T-LMO-7, \"rewire invoice fetch retry\". Its recorded result is PARTIAL (unit tests 14/14).\n- **Next task:** T-LMO-8, \"add retry test for Dropbox upload\".\n- **Where I learned it:** the AEOS SessionStart hook output at the top of this session. It printed the latest checkpoint (06 Nov 2026 09:09 UTC, branch `claude/aeos-install`, SHA `472d9f4`).\n- **Not verified:** I haven't opened `.engineering/HANDOFF.md` or checked `git HEAD` this turn, so I can't confirm the checkpoint still matches the repo. The hook lists no open blockers and no approvals held.\n\nNeed from you: Nothing"
+}

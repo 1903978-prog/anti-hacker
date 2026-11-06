@@ -422,6 +422,7 @@ function refreshAll() {
   refreshDashboard();
   if (currentTab === "tests") refreshTests();
   if (currentTab === "usage") refreshUsage();
+  if (currentTab === "aeos") refreshAeos();
 
 }
 
@@ -795,12 +796,98 @@ el("usageRefresh").onclick = async () => {
   try { await refreshUsage(true); } finally { el("usageRefresh").disabled = false; }
 };
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// Dates shown to people are written like "03 Nov 2026" (CLAUDE.md); with a time: "03 Nov 2026, 14:05" (local time).
+function niceDate(iso, withTime) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  const day = `${String(d.getDate()).padStart(2, "0")} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+  return withTime ? `${day}, ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}` : day;
+}
+// "2026-11-05 12:31 UTC" (as written in HANDOFF.md) -> "05 Nov 2026, 12:31 UTC"
+const niceCheckpoint = (t) => String(t).replace(/(\d{4})-(\d{2})-(\d{2})/, (_m, y, mo, dd) => `${dd} ${MONTHS[Number(mo) - 1]} ${y},`);
+
+// --- AEOS compliance ----------------------------------------------------------
+// Read-only view of data that scripts/aeos/collect.py wrote after running each app's own
+// checks. Never live: the date it was collected is always shown, and old data gets a banner.
+const yn = (ok) => (ok ? '<span class="badge ok">yes</span>' : '<span class="badge sev high">no</span>');
+const safePrUrl = (u) => (typeof u === "string" && u.startsWith("https://github.com/") ? u : null);
+
+function aeosAppHtml(a) {
+  if (!a.installed) {
+    return `<div class="uprov"><h3>${esc(a.application)}</h3><div class="note">Not enrolled: AEOS is not installed here yet. Score 0.</div></div>`;
+  }
+  const line = (name, value) => `<div class="uline"><div class="un">${esc(name)}</div><div class="um">${value}</div></div>`;
+  const b = a.backlog;
+  const pr = a.pr && safePrUrl(a.pr.html_url);
+  const prText = pr
+    ? `<a href="${esc(pr)}" rel="noopener noreferrer" target="_blank">PR #${esc(a.pr.number ?? "")}</a> ${esc(a.pr.state)}${a.pr.draft ? ", draft" : ""}, mergeable: ${esc(a.pr.mergeable_state || "unknown")}`
+    : "no pull request recorded";
+  const fs = a.fresh_session ? `${esc(a.fresh_session.passed)} of ${esc(a.fresh_session.total)} passed` : "not tested";
+  const score = Math.round(a.score);
+  const cls = score >= 85 ? "good" : score >= 60 ? "mid" : "bad";
+  const parts = a.score_parts
+    ? Object.entries(a.score_parts).map(([k, v]) => `${k.replace(/_/g, " ")} ${v}`).join(", ")
+    : "";
+  return `<div class="uprov">
+    <h3>${esc(a.application)} <span class="uv ${cls}">${score}/100</span></h3>
+    ${line("AEOS version", `${esc(a.aeos_version || "unknown")} · installed ${yn(true)}`)}
+    ${line("Validation (hash, config, state files, hook)", a.validate ? (a.validate.ok ? '<span class="badge ok">passed</span>' : `<span class="badge sev high">failed</span> ${esc((a.validate.output || []).slice(1, 3).join("; "))}`) : "not run")}
+    ${line("AEOS tests in the repo", a.own_tests ? `${esc(a.own_tests.ran)} ran, ${a.own_tests.ok ? '<span class="badge ok">passed</span>' : '<span class="badge sev high">failed</span>'}` : "not run")}
+    ${line("Tasks", b ? `${esc(b.total)} recorded: ${esc(b.verified)} verified, ${esc(b.unverified)} not verified · open P0/P1: <b>${esc(b.open_p0_p1)}</b>` : "no task register")}
+    ${line("Open blockers", esc(a.open_blockers ?? 0))}
+    ${line("Pull request", prText)}
+    ${line("Fresh-session tests", fs)}
+    ${line("Release readiness", esc(a.release_readiness || "unknown"))}
+    ${line("Approvals still needed", esc((a.outstanding_approvals || []).join("; ") || "none recorded"))}
+    ${a.unverified_items && a.unverified_items.length ? line("Not verified", esc(a.unverified_items.join("; "))) : ""}
+    ${a.last_checkpoint ? line("Last checkpoint", esc(niceCheckpoint(a.last_checkpoint))) : ""}
+    <div class="note" title="${esc(parts)}">Score parts: ${esc(parts)}</div>
+  </div>`;
+}
+
+async function refreshAeos() {
+  const { ok, status, body } = await api("/api/aeos");
+  if (!ok) {
+    const msg = status === 401 ? NEED_TOKEN : "Could not load AEOS data: " + (body.error || status);
+    el("aeosSummary").textContent = msg;
+    el("aeosApps").innerHTML = "";
+    el("aeosBanner").textContent = "";
+    return;
+  }
+  const banner = el("aeosBanner");
+  if (body.status === "no-data" || body.status === "invalid") {
+    banner.innerHTML = `<strong>${body.status === "no-data" ? "No data yet." : "Data cannot be shown."}</strong> ${esc(body.error || "")} ${esc(body.refresh || "")}`;
+    el("aeosSummary").textContent = "";
+    el("aeosApps").innerHTML = "";
+    el("aeosBasis").textContent = "";
+    el("aeosMsg").textContent = "";
+    return;
+  }
+  banner.innerHTML =
+    body.status === "stale"
+      ? `<strong>This data is ${esc(Math.round(body.ageDays))} days old.</strong> It may no longer match the repositories. ${esc(body.refresh)}`
+      : "";
+  const s = body.summary;
+  el("aeosSummary").innerHTML = `<div class="uline"><div class="un">${esc(s.apps)} apps · installed ${esc(s.installed)} · validation passed ${esc(s.validationOk)} · AEOS tests passing ${esc(s.testsPassing)}</div>
+    <div class="um">Average score <b>${esc(s.averageScore)}/100</b> · tasks verified ${esc(s.verifiedTasks)}, not verified ${esc(s.unverifiedTasks)} · open P0/P1 <b>${esc(s.openP0P1)}</b> · not verified items ${esc(s.unverifiedItems)} · approvals still needed ${esc(s.outstandingApprovals)}</div></div>`;
+  el("aeosApps").innerHTML = `<div class="ugrid">${body.apps.map(aeosAppHtml).join("")}</div>`;
+  el("aeosBasis").textContent =
+    "Out of 100: " + Object.entries(body.scoreBasis).map(([k, v]) => `${k.replace(/_/g, " ")} ${v}`).join(", ") +
+    ". Each part is all-or-nothing and comes from a check that was actually run when the data was collected.";
+  el("aeosMsg").textContent = "Collected " + niceDate(body.collectedAt, true) + " (not live).";
+}
+el("aeosRefresh").onclick = async () => {
+  el("aeosRefresh").disabled = true;
+  try { await refreshAeos(); } finally { el("aeosRefresh").disabled = false; }
+};
+
 // --- Menus (tabs) -------------------------------------------------------------
 // Each menu is a section of this one page. The address (#health, #scans,
-// #tests, #usage, #backup, #settings) picks the menu, so links and reloads keep it; the last one
+// #tests, #usage, #aeos, #backup, #settings) picks the menu, so links and reloads keep it; the last one
 // used is remembered in this browser. The token box sits above the menus, so it
 // shows whichever menu is open.
-const TABS = ["health", "scans", "tests", "usage", "backup", "settings"];
+const TABS = ["health", "scans", "tests", "usage", "aeos", "backup", "settings"];
 let currentTab = "health";
 function showTab(name) {
   const tab = TABS.includes(name) ? name : "health";
@@ -811,6 +898,7 @@ function showTab(name) {
   if (tab === "tests" && signedIn) refreshTests();
   if (tab === "settings" && signedIn && !lenovoLoaded) { lenovoLoaded = true; refreshLenovo(false); refreshLenovoQuestions(); }
   if (tab === "usage" && signedIn) refreshUsage();
+  if (tab === "aeos" && signedIn) refreshAeos();
 }
 function storedTab() {
   try { return localStorage.getItem("secval_tab"); } catch { return null; }

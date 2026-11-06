@@ -103,7 +103,7 @@ class TestAeos(Base):
         d = self.make_repo("alpha")
         run("checkpoint", "--task", "a", "--next", "b", root=d)
         subprocess.run(["git", "-C", d, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "more"], check=True)
-        self.assertIn("differs from checkpoint SHA", run("resume", root=d).stdout)
+        self.assertIn("commit(s) after checkpoint", run("resume", root=d).stdout)
 
     # 10: no endless repeats
     def test_retry_limit_stops_after_three(self):
@@ -111,6 +111,26 @@ class TestAeos(Base):
         codes = [run("attempt", "--key", "full-audit", "--outcome", "fail", root=d).returncode for _ in range(3)]
         self.assertEqual(codes, [0, 0, 3])
         self.assertEqual(run("attempt", "--key", "full-audit", "--outcome", "ok", root=d).returncode, 0)
+
+    # checkpoint drift is described precisely (ancestor = normal, foreign = warning)
+    def test_resume_says_commits_after_checkpoint_is_normal(self):
+        d = self.make_repo("alpha")
+        run("checkpoint", "--task", "a", "--next", "b", root=d)
+        subprocess.run(["git", "-C", d, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "more"], check=True)
+        out = run("resume", "--brief", root=d).stdout
+        self.assertIn("commit(s) after checkpoint", out)
+        self.assertIn("(normal)", out)
+        self.assertNotIn("WARNING", out)
+
+    def test_resume_warns_when_checkpoint_not_in_history(self):
+        d = self.make_repo("alpha")
+        run("checkpoint", "--task", "a", "--next", "b", root=d)
+        h = os.path.join(d, ".engineering/HANDOFF.md")
+        txt = open(h).read()
+        import re as _re
+        open(h, "w").write(_re.sub(r"SHA: \w+", "SHA: deadbee", txt))
+        out = run("resume", "--brief", root=d).stdout
+        self.assertIn("WARNING: checkpoint SHA deadbee is NOT in this branch", out)
 
     # validation / drift / honesty
     def test_validate_passes_then_detects_drift(self):
@@ -145,6 +165,60 @@ class TestAeos(Base):
         e = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, e, True)
         self.assertIn("NOT enrolled", run("resume", "--brief", root=e).stdout)
 
+
+@unittest.skipIf(os.environ.get("AEOS_NESTED") == "1", "collector tests must not recurse into the test run they trigger")
+class TestCollector(Base):
+    """The compliance collector reports real results of validate and the repo's own tests."""
+    def collect(self, entries):
+        m = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, m, True)
+        mp, op = os.path.join(m, "m.json"), os.path.join(m, "out.json")
+        json.dump({"apps": entries}, open(mp, "w"))
+        r = subprocess.run([sys.executable, os.path.join(HERE, "collect.py"), "--manifest", mp, "--out", op], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        return json.load(open(op))
+
+    def test_full_score_needs_every_proof_and_is_per_app(self):
+        a, b = self.make_repo("alpha"), self.make_repo("beta")
+        for d in (a, b):  # the collector runs each repo's own test file
+            shutil.copy(os.path.join(HERE, "test_aeos.py"), os.path.join(d, "scripts/aeos/test_aeos.py"))
+        pr = {"state": "open", "draft": True, "mergeable_state": "clean", "html_url": "https://example.test/pr/1"}
+        doc = self.collect([
+            {"dir": a, "pr": pr, "fresh_session": {"passed": 3, "total": 3}},
+            {"dir": b},
+        ])
+        da, db = doc["apps"]
+        self.assertEqual(da["application"], "Alpha App"); self.assertEqual(db["application"], "Beta App")
+        self.assertEqual(da["score"], 100, da["score_parts"])
+        self.assertEqual(db["score"], 100 - 15 - 10, db["score_parts"])  # no fresh-session proof, no PR
+        self.assertFalse(doc["realtime"])
+        self.assertIn("collected_at", doc)
+
+    def test_tampered_standard_loses_validate_points_and_is_reported(self):
+        a = self.make_repo("alpha")
+        shutil.copy(os.path.join(HERE, "test_aeos.py"), os.path.join(a, "scripts/aeos/test_aeos.py"))
+        open(os.path.join(a, "EENDIGO_AEOS.md"), "a").write("\nweakened\n")
+        d = self.collect([{"dir": a}])["apps"][0]
+        self.assertFalse(d["validate"]["ok"]); self.assertEqual(d["score_parts"]["validate_ok"], 0)
+
+    def test_open_p1_and_blocker_remove_the_clean_points(self):
+        a = self.make_repo("alpha")
+        shutil.copy(os.path.join(HERE, "test_aeos.py"), os.path.join(a, "scripts/aeos/test_aeos.py"))
+        open(os.path.join(a, ".engineering/BACKLOG.md"), "a").write("| T-ALPHA-1 | core | bug | IN PROGRESS | UNVERIFIED | no | P1 | - | - |\n")
+        d = self.collect([{"dir": a}])["apps"][0]
+        self.assertEqual(d["backlog"]["open_p0_p1"], 1); self.assertEqual(d["score_parts"]["no_open_p0_p1_or_blockers"], 0)
+
+    def test_unstable_or_unknown_pr_does_not_earn_the_mergeable_points(self):
+        a = self.make_repo("alpha")
+        shutil.copy(os.path.join(HERE, "test_aeos.py"), os.path.join(a, "scripts/aeos/test_aeos.py"))
+        for state in ("unstable", "unknown", "dirty"):
+            pr = {"state": "open", "draft": True, "mergeable_state": state, "html_url": "https://github.com/o/r/pull/1"}
+            d = self.collect([{"dir": a, "pr": pr, "fresh_session": {"passed": 1, "total": 1}}])["apps"][0]
+            self.assertEqual(d["score_parts"]["draft_pr_open_and_mergeable"], 0, state)
+
+    def test_unenrolled_directory_scores_zero(self):
+        e = tempfile.mkdtemp(); self.addCleanup(shutil.rmtree, e, True)
+        d = self.collect([{"dir": e}])["apps"][0]
+        self.assertEqual(d["score"], 0); self.assertEqual(d["status"], "NOT ENROLLED")
 
 class TestCanonicalDocument(unittest.TestCase):
     """Documentation checks: the canonical text must keep its safety clauses."""

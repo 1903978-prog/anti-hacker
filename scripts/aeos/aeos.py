@@ -152,7 +152,13 @@ def cmd_resume(a):
         print("Latest checkpoint:\n" + cp)
         cs = re.search(r"SHA:\s*(\w+)", cp)
         if cs and sha and not sha.startswith(cs.group(1)[:7]) and not cs.group(1).startswith(sha):
-            print(f"NOTE: HEAD {sha} differs from checkpoint SHA {cs.group(1)}; check git log before continuing.")
+            cp_sha = cs.group(1)
+            anc = subprocess.run(["git", "-C", root, "merge-base", "--is-ancestor", cp_sha, "HEAD"], capture_output=True).returncode
+            if anc == 0:
+                n = git(root, "rev-list", "--count", f"{cp_sha}..HEAD")
+                print(f"NOTE: HEAD {sha} is {n} commit(s) after checkpoint {cp_sha} (normal). Review: git log {cp_sha}..HEAD")
+            else:
+                print(f"WARNING: checkpoint SHA {cp_sha} is NOT in this branch's history (rebased, other branch or other clone); do not trust the checkpoint's 'next task' until you check git log.")
     else:
         print("Latest checkpoint: none recorded.")
     bl = [l for l in read(root, ".engineering/BLOCKERS.md").splitlines() if l.startswith("- [OPEN]")]
@@ -238,7 +244,7 @@ def cmd_install(a):
     os.makedirs(os.path.join(root, ".engineering"), exist_ok=True)
     os.makedirs(os.path.join(root, "scripts/aeos"), exist_ok=True)
     shutil.copy(os.path.join(pkg, CANON), os.path.join(root, CANON))
-    for f in ("aeos.py", "test_aeos.py"):
+    for f in ("aeos.py", "test_aeos.py", "run_fresh.sh", "collect.py"):
         s = os.path.join(pkg, "scripts/aeos", f)
         if os.path.isfile(s) and os.path.abspath(s) != os.path.abspath(os.path.join(root, "scripts/aeos", f)):
             shutil.copy(s, os.path.join(root, "scripts/aeos", f))

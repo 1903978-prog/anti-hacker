@@ -1,15 +1,38 @@
-# AEOS compliance register (05 Nov 2026)
+# AEOS compliance register
 
-Canonical standard: `EENDIGO_AEOS.md` v1.0.0. Results below are from this session only; "not observed" means not tested.
+Generated from `reports/aeos-compliance.json` (collected 2026-11-06T09:24:09Z, not live). Regenerate with `python3 scripts/aeos/register.py`; `test/aeos-register.test.ts` fails if this file and the data disagree.
 
-| Application | Repository | AEOS state | Branch / PR | Validated (this session) | Gaps / owner |
-|---|---|---|---|---|---|
-| Secval | 1903978-prog/anti-hacker | Installed, LOCAL commit only | claude/fervent-euler-yurhdu, no push, no PR | `aeos.py validate` OK, 15 tests OK | Push + PR need Livio's exact words "ship it" (Secval rule 2). Rollback process UNVERIFIED. Owner: Livio |
-| Nexus | 1903978-prog/nexus-eendigo | Installed in draft PR | claude/aeos-install | validate OK, 15 tests OK | Prod/rollback fields UNVERIFIED; render.yaml role unclear; standing "deploy when green" rule not used by AEOS. Owner: Livio |
-| ATLAS / CompPlan | 1903978-prog/compplan | Installed in draft PR | claude/aeos-install | validate OK, 15 tests OK | `session:finish` auto-merges to master: AEOS needs written approval first. Rollback UNVERIFIED. Owner: Livio |
-| LM OpModel | 1903978-prog/lm-op-model | Installed in draft PR | claude/aeos-install | validate OK, 15 tests OK | CLAUDE.md says "no PR to ship": this PR is install-only at Livio's request. Rollback UNVERIFIED. Owner: Livio |
-| 10bonds | 1903978-prog/10bonds | Installed in draft PR | claude/aeos-install | validate OK, 15 tests OK | Rollback workflow contents UNVERIFIED. Owner: Livio |
-| diagnostic-platform, eat-well-goal, claude-config, 1903978b-ui/anti-hacker | various | NOT enrolled | none | not inspected | Not confirmed as Eendigo applications; no changes made. `1903978b-ui/anti-hacker` looks like a second copy of Secval (different account), untouched |
+Score basis (out of 100): installed 20, validate ok 25, own tests pass 20, fresh session evidence 15, draft pr open and mergeable 10, no open p0 p1 or blockers 10. It measures AEOS installation and proof, not application quality.
 
-Not demonstrated: automatic loading in a fresh Claude Code session; a real interrupted-session recovery inside Claude Code; any CI run of `aeos-validate.yml` (manual-only, not run, no minutes spent).
-Detect un-enrolled repos: `python3 scripts/aeos/aeos.py audit <dir> <dir> ...`.
+| Application | Repository | AEOS | Validation | AEOS tests | Tasks (verified / not) | Open P0/P1 | Pull request | Fresh-session tests | Score |
+|---|---|---|---|---|---|---|---|---|---|
+| Secval | 1903978-prog/anti-hacker | 1.0.0 | passed | 22 ran, passed | 0 / 0 | 0 | [#47](https://github.com/1903978-prog/anti-hacker/pull/47) draft, head 9bde292 | 2 of 2 | **100** |
+| Nexus | 1903978-prog/nexus-eendigo | 1.0.0 | passed | 22 ran, passed | 0 / 0 | 0 | [#195](https://github.com/1903978-prog/nexus-eendigo/pull/195) draft, head e418eb8 | 2 of 2 | **100** |
+| Eendigo ATLAS / CompPlan | 1903978-prog/compplan | 1.0.0 | passed | 22 ran, passed | 0 / 0 | 0 | [#690](https://github.com/1903978-prog/compplan/pull/690) draft, head dbbf89f | 1 of 1 | **100** |
+| LM OpModel | 1903978-prog/lm-op-model | 1.0.0 | passed | 22 ran, passed | 0 / 0 | 0 | [#831](https://github.com/1903978-prog/lm-op-model/pull/831) draft, head add6e4f | 2 of 2 | **100** |
+| 10bonds | 1903978-prog/10bonds | 1.0.0 | passed | 22 ran, passed | 0 / 0 | 0 | [#494](https://github.com/1903978-prog/10bonds/pull/494) draft, head d31f76b | 1 of 1 | **100** |
+
+## Not verified, per application (owner: Livio unless stated)
+
+- **Secval**: live Render service state and auto-deploy setting; B2 bucket contents and last restore test
+- **Nexus**: live Fly machine state; whether render.yaml service still exists on Render
+- **Eendigo ATLAS / CompPlan**: live Render dashboard auto-deploy setting (render.yaml and dashboard have disagreed before, per CLAUDE.md); RENDER_API_KEY presence
+- **LM OpModel**: live Fly machine state; whether rollback-on-smoke-failure has ever fired for real (CLAUDE.md says it had not as of 13 Oct 2026)
+- **10bonds**: live Fly machine state; FLY_API_TOKEN secret presence
+
+## Approvals still needed (none given)
+
+- **Secval**: merge of the install PR; any production deploy; confirmation of UNVERIFIED items
+- **Nexus**: merge of the install PR; any production deploy; confirmation of UNVERIFIED items
+- **Eendigo ATLAS / CompPlan**: merge of the install PR; any production deploy; confirmation of UNVERIFIED items
+- **LM OpModel**: merge of the install PR; any production deploy; confirmation of UNVERIFIED items
+- **10bonds**: merge of the install PR; any production deploy; confirmation of UNVERIFIED items
+
+## Not enrolled
+
+- `1903978-prog/diagnostic-platform`: fork; not confirmed as an Eendigo application
+- `1903978-prog/eat-well-goal`: personal project; not confirmed as an Eendigo application
+- `1903978-prog/claude-config`: configuration repository; proposed home for the central AEOS package (needs Livio's decision)
+- `1903978b-ui/anti-hacker`: other account; looks like a second copy of Secval; untouched
+
+Detect un-enrolled repositories: `python3 scripts/aeos/aeos.py audit <dir> <dir> ...`.

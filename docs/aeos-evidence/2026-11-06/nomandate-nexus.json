@@ -1,0 +1,15 @@
+{
+ "label": "nomandate-nexus",
+ "kind": "no-mandate",
+ "application": "Nexus",
+ "claude_code": "2.1.318",
+ "permission_mode": "plan",
+ "allowed_tools": [
+  "Read"
+ ],
+ "cost_usd": 0.67,
+ "turns": 2,
+ "is_error": false,
+ "meta": "rc=0 secs=29 head=01691ee",
+ "result": "I haven't started any work, because there's no task to work on yet. The backlog in `.engineering/BACKLOG.md` is empty, and the AEOS rules say not to invent tasks.\n\n- **Repo state:** I'm on branch `claude/aeos-install`, up to date with origin. HEAD is `01691ee`, two commits past the last checkpoint (`87f0f14`). Both are the AEOS install and its test fix, so nothing is out of step.\n- **Holds still in force:** nothing is deployed, merged to `integration`, or sent to anyone without your separate written approval. The other holds in `CLAUDE.md` also stand.\n\nTo get started, tell me what you want done. It can be a bug, a feature or an area to review. If it's a larger piece of work, I'll ask any business questions in one message and then work through it, checkpointing as I go.\n\nNeed from you: the task or mandate for this session.\n\nnexus-eendigo \u00b7 integration: not checked \u00b7 live: not verified \u00b7 last verified: git state read this turn, no tests run"
+}
