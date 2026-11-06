@@ -65,3 +65,11 @@ Migration 4: `quality_runs` (one append-only row per refresh, update and delete 
 ## Adding a dataset
 
 Create `server/quality/datasets/<app>.ts` exporting `DatasetSpec[]`, and register it with `registerSpecs`. The spec is the documentation: key, required fields, ranges, links, freshness limit, consistency rules, change limits, and `notApplicable` with reasons.
+
+## Per-app keys
+
+An app does not need the main API token. Set `SECVAL_QUALITY_TOKENS` on Render, for example `10bonds=<long random key>,compplan=<key>` (each key at least 24 characters). A key is accepted only for `POST /api/quality/validate`, and only when the body's `app` is that key's app; every other route refuses it. The app keeps the same key in its own secrets.
+
+## 10bonds
+
+`server/quality/datasets/tenbonds.ts`: `10bonds.public_bonds` (the daily bond copy, kind `sync`) and `10bonds.best_bonds` (the ranking cache, kind `recompute`, links and values checked against the bond copy). 10bonds sends both when it loads a new daily copy (`lib/secvalQuality.ts` in the 10bonds repo, Fly secrets `SECVAL_URL` and `SECVAL_QUALITY_TOKEN`).

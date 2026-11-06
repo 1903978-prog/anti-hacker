@@ -170,6 +170,32 @@ export function sessionRoutes(token: string | undefined, limiter: FailedAuthLimi
 }
 
 /**
+ * Per-app keys for the data quality call only: SECVAL_QUALITY_TOKENS =
+ * "10bonds=<key>,compplan=<key>". A key lets its app send POST
+ * /api/quality/validate for its own app name and nothing else (no reads, no
+ * scans, no settings), so an app never holds the main API token. Keys shorter
+ * than 24 characters are ignored.
+ */
+export function parseQualityTokens(raw: string | undefined): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const part of (raw ?? "").split(",")) {
+    const i = part.indexOf("=");
+    if (i <= 0) continue;
+    const app = part.slice(0, i).trim().toLowerCase();
+    const key = part.slice(i + 1).trim();
+    if (app && key.length >= 24) out.set(key, app);
+  }
+  return out;
+}
+
+/** The app a per-app quality key belongs to, or null. Constant-time compare against every configured key. */
+export function qualityKeyApp(keys: Map<string, string>, provided: string): string | null {
+  let found: string | null = null;
+  for (const [key, app] of keys) if (constantTimeEqual(provided, key)) found = app;
+  return found;
+}
+
+/**
  * Requires the API token for every API request, reads included: the allowlist,
  * audit trail, scan findings and dashboard are private too. Accepts either a
  * bearer token (scripts) or the sign-in cookie (the web page). A cookie-signed
@@ -178,10 +204,19 @@ export function sessionRoutes(token: string | undefined, limiter: FailedAuthLimi
  * closed: if no token is configured, every request is refused, so the control
  * plane is never silently left open.
  */
-export function apiAuth(token: string | undefined, limiter?: FailedAuthLimiter) {
+export function apiAuth(token: string | undefined, limiter?: FailedAuthLimiter, qualityKeys: Map<string, string> = new Map()) {
   const session = token ? sessionValue(token) : "";
   return (req: Request, res: Response, next: NextFunction) => {
     if (req.method === "OPTIONS") return next();
+    // A per-app quality key: only the data quality call, only for its own app (checked by the route).
+    if (qualityKeys.size && req.method === "POST" && req.path === "/quality/validate") {
+      const m = /^Bearer\s+(.+)$/i.exec(req.get("authorization") ?? "");
+      const app = m ? qualityKeyApp(qualityKeys, m[1]!.trim()) : null;
+      if (app) {
+        res.locals.qualityApp = app;
+        return next();
+      }
+    }
     if (!token) {
       return res
         .status(503)

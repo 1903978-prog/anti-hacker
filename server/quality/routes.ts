@@ -51,6 +51,12 @@ export function qualityRoutes(app: Express, db: DB): void {
       res.status(400).json({ error: "invalid submission", issues: parsed.error.issues.slice(0, 10).map((i) => `${i.path.join(".")}: ${i.message}`) });
       return;
     }
+    // A per-app key may only report its own app's data.
+    const keyApp = res.locals.qualityApp as string | undefined;
+    if (keyApp && parsed.data.app.toLowerCase() !== keyApp) {
+      res.status(403).json({ error: `this key may only send data checks for "${keyApp}"` });
+      return;
+    }
     const exists = db.prepare(`SELECT 1 FROM quality_runs WHERE job_id = ?`).get(parsed.data.jobId);
     if (exists) {
       res.status(409).json({ error: "this jobId was already validated" });
