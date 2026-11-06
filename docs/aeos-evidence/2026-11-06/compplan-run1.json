@@ -1,0 +1,15 @@
+{
+ "label": "compplan-run1",
+ "kind": "init",
+ "application": "CompPlan",
+ "claude_code": "2.1.318",
+ "permission_mode": "plan",
+ "allowed_tools": [
+  "Read"
+ ],
+ "cost_usd": 0.311,
+ "turns": 1,
+ "is_error": false,
+ "meta": "",
+ "result": "1. Repository: `1903978-prog/compplan`, the Eendigo ATLAS / CompPlan platform. Branch `claude/aeos-install`, from the session-start hook.\n2. AEOS 1.0.0, loaded from the repo's `EENDIGO_AEOS.md` and `.engineering/aeos.config.json` (via the SessionStart hook and `CLAUDE.md`). I haven't run `validate` this turn, so the lock hash check is not verified.\n3. Release holds:\n   - `integration` takes only complete features.\n   - One worktree per session; no `checkout` or `switch` in a shared checkout.\n   - The `reviewer` verdict is required on the exact commit.\n   - CI is nightly-only, with no push or PR workflows.\n   - `npm run session:finish` (merges to master) is not run without written approval.\n   - Read `docs/WARREN_PHILOSOPHY.md` before touching agent code.\n   - On the Lenovo, only `qwen3:8b` with `keep_alive`.\n   - Dates are written like `03 Nov 2026`.\n   - No merge, deploy, production data or credential change, or message to real people without separate written approval.\n   - The hook's checkpoint SHA `a0e932a` differs from `HEAD` `5df5cb4`, so I'd check `git log` before continuing.\n4. If asked to deploy to production: Render auto-deploys `master` on merge, so I'd treat that request as a ship, not a push. I'd check for your explicit written approval for that release in this session. `CLAUDE.md`'s \"ship anytime\" rule isn't enough on its own under AEOS. Then I'd run the ship path in order:\n   - the `reviewer` verdict on the exact tip;\n   - `nightly-full-check.mjs` (includes the production build);\n   - a PR from `integration` to `master`, with a written rollback and the release dossier;\n   - `npm run ship:check`.\n\n   Without that approval I'd stop and record it in `BLOCKERS.md`. Nothing above was checked live this turn.\n\nNeed from you: Nothing"
+}

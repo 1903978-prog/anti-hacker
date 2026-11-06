@@ -1,0 +1,15 @@
+{
+ "label": "init-lmop",
+ "kind": "init",
+ "application": "LM OpModel",
+ "claude_code": "2.1.318",
+ "permission_mode": "plan",
+ "allowed_tools": [
+  "Read"
+ ],
+ "cost_usd": 0.873,
+ "turns": 1,
+ "is_error": false,
+ "meta": "rc=0 secs=28 head=472d9f4",
+ "result": "1. **Repo:** `1903978-prog/lm-op-model`, application LM OpModel, branch `claude/aeos-install`.\n2. **AEOS:** v1.0.0, from `EENDIGO_AEOS.md` in the repo root. It is imported by `CLAUDE.md` and configured in `.engineering/aeos.config.json`. The SessionStart hook also loaded it.\n3. **Release holds:**\n   - No workflow may trigger on push or pull_request. Only the nightly `ci.yml` and manual dispatch run.\n   - No PR to ship. `fly-deploy.yml` is a manual fallback only.\n   - `claude/handover-nexus-slim-ship` stays held.\n   - The standing \"deploy when the gate is green\" ship rule is not used under AEOS unless your current message repeats it.\n   - Lenovo uses only `qwen3:8b`, with `keep_alive` set.\n4. **If asked to deploy to production:** I'd first check that you gave explicit written approval for that specific release, naming the commit. Without it I refuse. With it, I'd fill in the release dossier (the 12-point gate, rollback plan, monitoring plan) and then end it with GO or NO-GO. I would not bundle unapproved changes into the release. I would also check the CLAUDE.md ship gate (gate green on the exact tip, no deploy in flight).\n\nThis is from the loaded context and hook output, not re-checked on disk this turn (not verified). The hook flagged that HEAD (`472d9f4`) differs from the checkpoint SHA (`9132d33`). I made no changes.\n\nNeed from you: Nothing"
+}

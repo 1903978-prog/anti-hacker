@@ -24,6 +24,7 @@ import { dashboard } from "./health/score.js";
 import { dashboardHosts, guessApp, listEstimates, saveReport } from "./health/report.js";
 import { checkAllUptime } from "./health/uptime.js";
 import { allUsage } from "./usage/providers.js";
+import { loadCompliance } from "./aeos/compliance.js";
 import { previewDigest } from "./notify/daily.js";
 import { lenovoForHost, lenovoOverview, questionOverview, refreshPassive, runLenovoChecks, runQuestionTests, type LenovoFetch } from "./lenovo/check.js";
 
@@ -37,6 +38,8 @@ export interface AppOptions {
   /** Lenovo check: environment and network caller (tests hand in fakes). */
   lenovoEnv?: Record<string, string | undefined>;
   lenovoFetch?: LenovoFetch;
+  /** AEOS compliance file (defaults to reports/aeos-compliance.json); tests hand in their own. */
+  aeosFile?: string;
 }
 import { DEFAULT_WEEKLY, getLastRun, runWeeklySweep } from "./schedule/weekly.js";
 import { backupMode, backupStatus, runRestoreDrill } from "./backup/drill.js";
@@ -327,6 +330,13 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
   // --- Usage counters (GitHub, Render, Fly, Backblaze; read-only) ----------
   app.get("/api/usage", async (req, res) => {
     res.json(await allUsage({ refresh: req.query.refresh === "1" }));
+  });
+
+  // --- AEOS compliance (read-only; collected by scripts/aeos/collect.py, not real-time) ----
+  const aeosFile =
+    options.aeosFile ?? join(dirname(fileURLToPath(import.meta.url)), "..", "reports", "aeos-compliance.json");
+  app.get("/api/aeos", (_req, res) => {
+    res.json(loadCompliance(aeosFile));
   });
 
   // What tomorrow's daily e-mail would say, and whether e-mail is configured.

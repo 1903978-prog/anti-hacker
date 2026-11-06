@@ -1,0 +1,15 @@
+name: AEOS validate
+# Manual only (no push / PR trigger) so it never spends Actions minutes on its own.
+on:
+  workflow_dispatch:
+concurrency:
+  group: aeos-validate
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/aeos/aeos.py validate
+      - run: python3 scripts/aeos/test_aeos.py

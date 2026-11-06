@@ -86,3 +86,9 @@ validation · TypeScript (tsx to run, vitest to test) · hosted on Render.
 - A failing check is diagnosed from its logs and fixed at the cause (or removed if redundant). Never re-run a failed workflow just to see if it passes.
 - Failure emails: only a nightly live-check failure on the production site may email Livio (one summary, sent by the app). Branch and PR check failures never email him.
 - This repo is public (Actions minutes free). `keep-awake.yml` is a deliberate Render keep-awake ping that never fails; leave it.
+
+<!-- AEOS:BEGIN -->
+## EENDIGO AEOS (v1.0.0) — Secval
+Read and follow `EENDIGO_AEOS.md` (canonical, do not edit here) and `.engineering/aeos.config.json` at the start of every session in this repo; state lives in `.engineering/`. Everything above this block stays in force; where it is stricter, it wins. AEOS adds: one business-decision round, checkpoints, no production action without separate written approval.
+@EENDIGO_AEOS.md
+<!-- AEOS:END -->

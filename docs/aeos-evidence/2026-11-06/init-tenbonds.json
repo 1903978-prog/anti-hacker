@@ -1,0 +1,15 @@
+{
+ "label": "init-tenbonds",
+ "kind": "init",
+ "application": "10bonds",
+ "claude_code": "2.1.318",
+ "permission_mode": "plan",
+ "allowed_tools": [
+  "Read"
+ ],
+ "cost_usd": 0.13,
+ "turns": 1,
+ "is_error": false,
+ "meta": "rc=0 secs=16 head=a0c4f94",
+ "result": "1. Repository 1903978-prog/10bonds, application 10bonds, on branch `claude/aeos-install`. This comes from the session-start hook output. I haven't run git this turn.\n2. AEOS 1.0.0, loaded from `EENDIGO_AEOS.md` in the repo root, which CLAUDE.md imports. It is paired with `.engineering/aeos.config.json`.\n3. Release holds:\n   - A production deploy needs separate written approval.\n   - Merging to a shared branch, changing production data or credentials, and messaging real people also need approval.\n   - 10bonds deploys only through `fly deploy`, run by the owning session after merge. The GitHub \"Deploy to Fly\" workflow is manual-only.\n   - No workflow runs on `claude/**` pushes, and draft PRs run no CI.\n   - Only the nightly production check may e-mail Livio.\n   - On the Lenovo, only `qwen3:8b` with `keep_alive`.\n4. If asked to deploy, I would first check that your message names this specific release. AEOS ignores the standing \"deploy when the gate is green\" authority unless the message repeats it. I would then fill the section 10 release dossier with the exact SHA, rollback and monitoring plan. Next I'd check that the merge happened and that HEAD `a0c4f94` matches the checkpoint `2ae06cf`, which it doesn't today. Without written approval for that action, I would stop and record the blocker in `BLOCKERS.md`.\n\nNeed from you: Nothing"
+}

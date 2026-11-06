@@ -146,6 +146,7 @@
       <a href="#scans" data-tab="scans" role="tab">Security scans</a>
       <a href="#tests" data-tab="tests" role="tab">All tests</a>
       <a href="#usage" data-tab="usage" role="tab">Usage</a>
+      <a href="#aeos" data-tab="aeos" role="tab">AEOS</a>
       <a href="#backup" data-tab="backup" role="tab">Backup</a>
       <a href="#settings" data-tab="settings" role="tab">Settings</a>
     </nav>
@@ -248,6 +249,25 @@
         </div>
         <div id="testsList" class="muted">Loading…</div>
         <div class="note">Security checks come from secval's own scans. "App health report" rows are estimates from the app's health report; 85 or more is a pass. Tap a row for the details.</div>
+      </div>
+      </section>
+
+      <section data-panel="aeos" hidden>
+      <div class="card">
+        <h2>AEOS engineering standard: compliance by app</h2>
+        <div class="note" style="margin:-6px 0 12px">
+          Where each Eendigo app stands on the AEOS engineering standard. This is <strong>not live</strong>: it shows the date
+          the collector last ran, and a banner appears when the data is old. The score counts installation and proof only
+          (see "How the score is made"), not how good the app is.
+        </div>
+        <div id="aeosBanner" class="note" role="status"></div>
+        <div id="aeosSummary" class="muted">Loading…</div>
+        <div id="aeosApps" class="muted"></div>
+        <details style="margin-top:10px"><summary>How the score is made</summary><div id="aeosBasis" class="note"></div></details>
+        <div class="row" style="margin-top:8px;align-items:center">
+          <span id="aeosMsg" class="note" style="flex:1;margin:0"></span>
+          <button id="aeosRefresh" class="ghost">Reload</button>
+        </div>
       </div>
       </section>
 

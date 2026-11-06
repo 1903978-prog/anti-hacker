@@ -1,0 +1,360 @@
+{
+  "schema": 1,
+  "collected_at": "2026-11-06T09:24:09Z",
+  "collector": "scripts/aeos/collect.py",
+  "realtime": false,
+  "refresh": "Run scripts/aeos/collect.py again; nothing refreshes this file by itself.",
+  "score_basis": {
+    "installed": 20,
+    "validate_ok": 25,
+    "own_tests_pass": 20,
+    "fresh_session_evidence": 15,
+    "draft_pr_open_and_mergeable": 10,
+    "no_open_p0_p1_or_blockers": 10
+  },
+  "apps": [
+    {
+      "installed": true,
+      "application": "Secval",
+      "repository": "1903978-prog/anti-hacker",
+      "aeos_version": "1.0.0",
+      "branch": "claude/fervent-euler-yurhdu",
+      "head": "9bde292",
+      "validate": {
+        "ok": true,
+        "output": [
+          "AEOS validate: OK"
+        ]
+      },
+      "own_tests": {
+        "ran": 22,
+        "ok": true
+      },
+      "backlog": {
+        "total": 0,
+        "by_status": {},
+        "by_verification": {},
+        "verified": 0,
+        "unverified": 0,
+        "open_p0_p1": 0
+      },
+      "open_blockers": 0,
+      "last_checkpoint": "2026-11-05 12:31 UTC",
+      "releases_recorded": 0,
+      "release_restrictions": 5,
+      "verified_config_facts": 3,
+      "unverified_items": [
+        "live Render service state and auto-deploy setting",
+        "B2 bucket contents and last restore test"
+      ],
+      "pr": {
+        "number": 47,
+        "html_url": "https://github.com/1903978-prog/anti-hacker/pull/47",
+        "state": "open",
+        "draft": true,
+        "mergeable_state": "clean",
+        "head_sha": "9bde292",
+        "mergeable_verified_by": "git merge-tree against integration 44c9ceb: no conflict; CI check 'check' succeeded on earlier head 9bde292 (typecheck, lint, 234 tests, page check)",
+        "read_from": "GitHub pull_request_read + git merge-tree, 06 Nov 2026"
+      },
+      "fresh_session": {
+        "passed": 2,
+        "total": 2,
+        "tests": [
+          "init-secval",
+          "hold-secval"
+        ],
+        "evidence": "docs/aeos-evidence/2026-11-06"
+      },
+      "outstanding_approvals": [
+        "merge of the install PR",
+        "any production deploy",
+        "confirmation of UNVERIFIED items"
+      ],
+      "release_readiness": "NOT READY: no release approval recorded",
+      "score_parts": {
+        "installed": 20,
+        "validate_ok": 25,
+        "own_tests_pass": 20,
+        "fresh_session_evidence": 15,
+        "draft_pr_open_and_mergeable": 10,
+        "no_open_p0_p1_or_blockers": 10
+      },
+      "score": 100
+    },
+    {
+      "installed": true,
+      "application": "Nexus",
+      "repository": "1903978-prog/nexus-eendigo",
+      "aeos_version": "1.0.0",
+      "branch": "claude/aeos-install",
+      "head": "e418eb8",
+      "validate": {
+        "ok": true,
+        "output": [
+          "AEOS validate: OK"
+        ]
+      },
+      "own_tests": {
+        "ran": 22,
+        "ok": true
+      },
+      "backlog": {
+        "total": 0,
+        "by_status": {},
+        "by_verification": {},
+        "verified": 0,
+        "unverified": 0,
+        "open_p0_p1": 0
+      },
+      "open_blockers": 0,
+      "last_checkpoint": "2026-11-05 12:31 UTC",
+      "releases_recorded": 0,
+      "release_restrictions": 6,
+      "verified_config_facts": 3,
+      "unverified_items": [
+        "live Fly machine state",
+        "whether render.yaml service still exists on Render"
+      ],
+      "pr": {
+        "number": 195,
+        "html_url": "https://github.com/1903978-prog/nexus-eendigo/pull/195",
+        "state": "open",
+        "draft": true,
+        "mergeable_state": "clean",
+        "head_sha": "e418eb8",
+        "mergeable_verified_by": "git merge-tree against base 87f0f14: no conflict (GitHub reported 'unknown' while it was computing)",
+        "read_from": "GitHub pull_request_read + git merge-tree, 06 Nov 2026"
+      },
+      "fresh_session": {
+        "passed": 2,
+        "total": 2,
+        "tests": [
+          "init-nexus",
+          "nomandate-nexus"
+        ],
+        "evidence": "docs/aeos-evidence/2026-11-06"
+      },
+      "outstanding_approvals": [
+        "merge of the install PR",
+        "any production deploy",
+        "confirmation of UNVERIFIED items"
+      ],
+      "release_readiness": "NOT READY: no release approval recorded",
+      "score_parts": {
+        "installed": 20,
+        "validate_ok": 25,
+        "own_tests_pass": 20,
+        "fresh_session_evidence": 15,
+        "draft_pr_open_and_mergeable": 10,
+        "no_open_p0_p1_or_blockers": 10
+      },
+      "score": 100
+    },
+    {
+      "installed": true,
+      "application": "Eendigo ATLAS / CompPlan",
+      "repository": "1903978-prog/compplan",
+      "aeos_version": "1.0.0",
+      "branch": "claude/aeos-install",
+      "head": "dbbf89f",
+      "validate": {
+        "ok": true,
+        "output": [
+          "AEOS validate: OK"
+        ]
+      },
+      "own_tests": {
+        "ran": 22,
+        "ok": true
+      },
+      "backlog": {
+        "total": 0,
+        "by_status": {},
+        "by_verification": {},
+        "verified": 0,
+        "unverified": 0,
+        "open_p0_p1": 0
+      },
+      "open_blockers": 0,
+      "last_checkpoint": "2026-11-05 12:31 UTC",
+      "releases_recorded": 0,
+      "release_restrictions": 7,
+      "verified_config_facts": 3,
+      "unverified_items": [
+        "live Render dashboard auto-deploy setting (render.yaml and dashboard have disagreed before, per CLAUDE.md)",
+        "RENDER_API_KEY presence"
+      ],
+      "pr": {
+        "number": 690,
+        "html_url": "https://github.com/1903978-prog/compplan/pull/690",
+        "state": "open",
+        "draft": true,
+        "mergeable_state": "clean",
+        "head_sha": "dbbf89f",
+        "mergeable_verified_by": "git merge-tree against base a0e932a: no conflict (GitHub reported 'unknown' while it was computing)",
+        "read_from": "GitHub pull_request_read + git merge-tree, 06 Nov 2026"
+      },
+      "fresh_session": {
+        "passed": 1,
+        "total": 1,
+        "tests": [
+          "compplan-run1"
+        ],
+        "evidence": "docs/aeos-evidence/2026-11-06"
+      },
+      "outstanding_approvals": [
+        "merge of the install PR",
+        "any production deploy",
+        "confirmation of UNVERIFIED items"
+      ],
+      "release_readiness": "NOT READY: no release approval recorded",
+      "score_parts": {
+        "installed": 20,
+        "validate_ok": 25,
+        "own_tests_pass": 20,
+        "fresh_session_evidence": 15,
+        "draft_pr_open_and_mergeable": 10,
+        "no_open_p0_p1_or_blockers": 10
+      },
+      "score": 100
+    },
+    {
+      "installed": true,
+      "application": "LM OpModel",
+      "repository": "1903978-prog/lm-op-model",
+      "aeos_version": "1.0.0",
+      "branch": "claude/aeos-install",
+      "head": "add6e4f4",
+      "validate": {
+        "ok": true,
+        "output": [
+          "AEOS validate: OK"
+        ]
+      },
+      "own_tests": {
+        "ran": 22,
+        "ok": true
+      },
+      "backlog": {
+        "total": 0,
+        "by_status": {},
+        "by_verification": {},
+        "verified": 0,
+        "unverified": 0,
+        "open_p0_p1": 0
+      },
+      "open_blockers": 0,
+      "last_checkpoint": "2026-11-05 12:31 UTC",
+      "releases_recorded": 0,
+      "release_restrictions": 6,
+      "verified_config_facts": 4,
+      "unverified_items": [
+        "live Fly machine state",
+        "whether rollback-on-smoke-failure has ever fired for real (CLAUDE.md says it had not as of 13 Oct 2026)"
+      ],
+      "pr": {
+        "number": 831,
+        "html_url": "https://github.com/1903978-prog/lm-op-model/pull/831",
+        "state": "open",
+        "draft": true,
+        "mergeable_state": "clean",
+        "head_sha": "add6e4f",
+        "mergeable_verified_by": "git merge-tree against base 94fb6cf (master moved since the PR was opened): no conflict (GitHub reported 'unknown' while it was computing)",
+        "read_from": "GitHub pull_request_read + git merge-tree, 06 Nov 2026"
+      },
+      "fresh_session": {
+        "passed": 2,
+        "total": 2,
+        "tests": [
+          "init-lmop",
+          "recover-lmop"
+        ],
+        "evidence": "docs/aeos-evidence/2026-11-06"
+      },
+      "outstanding_approvals": [
+        "merge of the install PR",
+        "any production deploy",
+        "confirmation of UNVERIFIED items"
+      ],
+      "release_readiness": "NOT READY: no release approval recorded",
+      "score_parts": {
+        "installed": 20,
+        "validate_ok": 25,
+        "own_tests_pass": 20,
+        "fresh_session_evidence": 15,
+        "draft_pr_open_and_mergeable": 10,
+        "no_open_p0_p1_or_blockers": 10
+      },
+      "score": 100
+    },
+    {
+      "installed": true,
+      "application": "10bonds",
+      "repository": "1903978-prog/10bonds",
+      "aeos_version": "1.0.0",
+      "branch": "claude/aeos-install",
+      "head": "d31f76b",
+      "validate": {
+        "ok": true,
+        "output": [
+          "AEOS validate: OK"
+        ]
+      },
+      "own_tests": {
+        "ran": 22,
+        "ok": true
+      },
+      "backlog": {
+        "total": 0,
+        "by_status": {},
+        "by_verification": {},
+        "verified": 0,
+        "unverified": 0,
+        "open_p0_p1": 0
+      },
+      "open_blockers": 0,
+      "last_checkpoint": "2026-11-05 12:31 UTC",
+      "releases_recorded": 0,
+      "release_restrictions": 6,
+      "verified_config_facts": 3,
+      "unverified_items": [
+        "live Fly machine state",
+        "FLY_API_TOKEN secret presence"
+      ],
+      "pr": {
+        "number": 494,
+        "html_url": "https://github.com/1903978-prog/10bonds/pull/494",
+        "state": "open",
+        "draft": true,
+        "mergeable_state": "clean",
+        "head_sha": "d31f76b",
+        "mergeable_verified_by": "git merge-tree against base 2ae06cf: no conflict (GitHub reported 'unknown' while it was computing)",
+        "read_from": "GitHub pull_request_read + git merge-tree, 06 Nov 2026"
+      },
+      "fresh_session": {
+        "passed": 1,
+        "total": 1,
+        "tests": [
+          "init-tenbonds (second run; first run inconclusive, kept as such)"
+        ],
+        "evidence": "docs/aeos-evidence/2026-11-06"
+      },
+      "outstanding_approvals": [
+        "merge of the install PR",
+        "any production deploy",
+        "confirmation of UNVERIFIED items"
+      ],
+      "release_readiness": "NOT READY: no release approval recorded",
+      "score_parts": {
+        "installed": 20,
+        "validate_ok": 25,
+        "own_tests_pass": 20,
+        "fresh_session_evidence": 15,
+        "draft_pr_open_and_mergeable": 10,
+        "no_open_p0_p1_or_blockers": 10
+      },
+      "score": 100
+    }
+  ]
+}
