@@ -131,7 +131,7 @@ class TestAeos(Base):
 
     def test_validate_flags_secret(self):
         d = self.make_repo("alpha")
-        open(os.path.join(d, ".engineering/NOTES.md"), "w").write("api_key = abcdefghijklmnop12345678\n")
+        open(os.path.join(d, ".engineering/NOTES.md"), "w").write("api_key = " + "x" * 24 + "\n")
         self.assertIn("possible secret", run("validate", root=d).stdout)
 
     def test_audit_detects_unenrolled(self):
