@@ -109,6 +109,26 @@ export const MIGRATIONS: Migration[] = [
     );
     `,
   },
+  {
+    // Database structure checks: one append-only row per hourly check of an
+    // app's own database report (score and rule notes only, never row data).
+    version: 5,
+    name: "database structure checks",
+    sql: `
+    CREATE TABLE IF NOT EXISTS db_checks (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      host       TEXT NOT NULL,
+      ts         TEXT NOT NULL,
+      ok         INTEGER NOT NULL CHECK (ok IN (0, 1)),
+      score      INTEGER CHECK (score IS NULL OR score BETWEEN 0 AND 100),
+      rules_json TEXT NOT NULL,
+      error      TEXT
+    );
+    CREATE INDEX IF NOT EXISTS db_checks_host_id ON db_checks (host, id);
+    CREATE TRIGGER IF NOT EXISTS db_checks_no_update BEFORE UPDATE ON db_checks
+      BEGIN SELECT RAISE(ABORT, 'db_checks is append-only'); END;
+    `,
+  },
 ];
 
 /** Applies every migration the database has not seen yet; returns their versions. */

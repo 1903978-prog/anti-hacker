@@ -2,6 +2,7 @@ import { openDb } from "./db.js";
 import { createApp } from "./app.js";
 import { startScheduler } from "./schedule/weekly.js";
 import { startUptimeChecker } from "./health/uptime.js";
+import { startDbChecker } from "./health/dbcheck.js";
 import { loadReportFiles } from "./health/seed.js";
 import { startCiWatch } from "./health/ci.js";
 import { startRestoreDrill } from "./backup/drill.js";
@@ -27,6 +28,8 @@ startIntegrityWatch(db);
 startScheduler(db);
 // Health dashboard: check each proven app's home page every 30 minutes.
 startUptimeChecker(db);
+// Database column: ask each proven app for its database report every hour.
+startDbChecker(db);
 // Backup: restore the Backblaze copy into a scratch file daily and check it.
 startRestoreDrill(db);
 // Dropbox: check daily that the PC backup left its Monday copies.

@@ -3,6 +3,7 @@ import { AREAS, INFRA, appliesTo, dashboardHosts, listEstimates, listInfra, ship
 import { listUptime, type UptimeCheck } from "./uptime.js";
 import { FAILING_CAP, getCiSignal, type CiSignal } from "./ci.js";
 import { latestPerDataset } from "../quality/store.js";
+import { latestDbCheck } from "./dbcheck.js";
 
 /**
  * A score backed by evidence. "measured" means secval checked it itself;
@@ -136,32 +137,54 @@ export function performanceScore(checks7d: UptimeCheck[]): Score | null {
 /** The data-quality app name for a host: the first part of the address ("compplan.onrender.com" -> "compplan"). */
 const qualityAppName = (host: string) => host.split(".")[0]!.toLowerCase();
 
+/** Structure checks older than this no longer count. */
+const DBCHECK_MAX_AGE_MS = 3 * 24 * 60 * 60_000;
+
 /**
- * Database, measured from the data quality engine: the newest validation of
- * each of the app's tables (sent by the app after every refresh). The score is
- * the average of the scored tables; a table whose last check could not be
- * verified gives no number and is listed. No scored table = no score.
+ * Database, measured by secval from two sources:
+ * 1. the hourly structure check of the app's own database report (ten rules), and
+ * 2. the data quality engine: the newest scored check of each table the app sends.
+ * When both exist the score is their average. A check that could not be
+ * verified, failed to answer, or is older than 3 days gives no number.
  */
-export function databaseScore(db: DB, host: string): Score | null {
+export function databaseScore(db: DB, host: string, now: Date = new Date()): Score | null {
+  const parts: number[] = [];
+  const evidence: string[] = [];
+  const times: string[] = [];
+
+  const c = latestDbCheck(db, host);
+  if (c && c.ok && c.score !== null && now.getTime() - Date.parse(c.ts) <= DBCHECK_MAX_AGE_MS) {
+    parts.push(c.score);
+    times.push(c.ts);
+    evidence.push(`Structure check: ${c.score} of 100 (10 points per rule).`,
+      ...c.rules.map((r) => `${r.points}/10 ${r.rule} (${r.note})`));
+  } else if (c && !c.ok) {
+    evidence.push(`Last structure check failed: ${c.error ?? "no answer"}.`);
+  }
+
   const name = qualityAppName(host);
   const runs = latestPerDataset(db).filter((r) => r.app.toLowerCase() === name || r.app.toLowerCase() === host.toLowerCase());
   const scored = runs.filter((r): r is typeof r & { score: number } => typeof r.score === "number");
-  if (!scored.length) return null;
-  const avg = Math.round(scored.reduce((a, r) => a + r.score, 0) / scored.length);
-  const at = runs.map((r) => r.evaluatedAt).sort().at(-1)!;
-  return {
-    score: avg,
-    source: "measured",
-    at,
-    evidence: [
-      `Data quality checks of ${scored.length} table(s), newest check of each; the score is their average.`,
+  if (scored.length) {
+    const avg = Math.round(scored.reduce((a, r) => a + r.score, 0) / scored.length);
+    parts.push(avg);
+    times.push(...runs.map((r) => r.evaluatedAt));
+    evidence.push(
+      `Data quality: ${avg}, the average of the newest check of ${scored.length} table(s).`,
       ...runs.map((r) =>
         r.score === null
           ? `${r.dataset}: ${r.outcome}, no score (not enough could be verified).`
           : `${r.dataset}: ${r.score} ${r.status} (${r.outcome}, ${r.recordCount} rows).`,
       ),
-      "Tables the app does not send to secval are not checked.",
-    ],
+    );
+  }
+
+  if (!parts.length) return null;
+  return {
+    score: Math.round(parts.reduce((a, b) => a + b, 0) / parts.length),
+    source: "measured",
+    at: times.sort().at(-1)!,
+    evidence: [...(parts.length === 2 ? ["Average of the structure check and data quality."] : []), ...evidence],
   };
 }
 
@@ -231,7 +254,7 @@ export function dashboard(db: DB, now: Date = new Date(), ci: (host: string) => 
       security: securityScore(db, e.domain),
       reliability: reliabilityScore(checks7d),
       performance: performanceScore(checks7d),
-      database: databaseScore(db, e.domain),
+      database: databaseScore(db, e.domain, now),
     };
 
     const estimates = listEstimates(db, e.domain);

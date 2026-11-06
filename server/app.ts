@@ -23,6 +23,7 @@ import { apiAuth, failedAuthLimiter, noStore, rateLimit, securityHeaders, sessio
 import { dashboard } from "./health/score.js";
 import { dashboardHosts, guessApp, listEstimates, saveReport } from "./health/report.js";
 import { checkAllUptime } from "./health/uptime.js";
+import { checkAllDatabases } from "./health/dbcheck.js";
 import { allUsage } from "./usage/providers.js";
 import { loadCompliance } from "./aeos/compliance.js";
 import { previewDigest } from "./notify/daily.js";
@@ -324,6 +325,7 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
 
   app.post("/api/dashboard/check-now", async (_req, res) => {
     const checks = await checkAllUptime(db);
+    await checkAllDatabases(db).catch(() => []);
     res.json({ checked: checks.length });
   });
 
