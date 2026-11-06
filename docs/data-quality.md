@@ -65,3 +65,7 @@ Migration 4: `quality_runs` (one append-only row per refresh, update and delete 
 ## Adding a dataset
 
 Create `server/quality/datasets/<app>.ts` exporting `DatasetSpec[]`, and register it with `registerSpecs`. The spec is the documentation: key, required fields, ranges, links, freshness limit, consistency rules, change limits, and `notApplicable` with reasons.
+
+## On the Health dashboard
+
+The Database column is **measured (M)** for an app once that app has sent at least one scored check: the average of the newest score of each of its tables. The app name in the call (`app`) must match the first part of the address (`compplan` for `compplan.onrender.com`). Until then the column shows the pasted estimate (E), and a check that could not be verified never gives a number.

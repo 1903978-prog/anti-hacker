@@ -270,3 +270,23 @@ describe("compplan dataset specs", () => {
     expect(bad.critical).toBe(true);
   });
 });
+
+describe("Database column on the Health dashboard", () => {
+  it("is measured from the newest data quality check of the app's tables", async () => {
+    const { databaseScore } = await import("../server/health/score.js");
+    const db = freshDb();
+    expect(databaseScore(db, "test.example.com")).toBeNull();
+    const r = validateRefresh(db, sub(), DEFAULT_POLICY, NOW);
+    const s = databaseScore(db, "test.example.com")!;
+    expect(s.source).toBe("measured");
+    expect(s.score).toBe(r.score);
+    expect(s.evidence.join(" ")).toContain("test.people");
+    expect(databaseScore(db, "other.example.com")).toBeNull();
+  });
+  it("gives no number when the only check could not be verified", async () => {
+    const { databaseScore } = await import("../server/health/score.js");
+    const db = freshDb();
+    validateRefresh(db, sub({ sourceReached: false }), DEFAULT_POLICY, NOW);
+    expect(databaseScore(db, "test.example.com")).toBeNull();
+  });
+});

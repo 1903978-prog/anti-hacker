@@ -2,6 +2,7 @@ import type { DB } from "../db.js";
 import { AREAS, INFRA, appliesTo, dashboardHosts, listEstimates, listInfra, shipperFrom, type StoredEstimate } from "./report.js";
 import { listUptime, type UptimeCheck } from "./uptime.js";
 import { FAILING_CAP, getCiSignal, type CiSignal } from "./ci.js";
+import { latestPerDataset } from "../quality/store.js";
 
 /**
  * A score backed by evidence. "measured" means secval checked it itself;
@@ -132,6 +133,38 @@ export function performanceScore(checks7d: UptimeCheck[]): Score | null {
   };
 }
 
+/** The data-quality app name for a host: the first part of the address ("compplan.onrender.com" -> "compplan"). */
+const qualityAppName = (host: string) => host.split(".")[0]!.toLowerCase();
+
+/**
+ * Database, measured from the data quality engine: the newest validation of
+ * each of the app's tables (sent by the app after every refresh). The score is
+ * the average of the scored tables; a table whose last check could not be
+ * verified gives no number and is listed. No scored table = no score.
+ */
+export function databaseScore(db: DB, host: string): Score | null {
+  const name = qualityAppName(host);
+  const runs = latestPerDataset(db).filter((r) => r.app.toLowerCase() === name || r.app.toLowerCase() === host.toLowerCase());
+  const scored = runs.filter((r): r is typeof r & { score: number } => typeof r.score === "number");
+  if (!scored.length) return null;
+  const avg = Math.round(scored.reduce((a, r) => a + r.score, 0) / scored.length);
+  const at = runs.map((r) => r.evaluatedAt).sort().at(-1)!;
+  return {
+    score: avg,
+    source: "measured",
+    at,
+    evidence: [
+      `Data quality checks of ${scored.length} table(s), newest check of each; the score is their average.`,
+      ...runs.map((r) =>
+        r.score === null
+          ? `${r.dataset}: ${r.outcome}, no score (not enough could be verified).`
+          : `${r.dataset}: ${r.score} ${r.status} (${r.outcome}, ${r.recordCount} rows).`,
+      ),
+      "Tables the app does not send to secval are not checked.",
+    ],
+  };
+}
+
 /** Hosting provider from the app's address, when the address shows it. */
 export function providerFromDomain(host: string): string | null {
   if (host.endsWith(".fly.dev")) return "Fly.io";
@@ -198,6 +231,7 @@ export function dashboard(db: DB, now: Date = new Date(), ci: (host: string) => 
       security: securityScore(db, e.domain),
       reliability: reliabilityScore(checks7d),
       performance: performanceScore(checks7d),
+      database: databaseScore(db, e.domain),
     };
 
     const estimates = listEstimates(db, e.domain);
