@@ -14,6 +14,8 @@ export const DBCHECK_EVERY_MS = 60 * 60_000;
 const TIMEOUT_MS = 15_000;
 /** Bigger answers are refused: the report is a handful of numbers. */
 const MAX_BYTES = 16_384;
+/** A cached report is fine (some apps compute it once a day); older than this is not. */
+const REPORT_MAX_AGE_MS = 3 * 24 * 60 * 60_000;
 
 const count = z.number().int().min(0);
 const when = z.string().refine((s) => !Number.isNaN(Date.parse(s)), "must be an ISO date-time").nullable();
@@ -153,8 +155,13 @@ export async function checkDatabase(
     if (res.text.length > MAX_BYTES) throw new Error("report too big");
     const parsed = dbReportSchema.safeParse(JSON.parse(res.text));
     if (!parsed.success) throw new Error(`bad report: ${parsed.error.issues.slice(0, 3).map((i) => i.path.join(".")).join(", ")}`);
+    // Apps that may wake their database only a few times a day serve a cached
+    // report; up to 3 days old is accepted, older is not trusted.
+    const age = now().getTime() - Date.parse(parsed.data.checkedAt);
+    if (age > REPORT_MAX_AGE_MS) throw new Error(`report is stale (checked ${parsed.data.checkedAt})`);
+    if (age < -HOUR) throw new Error("report is dated in the future");
     const { score, rules } = scoreDbReport(parsed.data, now());
-    check = { host, ts: now().toISOString(), ok: true, score, rules, error: null };
+    check = { host, ts: parsed.data.checkedAt, ok: true, score, rules, error: null };
   } catch (err) {
     check = { host, ts: now().toISOString(), ok: false, score: null, rules: [], error: (err as Error).message.slice(0, 200) };
   }

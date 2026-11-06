@@ -9,7 +9,7 @@ The report is counts and yes/no answers only. **Never send row data, table names
 `GET /api/secval/db-health`
 
 - Requires `Authorization: Bearer <SECVAL_DBCHECK_TOKEN>`. Compare in constant time. Wrong or missing token: 401. No token configured on the app: 404 (secval then skips the app quietly).
-- Read-only. Runs a handful of catalogue queries, at most once a minute (cache the answer for 60 s).
+- Read-only. Apps that may only wake their database a few times a day (compplan, Nexus: 6-hour rule) compute the report in their own database window and serve the cached answer; `checkedAt` says when it was computed. Secval accepts a report up to 3 days old and refuses an older one.
 - Answer `200` with JSON, under 16 KB:
 
 ```json

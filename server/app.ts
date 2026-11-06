@@ -19,7 +19,7 @@ import { requestApproval, type ScanMode } from "./governance/policy.js";
 import { getFindings, listScans, runPassiveScan } from "./scan/passive.js";
 import { runActiveScan } from "./scan/active.js";
 import { checkReport } from "./scan/catalogue.js";
-import { apiAuth, failedAuthLimiter, noStore, rateLimit, securityHeaders, sessionRoutes } from "./middleware.js";
+import { apiAuth, failedAuthLimiter, parseAppTokens, noStore, rateLimit, securityHeaders, sessionRoutes } from "./middleware.js";
 import { dashboard } from "./health/score.js";
 import { dashboardHosts, guessApp, listEstimates, saveReport } from "./health/report.js";
 import { checkAllUptime } from "./health/uptime.js";
@@ -39,6 +39,8 @@ export interface AppOptions {
   /** Lenovo check: environment and network caller (tests hand in fakes). */
   lenovoEnv?: Record<string, string | undefined>;
   lenovoFetch?: LenovoFetch;
+  /** Per-app write-only tokens "app=token,..." (defaults to SECVAL_QUALITY_TOKENS). */
+  qualityTokens?: string;
   /** AEOS compliance file (defaults to reports/aeos-compliance.json); tests hand in their own. */
   aeosFile?: string;
 }
@@ -77,7 +79,11 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
   app.use("/api", noStore());
   const wrongTokens = failedAuthLimiter({ windowMs: 60_000, max: 10 });
   app.use("/api", sessionRoutes(apiToken, wrongTokens));
-  app.use("/api", apiAuth(apiToken, wrongTokens));
+  // Apps send data quality checks with their own write-only token
+  // (SECVAL_QUALITY_TOKENS="app=token,..."): it opens POST /api/quality/validate
+  // for that app's data and nothing else.
+  const appTokens = parseAppTokens(options.qualityTokens ?? process.env.SECVAL_QUALITY_TOKENS);
+  app.use("/api", apiAuth(apiToken, wrongTokens, appTokens));
 
   // Public liveness check (for the uptime pinger): always 200 while the
   // server runs. `store` is the last integrity check of the database (yes/no

@@ -95,8 +95,19 @@ describe("database structure check", () => {
   it("a check older than 3 days no longer counts", async () => {
     const db = freshDb();
     await prove(db, HOST);
-    await checkDatabase(db, HOST, "tok", answer(good), () => new Date("2026-11-01T00:00:00Z"));
+    const old = { ...good, checkedAt: "2026-10-31T23:00:00Z", lastBackupAt: "2026-10-31T03:00:00Z", lastRestoreTestAt: "2026-10-30T00:00:00Z" };
+    expect((await checkDatabase(db, HOST, "tok", answer(old), () => new Date("2026-11-01T00:00:00Z")))!.ok).toBe(true);
     const area = dashboard(db, NOW).find((a) => a.host === HOST)!.areas.find((a) => a.key === "database")!;
     expect(area.measured).toBeNull();
+  });
+
+  it("accepts a cached report up to 3 days old, refuses an older one", async () => {
+    const db = freshDb();
+    await prove(db, HOST);
+    const day = (await checkDatabase(db, HOST, "tok", answer({ ...good, checkedAt: "2026-11-05T12:00:00Z" }), () => NOW))!;
+    expect(day.ok).toBe(true);
+    const stale = (await checkDatabase(db, HOST, "tok", answer({ ...good, checkedAt: "2026-11-02T12:00:00Z" }), () => NOW))!;
+    expect(stale).toMatchObject({ ok: false, score: null });
+    expect(stale.error).toContain("stale");
   });
 });

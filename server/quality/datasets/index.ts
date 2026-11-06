@@ -1,5 +1,8 @@
 import type { DatasetSpec } from "../types.js";
 import { COMPPLAN_SPECS } from "./compplan.js";
+import { LMOP_SPECS } from "./lm-op-model.js";
+import { NEXUS_SPECS } from "./nexus.js";
+import { TENBONDS_SPECS } from "./tenbonds.js";
 
 /**
  * Registry of per-dataset rules. One file per app under this folder, each
@@ -12,7 +15,7 @@ const SPECS = new Map<string, DatasetSpec>();
 registerSpecsEarly();
 
 function registerSpecsEarly(): void {
-  for (const s of COMPPLAN_SPECS) SPECS.set(s.id, s);
+  for (const s of [...COMPPLAN_SPECS, ...LMOP_SPECS, ...NEXUS_SPECS, ...TENBONDS_SPECS]) SPECS.set(s.id, s);
 }
 
 export function registerSpecs(specs: DatasetSpec[]): void {

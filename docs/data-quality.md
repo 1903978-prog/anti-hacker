@@ -69,3 +69,9 @@ Create `server/quality/datasets/<app>.ts` exporting `DatasetSpec[]`, and registe
 ## On the Health dashboard
 
 The Database column is **measured (M)** for an app once that app has sent at least one scored check: the average of the newest score of each of its tables. The app name in the call (`app`) must match the first part of the address (`compplan` for `compplan.onrender.com`). Until then the column shows the pasted estimate (E), and a check that could not be verified never gives a number.
+
+## Per-app tokens
+
+Apps do not get the main `SECVAL_API_TOKEN`. Set `SECVAL_QUALITY_TOKENS="compplan=<token>,lm-op-model=<token>,nexus-eendigo=<token>,10bonds=<token>"` on secval (each token at least 24 characters) and the matching token as `SECVAL_QUALITY_TOKEN` on each app. A per-app token opens only `POST /api/quality/validate`, only when `app` is its own app and the dataset id starts with `<app>.`. Every other route, reads included, refuses it (401); another app's data gets 403.
+
+Dataset specs: `compplan.ts`, `lm-op-model.ts`, `nexus.ts`, `tenbonds.ts` in `server/quality/datasets/` (written with each app's thread).
