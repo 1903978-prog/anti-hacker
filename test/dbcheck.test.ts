@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { freshDb } from "./helpers.js";
 import { createChallenge, verifyOwnership } from "../server/ownership/proof.js";
 import { engage } from "../server/governance/killswitch.js";
-import { checkDatabase, latestDbCheck, scoreDbReport, type DbReport, type JsonFetch } from "../server/health/dbcheck.js";
+import { checkDatabase, checkSelfDatabase, latestDbCheck, scoreDbReport, selfDbReport, SELF_HOST, type DbReport, type JsonFetch } from "../server/health/dbcheck.js";
 import { dashboard } from "../server/health/score.js";
 
 const HOST = "compplan.onrender.com";
@@ -109,5 +109,24 @@ describe("database structure check", () => {
     const stale = (await checkDatabase(db, HOST, "tok", answer({ ...good, checkedAt: "2026-11-02T12:00:00Z" }), () => NOW))!;
     expect(stale).toMatchObject({ ok: false, score: null });
     expect(stale.error).toContain("stale");
+  });
+});
+
+describe("secval's own database", () => {
+  it("is read from SQLite's catalogue: keys, links, indexes, rules, migrations, integrity", () => {
+    const db = freshDb();
+    const r = selfDbReport(db, NOW);
+    expect(r).toMatchObject({ engine: "sqlite", tablesWithoutPrimaryKey: 0, foreignKeysWithoutIndex: 0, orphanRows: 0, pendingMigrations: 0, integrityOk: true });
+    expect(r.foreignKeys).toBeGreaterThan(0);
+    expect(r.checkConstraints).toBeGreaterThan(0);
+    // No backup running in tests: backup and restore are not reported, never guessed.
+    expect(r.lastBackupAt).toBeNull();
+    expect(scoreDbReport(r, NOW).score).toBe(80);
+  });
+  it("shows as measured on the dashboard", () => {
+    const db = freshDb();
+    checkSelfDatabase(db, () => NOW);
+    const area = dashboard(db, NOW).find((a) => a.host === SELF_HOST)!.areas.find((a) => a.key === "database")!;
+    expect(area.measured).toMatchObject({ score: 80, source: "measured" });
   });
 });

@@ -2,6 +2,8 @@ import { z } from "zod";
 import type { DB } from "../db.js";
 import { listAllowlist } from "../ownership/allowlist.js";
 import { requestApproval } from "../governance/policy.js";
+import { checkIntegrity } from "../integrity.js";
+import { backupMode, getLastDrill } from "../backup/drill.js";
 
 /**
  * Database structure check. Once an hour secval asks each proven app for a
@@ -172,8 +174,8 @@ export async function checkDatabase(
 }
 
 export async function checkAllDatabases(db: DB, token?: string, fetcher?: JsonFetch): Promise<DbCheck[]> {
-  const out: DbCheck[] = [];
-  for (const e of listAllowlist(db).filter((e) => e.ownershipProven)) {
+  const out: DbCheck[] = [checkSelfDatabase(db)];
+  for (const e of listAllowlist(db).filter((e) => e.ownershipProven && e.domain !== SELF_HOST)) {
     const c = await checkDatabase(db, e.domain, token ?? process.env.SECVAL_DBCHECK_TOKEN, fetcher);
     if (c) out.push(c);
   }
@@ -201,4 +203,65 @@ export function startDbChecker(db: DB): () => void {
     clearTimeout(first);
     clearInterval(timer);
   };
+}
+
+/** Secval's own address on the dashboard. */
+export const SELF_HOST = "secval.onrender.com";
+
+/**
+ * Secval's own database, read directly from SQLite's catalogue (no network).
+ * Backup and restore dates come from the daily restore drill: a passing drill
+ * restored the live backup into a scratch file and checked it.
+ */
+export function selfDbReport(db: DB, now: Date = new Date()): DbReport {
+  const tables = (db.prepare(`SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`).all() as Array<{ name: string; sql: string | null }>);
+  let noPk = 0;
+  let fks = 0;
+  let fksNoIndex = 0;
+  let unique = 0;
+  let checks = 0;
+  for (const t of tables) {
+    const q = (s: string) => `"${s.replace(/"/g, '""')}"`;
+    const cols = db.pragma(`table_info(${q(t.name)})`) as Array<{ pk: number }>;
+    if (!cols.some((c) => c.pk > 0)) noPk++;
+    const idx = db.pragma(`index_list(${q(t.name)})`) as Array<{ name: string; unique: number; origin: string }>;
+    unique += idx.filter((i) => i.unique === 1 && i.origin !== "pk").length;
+    const leading = new Set(
+      idx.map((i) => (db.pragma(`index_info(${q(i.name)})`) as Array<{ seqno: number; name: string }>).find((c) => c.seqno === 0)?.name),
+    );
+    const fk = db.pragma(`foreign_key_list(${q(t.name)})`) as Array<{ id: number; seq: number; from: string }>;
+    const first = fk.filter((f) => f.seq === 0);
+    fks += first.length;
+    fksNoIndex += first.filter((f) => !leading.has(f.from)).length;
+    checks += ((t.sql ?? "").match(/\bCHECK\s*\(/gi) ?? []).length;
+  }
+  const integrity = checkIntegrity(db, now);
+  const drill = getLastDrill(db);
+  const drillOk = backupMode() === "on" && !!drill?.ok;
+  return {
+    version: 1,
+    engine: "sqlite",
+    checkedAt: now.toISOString(),
+    tables: tables.length,
+    tablesWithoutPrimaryKey: noPk,
+    foreignKeys: fks,
+    foreignKeysWithoutIndex: fksNoIndex,
+    orphanRows: integrity.brokenLinks >= 0 ? integrity.brokenLinks : null,
+    uniqueConstraints: unique,
+    checkConstraints: checks,
+    pendingMigrations: Math.max(0, integrity.expectedSchemaVersion - integrity.schemaVersion),
+    lastBackupAt: drillOk ? drill!.at : null,
+    lastRestoreTestAt: drillOk ? drill!.at : null,
+    integrityOk: integrity.ok,
+  };
+}
+
+/** Scores Secval's own database and logs it like any other check. */
+export function checkSelfDatabase(db: DB, now: () => Date = () => new Date()): DbCheck {
+  const { score, rules } = scoreDbReport(selfDbReport(db, now()), now());
+  const check: DbCheck = { host: SELF_HOST, ts: now().toISOString(), ok: true, score, rules, error: null };
+  db.prepare(`INSERT INTO db_checks (host, ts, ok, score, rules_json, error) VALUES (?, ?, ?, ?, ?, ?)`).run(
+    check.host, check.ts, 1, check.score, JSON.stringify(check.rules), null,
+  );
+  return check;
 }

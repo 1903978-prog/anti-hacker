@@ -33,6 +33,10 @@ The report is counts and yes/no answers only. **Never send row data, table names
 
 `orphanRows`, `pendingMigrations`, `lastBackupAt`, `lastRestoreTestAt` and `integrityOk` may be `null` when the app cannot tell. A `null` scores 0 on its rule and the dashboard says "not reported". Never guess a value.
 
+## Secval itself
+
+Secval scores its own SQLite database directly every hour (no network): catalogue counts, `PRAGMA integrity_check` and `foreign_key_check`, applied migrations, and the daily restore drill for the backup and restore rules (only when backups are on and the last drill passed). Without a passing drill those two rules score 0.
+
 ## The ten rules (10 points each)
 
 | Rule | Full points when |
