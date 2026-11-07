@@ -6,7 +6,7 @@ Owner rules (Livio, 07 Nov 2026): each app's own session writes its code; Secval
 |---|---|---|---|---|
 | Secval | Secval thread | anti-hacker #48 | merged 52fd0dc, live (`/health/store` schemaVersion 5, 01:47 UTC) | VERIFIED |
 | compplan | compplan thread | #699 (merged a9d26f7), #700 (draft) | production = 79e4bb7 per #700; master blocked by Release gate | PARTIAL, see A-CP-700 |
-| Nexus | Nexus thread | nexus-eendigo #206 | owner reports live 36814df (01:55 UTC) | UNVERIFIED (not checked by Secval) |
+| Nexus | Nexus thread | nexus-eendigo #206 | live 36814df (`/api/version`, checked by Secval 03:05 UTC) | VERIFIED (deploy only; db-health off until secrets) |
 | lm-op-model | lm-op-model thread | #841 | owner waiting to release after #48 | UNVERIFIED |
 | 10bonds | 10bonds thread | #496 | owner waiting to release after #48 | UNVERIFIED |
 
