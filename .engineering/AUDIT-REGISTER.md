@@ -55,3 +55,4 @@ A declaration above 30% of the tables, or above the cap, is a "concerns" finding
 Updates:
 - 10bonds #497 (draft): 30 of 63 tables linked, 34 foreign keys, measured by the 10bonds thread, not independently verified. The release also repairs orphan rows in production, so it needs Livio's explicit release approval.
 - lm-op-model #845 (d969ad4b): proposal only, no keys added. 63 of 190 tables if every candidate passes. The bond_master child keys are blocked until the delete behaviour is decided.
+- 10bonds #497 (15:55): reports `standaloneTables` = 28 (lib/dbLinks.ts STANDALONE_TABLES, counted at run time, FK-free only). 5 code-linked tables not excused. Claimed 30/35 = 86%, 9/10. 28/63 = 44% declared, so "concerns" until the auditor samples the list. Measured by the 10bonds thread, UNVERIFIED.
