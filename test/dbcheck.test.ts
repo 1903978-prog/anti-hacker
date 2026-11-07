@@ -57,6 +57,8 @@ describe("database structure rules", () => {
     // tablesInLinks wins when reported
     expect(fk({ ...good, tables: 193, foreignKeys: 52, tablesInLinks: 96 }).points).toBe(5);
     expect(fk({ ...good, tables: 193, foreignKeys: 52, tablesInLinks: 96 }).note).toContain("96 of 193 tables linked (50%)");
+    // null (app could not count) falls back like a missing field
+    expect(fk({ ...good, tables: 160, foreignKeys: 126, tablesInLinks: null }).points).toBe(8);
     // One table: nothing to link
     expect(fkCoverage({ ...good, tables: 1, foreignKeys: 0, tablesInLinks: undefined })).toBe(1);
     // One foreign key in a 2-table database is full coverage

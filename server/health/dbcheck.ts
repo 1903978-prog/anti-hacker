@@ -31,7 +31,7 @@ export const dbReportSchema = z.object({
   foreignKeys: count,
   foreignKeysWithoutIndex: count,
   /** Optional: tables taking part in at least one foreign key (as child or parent). */
-  tablesInLinks: count.optional(),
+  tablesInLinks: count.nullish(),
   orphanRows: count.nullable(),
   uniqueConstraints: count,
   checkConstraints: count,
@@ -60,14 +60,14 @@ const DAY = 24 * HOUR;
  */
 export function fkCoverage(r: DbReport): number {
   if (r.tables <= 1) return 1;
-  if (r.tablesInLinks !== undefined) return Math.min(1, r.tablesInLinks / r.tables);
+  if (r.tablesInLinks != null) return Math.min(1, r.tablesInLinks / r.tables);
   return Math.min(1, r.foreignKeys / (r.tables - 1));
 }
 
 function fkNote(r: DbReport): string {
   const pct = Math.round(100 * fkCoverage(r));
   if (r.tables <= 1) return `${r.foreignKeys} foreign keys, only one table`;
-  return r.tablesInLinks !== undefined
+  return r.tablesInLinks != null
     ? `${r.foreignKeys} foreign keys; ${r.tablesInLinks} of ${r.tables} tables linked (${pct}%)`
     : `${r.foreignKeys} foreign keys for ${r.tables} tables (${pct}% of the ${r.tables - 1} links a connected schema needs)`;
 }

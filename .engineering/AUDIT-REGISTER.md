@@ -36,7 +36,7 @@ Expected impact of the rule from Livio's figures (projections; real scores are U
 | A-DB-02 | lm-op-model | 52 FKs for 193 tables; `bonds_pre_master`, `ingredients_backup_20260824` have no PK (ownership review first, no change before it) | about 3/10, PK 10/10 rounded | lm-op-model thread |
 | A-DB-03 | Nexus | 126 FKs for 160 tables | about 8/10 | Nexus thread |
 | A-DB-04 | 10bonds | Corrected 07 Nov 15:48 (10bonds thread, measured on a fresh Postgres, not yet independently verified): 63 tables, 29 FKs, 22 tables linked. Livio's figure of 1 table is wrong. | 22/63 = 35% gives 3/10 (without the field, 29/62 gives 5/10); verdict CONCERNS | 10bonds thread |
-| A-DB-05 | all four | must report `tablesInLinks` | n/a | each app thread; 10bonds draft PR #497 (not merged) |
+| A-DB-05 | all four | must report `tablesInLinks` | n/a | each app thread; 10bonds draft PR #497, lm-op-model draft PR #845 commit 47ef2417 (reviewed 07 Nov: matches the reference SQL; local DB 47/190; live UNVERIFIED) |
 | A-DB-06 | compplan, lm-op-model, Nexus | Neon point-in-time history only 6 h (10bonds 24 h) | not scored; recovery-window risk | Livio decision (Neon plan) |
 | A-DB-07 | compplan | PR #700 merged, Render auto-deploy off: DB changes not proven live | n/a | compplan thread + Livio release |
 
