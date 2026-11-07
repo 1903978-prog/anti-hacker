@@ -32,7 +32,7 @@ The report is counts and yes/no answers only. **Never send row data, table names
 }
 ```
 
-`tablesInLinks` (optional, recommended) is the number of tables that take part in at least one foreign key, as child or parent. `orphanRows`, `pendingMigrations`, `lastBackupAt`, `lastRestoreTestAt` and `integrityOk` may be `null` when the app cannot tell. A `null` scores 0 on its rule and the dashboard says "not reported". Never guess a value.
+`tablesInLinks` (optional, recommended) is the number of tables that take part in at least one foreign key, as child or parent. `standaloneTables` (optional, only used with `tablesInLinks`) is the number of tables that are standalone by nature (cache, settings, log, reference list) and have no foreign key. Each one must be listed with its reason in the app's own repository, where the auditor reviews it. They are taken out of the denominator, at most half of all tables; a declaration above 30% of the tables, or above the cap, is a concern in the integrity assessment. `orphanRows`, `pendingMigrations`, `lastBackupAt`, `lastRestoreTestAt` and `integrityOk` may be `null` when the app cannot tell. A `null` scores 0 on its rule and the dashboard says "not reported". Never guess a value.
 
 ## Secval itself
 
@@ -43,7 +43,7 @@ Secval scores its own SQLite database directly every hour (no network): catalogu
 | Rule | Full points when |
 |---|---|
 | Every table has a primary key | share of tables with one (rounded) |
-| Links between tables are enforced | share of tables in at least one foreign key (`tablesInLinks / tables`); without `tablesInLinks`, foreign keys against the `tables - 1` links a connected schema needs; one table = full points. Changed 07 Nov 2026: a single foreign key no longer earns full points |
+| Links between tables are enforced | share of tables in at least one foreign key (`tablesInLinks / (tables - excused standalone tables)`); without `tablesInLinks`, foreign keys against the `tables - 1` links a connected schema needs; one table = full points. Changed 07 Nov 2026: a single foreign key no longer earns full points |
 | Linked columns are indexed | share of foreign keys whose columns lead an index |
 | No broken links | `orphanRows` is 0 |
 | Duplicates blocked | at least one UNIQUE constraint |

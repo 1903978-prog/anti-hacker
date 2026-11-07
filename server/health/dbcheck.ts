@@ -32,6 +32,13 @@ export const dbReportSchema = z.object({
   foreignKeysWithoutIndex: count,
   /** Optional: tables taking part in at least one foreign key (as child or parent). */
   tablesInLinks: count.nullish(),
+  /**
+   * Optional: tables the app declares standalone by nature (cache, settings,
+   * log, reference list) and that have no foreign key. Each must be listed
+   * with a reason in the app's own repository. At most half the tables are
+   * excused; only counted together with tablesInLinks.
+   */
+  standaloneTables: count.nullish(),
   orphanRows: count.nullable(),
   uniqueConstraints: count,
   checkConstraints: count,
@@ -60,16 +67,30 @@ const DAY = 24 * HOUR;
  */
 export function fkCoverage(r: DbReport): number {
   if (r.tables <= 1) return 1;
-  if (r.tablesInLinks != null) return Math.min(1, r.tablesInLinks / r.tables);
+  if (r.tablesInLinks != null) {
+    const base = r.tables - excusedStandalone(r);
+    return base <= 0 ? 1 : Math.min(1, r.tablesInLinks / base);
+  }
   return Math.min(1, r.foreignKeys / (r.tables - 1));
+}
+
+/** Declared standalone tables that are excused: never linked ones, at most half of all tables. */
+export function excusedStandalone(r: DbReport): number {
+  if (r.tablesInLinks == null || r.standaloneTables == null) return 0;
+  return Math.min(r.standaloneTables, r.tables - r.tablesInLinks, Math.floor(r.tables / 2));
 }
 
 function fkNote(r: DbReport): string {
   const pct = Math.round(100 * fkCoverage(r));
   if (r.tables <= 1) return `${r.foreignKeys} foreign keys, only one table`;
-  return r.tablesInLinks != null
-    ? `${r.foreignKeys} foreign keys; ${r.tablesInLinks} of ${r.tables} tables linked (${pct}%)`
-    : `${r.foreignKeys} foreign keys for ${r.tables} tables (${pct}% of the ${r.tables - 1} links a connected schema needs)`;
+  if (r.tablesInLinks == null) {
+    return `${r.foreignKeys} foreign keys for ${r.tables} tables (${pct}% of the ${r.tables - 1} links a connected schema needs)`;
+  }
+  const ex = excusedStandalone(r);
+  const capped = r.standaloneTables != null && ex < r.standaloneTables ? `, ${r.standaloneTables} declared, capped` : "";
+  return ex > 0
+    ? `${r.foreignKeys} foreign keys; ${r.tablesInLinks} of ${r.tables - ex} tables linked (${pct}%), ${ex} standalone tables excused${capped}`
+    : `${r.foreignKeys} foreign keys; ${r.tablesInLinks} of ${r.tables} tables linked (${pct}%)`;
 }
 
 export type IntegrityVerdict = "sound" | "concerns" | "critical";
@@ -96,6 +117,9 @@ export function assessIntegrity(r: DbReport, now: Date = new Date()): IntegrityA
   const restoreAge = age(r.lastRestoreTestAt);
   if (restoreAge === null || restoreAge > 35 * DAY) critical.push(r.lastRestoreTestAt ? `Last restore test ${r.lastRestoreTestAt}, older than 35 days.` : "No restore test reported.");
   const cov = fkCoverage(r);
+  const ex = excusedStandalone(r);
+  if (ex > 0.3 * r.tables) concerns.push(`${ex} of ${r.tables} tables declared standalone: the list must be reviewed.`);
+  if (r.standaloneTables != null && ex < r.standaloneTables) concerns.push(`${r.standaloneTables} tables declared standalone, only ${ex} excused (linked or over half the tables).`);
   if (cov < 0.5) concerns.push(`Only ${Math.round(100 * cov)}% foreign-key coverage (${r.foreignKeys} foreign keys, ${r.tables} tables).`);
   if (r.tablesWithoutPrimaryKey > 0) concerns.push(`${r.tablesWithoutPrimaryKey} tables without a primary key.`);
   if (r.checkConstraints === 0 && r.tables > 1) concerns.push("No CHECK rules.");

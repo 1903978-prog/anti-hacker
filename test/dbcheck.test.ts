@@ -59,6 +59,12 @@ describe("database structure rules", () => {
     expect(fk({ ...good, tables: 193, foreignKeys: 52, tablesInLinks: 96 }).note).toContain("96 of 193 tables linked (50%)");
     // null (app could not count) falls back like a missing field
     expect(fk({ ...good, tables: 160, foreignKeys: 126, tablesInLinks: null }).points).toBe(8);
+    // Declared standalone tables are excused, at most half of all tables
+    expect(fk({ ...good, tables: 190, foreignKeys: 60, tablesInLinks: 63, standaloneTables: 100 }).points).toBe(7); // capped at 95 -> 63/95
+    expect(fk({ ...good, tables: 190, foreignKeys: 60, tablesInLinks: 63, standaloneTables: 60 }).points).toBe(5); // 63/130
+    expect(fk({ ...good, tables: 190, foreignKeys: 60, tablesInLinks: 63, standaloneTables: 60 }).note).toContain("60 standalone tables excused");
+    // standalone without tablesInLinks is ignored
+    expect(fk({ ...good, tables: 160, foreignKeys: 126, tablesInLinks: undefined, standaloneTables: 50 }).points).toBe(8);
     // One table: nothing to link
     expect(fkCoverage({ ...good, tables: 1, foreignKeys: 0, tablesInLinks: undefined })).toBe(1);
     // One foreign key in a 2-table database is full coverage
@@ -87,6 +93,12 @@ describe("integrity assessment (separate from the score)", () => {
     expect(a.verdict).toBe("concerns");
     expect(a.findings.join(" ")).toContain("Only 1% foreign-key coverage");
     expect(a.findings.join(" ")).toContain("Integrity check not reported");
+  });
+  it("a large or over-cap standalone declaration is a concern to review", () => {
+    const a = assessIntegrity({ ...good, tables: 190, tablesInLinks: 63, standaloneTables: 100 }, NOW);
+    expect(a.verdict).toBe("concerns");
+    expect(a.findings.join(" ")).toContain("95 of 190 tables declared standalone");
+    expect(a.findings.join(" ")).toContain("100 tables declared standalone, only 95 excused");
   });
   it("is stored with the check and shown on the dashboard", async () => {
     const db = freshDb();

@@ -41,3 +41,17 @@ Expected impact of the rule from Livio's figures (projections; real scores are U
 | A-DB-07 | compplan | PR #700 merged, Render auto-deploy off: DB changes not proven live | n/a | compplan thread + Livio release |
 
 Status of every row: OPEN. Measured scores and the ten rule results per app go here once the check runs.
+
+### Auditor decision AD-01 (07 Nov 2026, 15:55 UTC): do standalone tables count against the foreign-key rule?
+
+Asked by the lm-op-model thread. Decision: **partly**. Tables that are standalone by nature (cache, settings, log, reference list) are taken out of the denominator, but only if all of these hold:
+1. The app reports them in `standaloneTables`, next to `tablesInLinks`.
+2. Each one is listed with its reason in the app's own repository (for example 10bonds `lib/dbLinks.ts`, the lm-op-model FK-COVERAGE-PROPOSAL, the compplan `server/dataQuality/registry.ts`). The auditor reviews that list by sample.
+3. None of them has a foreign key.
+4. At most half of all tables are excused.
+
+A declaration above 30% of the tables, or above the cap, is a "concerns" finding in the integrity assessment. No artificial keys may be added just to cross a bar. Implemented in Secval draft PR #50 (see the commit after 87af6ce).
+
+Updates:
+- 10bonds #497 (draft): 30 of 63 tables linked, 34 foreign keys, measured by the 10bonds thread, not independently verified. The release also repairs orphan rows in production, so it needs Livio's explicit release approval.
+- lm-op-model #845 (d969ad4b): proposal only, no keys added. 63 of 190 tables if every candidate passes. The bond_master child keys are blocked until the delete behaviour is decided.
