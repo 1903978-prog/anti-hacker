@@ -143,6 +143,7 @@ describe("lenovo live question test", () => {
     const q = (s: number) => askApp("compplan", ENV, { fetch: selftest({ status: s }) });
     expect((await q(404)).reason).toContain("not deployed");
     expect((await q(403)).status).toBe("fail");
+    expect((await q(401)).reason).toContain("token differs"); // compplan answers 401 since 07 Nov 2026 (compplan#705 F3)
     expect((await askApp("compplan", {}, { fetch: selftest() })).status).toBe("not-measured");
   });
 
