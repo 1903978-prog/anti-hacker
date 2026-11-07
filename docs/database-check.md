@@ -21,6 +21,7 @@ The report is counts and yes/no answers only. **Never send row data, table names
   "tablesWithoutPrimaryKey": 0,
   "foreignKeys": 30,
   "foreignKeysWithoutIndex": 0,
+  "tablesInLinks": 38,
   "orphanRows": 0,
   "uniqueConstraints": 12,
   "checkConstraints": 5,
@@ -31,7 +32,7 @@ The report is counts and yes/no answers only. **Never send row data, table names
 }
 ```
 
-`orphanRows`, `pendingMigrations`, `lastBackupAt`, `lastRestoreTestAt` and `integrityOk` may be `null` when the app cannot tell. A `null` scores 0 on its rule and the dashboard says "not reported". Never guess a value.
+`tablesInLinks` (optional, recommended) is the number of tables that take part in at least one foreign key, as child or parent. `orphanRows`, `pendingMigrations`, `lastBackupAt`, `lastRestoreTestAt` and `integrityOk` may be `null` when the app cannot tell. A `null` scores 0 on its rule and the dashboard says "not reported". Never guess a value.
 
 ## Secval itself
 
@@ -42,7 +43,7 @@ Secval scores its own SQLite database directly every hour (no network): catalogu
 | Rule | Full points when |
 |---|---|
 | Every table has a primary key | share of tables with one (rounded) |
-| Links between tables are enforced | at least one foreign key (or only one table) |
+| Links between tables are enforced | share of tables in at least one foreign key (`tablesInLinks / tables`); without `tablesInLinks`, foreign keys against the `tables - 1` links a connected schema needs; one table = full points. Changed 07 Nov 2026: a single foreign key no longer earns full points |
 | Linked columns are indexed | share of foreign keys whose columns lead an index |
 | No broken links | `orphanRows` is 0 |
 | Duplicates blocked | at least one UNIQUE constraint |
@@ -51,6 +52,16 @@ Secval scores its own SQLite database directly every hour (no network): catalogu
 | Backup | `lastBackupAt` within 26 hours |
 | Restore tested | `lastRestoreTestAt` within 35 days |
 | Integrity | `integrityOk` is true |
+
+## Integrity assessment (separate from the score)
+
+Next to the score, every check stores a verdict that is never averaged into the number, so a high score cannot hide a defect that blocks "done":
+
+- **Critical:** integrity check failed, orphan rows, no backup within 26 hours, no restore test within 35 days.
+- **Concerns:** foreign-key coverage under 50%, tables without a primary key, no CHECK rules, pending migrations, integrity or orphan rows not reported.
+- **Sound:** none of the above.
+
+The dashboard evidence shows it as "Integrity assessment (separate from the score): CRITICAL / CONCERNS / SOUND" with the findings. An app is ready only with a high score **and** a sound assessment.
 
 A failed answer (timeout, bad JSON, wrong shape) is logged and gives no number. A check older than 3 days no longer counts. When the app also sends data quality checks (`docs/data-quality.md`), the column shows the average of both.
 
@@ -71,6 +82,15 @@ SELECT c.contype, count(*) FROM pg_constraint c
 JOIN pg_namespace n ON n.oid = c.connamespace
 WHERE n.nspname = ANY($schemas) AND c.contype IN ('f','u','c')
 GROUP BY c.contype;
+
+-- tables taking part in at least one foreign key (child or parent): tablesInLinks
+SELECT count(DISTINCT rel) FROM (
+  SELECT c.conrelid AS rel FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
+  WHERE c.contype = 'f' AND n.nspname = ANY($schemas)
+  UNION
+  SELECT c.confrelid FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
+  WHERE c.contype = 'f' AND n.nspname = ANY($schemas)
+) x;
 
 -- foreign keys whose columns do not lead any index
 SELECT count(*) FROM pg_constraint c

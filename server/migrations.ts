@@ -129,6 +129,13 @@ export const MIGRATIONS: Migration[] = [
       BEGIN SELECT RAISE(ABORT, 'db_checks is append-only'); END;
     `,
   },
+  {
+    // Integrity assessment shown next to the database score (verdict and
+    // findings text only). Older rows keep NULL: they were never assessed.
+    version: 6,
+    name: "database integrity assessment",
+    sql: `ALTER TABLE db_checks ADD COLUMN integrity_json TEXT;`,
+  },
 ];
 
 /** Applies every migration the database has not seen yet; returns their versions. */

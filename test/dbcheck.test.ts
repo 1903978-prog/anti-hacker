@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { freshDb } from "./helpers.js";
 import { createChallenge, verifyOwnership } from "../server/ownership/proof.js";
 import { engage } from "../server/governance/killswitch.js";
-import { checkDatabase, checkSelfDatabase, latestDbCheck, scoreDbReport, selfDbReport, SELF_HOST, type DbReport, type JsonFetch } from "../server/health/dbcheck.js";
+import { assessIntegrity, checkDatabase, checkSelfDatabase, fkCoverage, latestDbCheck, scoreDbReport, selfDbReport, SELF_HOST, type DbReport, type JsonFetch } from "../server/health/dbcheck.js";
 import { dashboard } from "../server/health/score.js";
 
 const HOST = "compplan.onrender.com";
@@ -21,6 +21,7 @@ const good: DbReport = {
   tablesWithoutPrimaryKey: 0,
   foreignKeys: 30,
   foreignKeysWithoutIndex: 0,
+  tablesInLinks: 40,
   orphanRows: 0,
   uniqueConstraints: 12,
   checkConstraints: 5,
@@ -45,8 +46,53 @@ describe("database structure rules", () => {
     expect(r.score).toBe(64);
     expect(r.rules.find((x) => x.rule.startsWith("Restore"))!.note).toBe("not reported");
   });
+  it("a few foreign keys across many tables no longer earn full points (07 Nov 2026)", () => {
+    const fk = (r: DbReport) => scoreDbReport(r, NOW).rules.find((x) => x.rule.startsWith("Links"))!;
+    // ATLAS-like: 407 tables, 3 foreign keys, no tablesInLinks reported -> 3 of 406 links -> 0 points
+    const atlas = { ...good, tables: 407, foreignKeys: 3, tablesInLinks: undefined };
+    expect(fk(atlas).points).toBe(0);
+    expect(fk(atlas).note).toContain("3 foreign keys for 407 tables");
+    // Nexus-like: 160 tables, 126 foreign keys -> 79% -> 8 points
+    expect(fk({ ...good, tables: 160, foreignKeys: 126, tablesInLinks: undefined }).points).toBe(8);
+    // tablesInLinks wins when reported
+    expect(fk({ ...good, tables: 193, foreignKeys: 52, tablesInLinks: 96 }).points).toBe(5);
+    expect(fk({ ...good, tables: 193, foreignKeys: 52, tablesInLinks: 96 }).note).toContain("96 of 193 tables linked (50%)");
+    // One table: nothing to link
+    expect(fkCoverage({ ...good, tables: 1, foreignKeys: 0, tablesInLinks: undefined })).toBe(1);
+    // One foreign key in a 2-table database is full coverage
+    expect(fk({ ...good, tables: 2, foreignKeys: 1, tablesInLinks: undefined }).points).toBe(10);
+  });
   it("an old backup scores 0 on its rule", () => {
     expect(scoreDbReport({ ...good, lastBackupAt: "2026-11-04T00:00:00Z" }, NOW).score).toBe(90);
+  });
+});
+
+describe("integrity assessment (separate from the score)", () => {
+  it("a well-kept database is sound", () => {
+    expect(assessIntegrity(good, NOW)).toEqual({ verdict: "sound", findings: [] });
+  });
+  it("broken data or no proven recovery is critical, even with a high score", () => {
+    const r = { ...good, orphanRows: 2 };
+    expect(scoreDbReport(r, NOW).score).toBe(90);
+    const a = assessIntegrity(r, NOW);
+    expect(a.verdict).toBe("critical");
+    expect(a.findings[0]).toContain("2 orphan rows");
+    expect(assessIntegrity({ ...good, lastRestoreTestAt: null }, NOW).verdict).toBe("critical");
+    expect(assessIntegrity({ ...good, integrityOk: false }, NOW).verdict).toBe("critical");
+  });
+  it("low link coverage, missing keys or unreported facts are concerns", () => {
+    const a = assessIntegrity({ ...good, tables: 407, foreignKeys: 3, tablesInLinks: undefined, integrityOk: null }, NOW);
+    expect(a.verdict).toBe("concerns");
+    expect(a.findings.join(" ")).toContain("Only 1% foreign-key coverage");
+    expect(a.findings.join(" ")).toContain("Integrity check not reported");
+  });
+  it("is stored with the check and shown on the dashboard", async () => {
+    const db = freshDb();
+    await prove(db, HOST);
+    await checkDatabase(db, HOST, "tok", answer({ ...good, orphanRows: 1 }), () => NOW);
+    expect(latestDbCheck(db, HOST)!.integrity!.verdict).toBe("critical");
+    const area = dashboard(db, NOW).find((a) => a.host === HOST)!.areas.find((a) => a.key === "database")!;
+    expect(area.measured!.evidence.join(" ")).toContain("Integrity assessment (separate from the score): CRITICAL");
   });
 });
 
@@ -121,12 +167,14 @@ describe("secval's own database", () => {
     expect(r.checkConstraints).toBeGreaterThan(0);
     // No backup running in tests: backup and restore are not reported, never guessed.
     expect(r.lastBackupAt).toBeNull();
-    expect(scoreDbReport(r, NOW).score).toBe(80);
+    // 5 of 13 tables take part in a foreign key since the 07 Nov 2026 coverage rule: 4/10 on links.
+    expect(r.tablesInLinks).toBe(5);
+    expect(scoreDbReport(r, NOW).score).toBe(74);
   });
   it("shows as measured on the dashboard", () => {
     const db = freshDb();
     checkSelfDatabase(db, () => NOW);
     const area = dashboard(db, NOW).find((a) => a.host === SELF_HOST)!.areas.find((a) => a.key === "database")!;
-    expect(area.measured).toMatchObject({ score: 80, source: "measured" });
+    expect(area.measured).toMatchObject({ score: 74, source: "measured" });
   });
 });

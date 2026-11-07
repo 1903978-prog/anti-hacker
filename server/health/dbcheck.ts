@@ -30,6 +30,8 @@ export const dbReportSchema = z.object({
   tablesWithoutPrimaryKey: count,
   foreignKeys: count,
   foreignKeysWithoutIndex: count,
+  /** Optional: tables taking part in at least one foreign key (as child or parent). */
+  tablesInLinks: count.optional(),
   orphanRows: count.nullable(),
   uniqueConstraints: count,
   checkConstraints: count,
@@ -49,6 +51,58 @@ export interface RuleResult {
 const HOUR = 60 * 60_000;
 const DAY = 24 * HOUR;
 
+/**
+ * How much of the database is held together by enforced links, 0 to 1.
+ * With `tablesInLinks`: the share of tables in at least one foreign key.
+ * Without it: foreign keys against the tables - 1 links a connected schema
+ * needs at minimum. A few foreign keys across many tables is not coverage
+ * (07 Nov 2026: one foreign key used to earn full points).
+ */
+export function fkCoverage(r: DbReport): number {
+  if (r.tables <= 1) return 1;
+  if (r.tablesInLinks !== undefined) return Math.min(1, r.tablesInLinks / r.tables);
+  return Math.min(1, r.foreignKeys / (r.tables - 1));
+}
+
+function fkNote(r: DbReport): string {
+  const pct = Math.round(100 * fkCoverage(r));
+  if (r.tables <= 1) return `${r.foreignKeys} foreign keys, only one table`;
+  return r.tablesInLinks !== undefined
+    ? `${r.foreignKeys} foreign keys; ${r.tablesInLinks} of ${r.tables} tables linked (${pct}%)`
+    : `${r.foreignKeys} foreign keys for ${r.tables} tables (${pct}% of the ${r.tables - 1} links a connected schema needs)`;
+}
+
+export type IntegrityVerdict = "sound" | "concerns" | "critical";
+export interface IntegrityAssessment {
+  verdict: IntegrityVerdict;
+  findings: string[];
+}
+
+/**
+ * A separate integrity assessment, shown next to the score and never folded
+ * into it: a database can reach a high score and still have a defect that
+ * blocks "done". Critical = broken data or no proven recovery.
+ */
+export function assessIntegrity(r: DbReport, now: Date = new Date()): IntegrityAssessment {
+  const critical: string[] = [];
+  const concerns: string[] = [];
+  const age = (iso: string | null) => (iso ? now.getTime() - Date.parse(iso) : null);
+  if (r.integrityOk === false) critical.push("Integrity check failed.");
+  if (r.integrityOk === null) concerns.push("Integrity check not reported.");
+  if (r.orphanRows !== null && r.orphanRows > 0) critical.push(`${r.orphanRows} orphan rows (links pointing at nothing).`);
+  if (r.orphanRows === null) concerns.push("Orphan rows not reported.");
+  const backupAge = age(r.lastBackupAt);
+  if (backupAge === null || backupAge > 26 * HOUR) critical.push(r.lastBackupAt ? `Last backup ${r.lastBackupAt}, older than 26 hours.` : "No backup reported.");
+  const restoreAge = age(r.lastRestoreTestAt);
+  if (restoreAge === null || restoreAge > 35 * DAY) critical.push(r.lastRestoreTestAt ? `Last restore test ${r.lastRestoreTestAt}, older than 35 days.` : "No restore test reported.");
+  const cov = fkCoverage(r);
+  if (cov < 0.5) concerns.push(`Only ${Math.round(100 * cov)}% foreign-key coverage (${r.foreignKeys} foreign keys, ${r.tables} tables).`);
+  if (r.tablesWithoutPrimaryKey > 0) concerns.push(`${r.tablesWithoutPrimaryKey} tables without a primary key.`);
+  if (r.checkConstraints === 0 && r.tables > 1) concerns.push("No CHECK rules.");
+  if (r.pendingMigrations !== null && r.pendingMigrations > 0) concerns.push(`${r.pendingMigrations} pending migrations.`);
+  return { verdict: critical.length ? "critical" : concerns.length ? "concerns" : "sound", findings: [...critical, ...concerns] };
+}
+
 /** Ten rules, 10 points each. Anything the app does not report scores 0 and says so. */
 export function scoreDbReport(r: DbReport, now: Date = new Date()): { score: number; rules: RuleResult[] } {
   const share = (bad: number, total: number) => (total === 0 ? 0 : Math.max(0, 1 - bad / total));
@@ -63,8 +117,8 @@ export function scoreDbReport(r: DbReport, now: Date = new Date()): { score: num
     },
     {
       rule: "Links between tables are enforced (foreign keys)",
-      points: r.foreignKeys > 0 || r.tables <= 1 ? 10 : 0,
-      note: `${r.foreignKeys} foreign keys`,
+      points: Math.round(10 * fkCoverage(r)),
+      note: fkNote(r),
     },
     {
       rule: "Linked columns are indexed",
@@ -117,6 +171,7 @@ export interface DbCheck {
   score: number | null;
   rules: RuleResult[];
   error: string | null;
+  integrity?: IntegrityAssessment | null;
 }
 
 export type JsonFetch = (url: string, init: { headers: Record<string, string>; timeoutMs: number }) => Promise<{ status: number; text: string }>;
@@ -163,13 +218,11 @@ export async function checkDatabase(
     if (age > REPORT_MAX_AGE_MS) throw new Error(`report is stale (checked ${parsed.data.checkedAt})`);
     if (age < -HOUR) throw new Error("report is dated in the future");
     const { score, rules } = scoreDbReport(parsed.data, now());
-    check = { host, ts: parsed.data.checkedAt, ok: true, score, rules, error: null };
+    check = { host, ts: parsed.data.checkedAt, ok: true, score, rules, error: null, integrity: assessIntegrity(parsed.data, now()) };
   } catch (err) {
-    check = { host, ts: now().toISOString(), ok: false, score: null, rules: [], error: (err as Error).message.slice(0, 200) };
+    check = { host, ts: now().toISOString(), ok: false, score: null, rules: [], error: (err as Error).message.slice(0, 200), integrity: null };
   }
-  db.prepare(`INSERT INTO db_checks (host, ts, ok, score, rules_json, error) VALUES (?, ?, ?, ?, ?, ?)`).run(
-    check.host, check.ts, check.ok ? 1 : 0, check.score, JSON.stringify(check.rules), check.error,
-  );
+  saveCheck(db, check);
   return check;
 }
 
@@ -182,13 +235,22 @@ export async function checkAllDatabases(db: DB, token?: string, fetcher?: JsonFe
   return out;
 }
 
+function saveCheck(db: DB, c: DbCheck): void {
+  db.prepare(`INSERT INTO db_checks (host, ts, ok, score, rules_json, error, integrity_json) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+    c.host, c.ts, c.ok ? 1 : 0, c.score, JSON.stringify(c.rules), c.error, c.integrity ? JSON.stringify(c.integrity) : null,
+  );
+}
+
 /** The newest database check of a host, if any. */
 export function latestDbCheck(db: DB, host: string): DbCheck | null {
   const r = db.prepare(`SELECT * FROM db_checks WHERE host = ? ORDER BY id DESC LIMIT 1`).get(host) as
-    | { host: string; ts: string; ok: number; score: number | null; rules_json: string; error: string | null }
+    | { host: string; ts: string; ok: number; score: number | null; rules_json: string; error: string | null; integrity_json: string | null }
     | undefined;
   if (!r) return null;
-  return { host: r.host, ts: r.ts, ok: r.ok === 1, score: r.score, rules: JSON.parse(r.rules_json) as RuleResult[], error: r.error };
+  return {
+    host: r.host, ts: r.ts, ok: r.ok === 1, score: r.score, rules: JSON.parse(r.rules_json) as RuleResult[], error: r.error,
+    integrity: r.integrity_json ? (JSON.parse(r.integrity_json) as IntegrityAssessment) : null,
+  };
 }
 
 export function startDbChecker(db: DB): () => void {
@@ -218,6 +280,7 @@ export function selfDbReport(db: DB, now: Date = new Date()): DbReport {
   let noPk = 0;
   let fks = 0;
   let fksNoIndex = 0;
+  const linked = new Set<string>();
   let unique = 0;
   let checks = 0;
   for (const t of tables) {
@@ -229,8 +292,10 @@ export function selfDbReport(db: DB, now: Date = new Date()): DbReport {
     const leading = new Set(
       idx.map((i) => (db.pragma(`index_info(${q(i.name)})`) as Array<{ seqno: number; name: string }>).find((c) => c.seqno === 0)?.name),
     );
-    const fk = db.pragma(`foreign_key_list(${q(t.name)})`) as Array<{ id: number; seq: number; from: string }>;
+    const fk = db.pragma(`foreign_key_list(${q(t.name)})`) as Array<{ id: number; seq: number; from: string; table: string }>;
     const first = fk.filter((f) => f.seq === 0);
+    if (first.length) linked.add(t.name);
+    for (const f of first) linked.add(f.table);
     fks += first.length;
     fksNoIndex += first.filter((f) => !leading.has(f.from)).length;
     checks += ((t.sql ?? "").match(/\bCHECK\s*\(/gi) ?? []).length;
@@ -246,6 +311,7 @@ export function selfDbReport(db: DB, now: Date = new Date()): DbReport {
     tablesWithoutPrimaryKey: noPk,
     foreignKeys: fks,
     foreignKeysWithoutIndex: fksNoIndex,
+    tablesInLinks: [...linked].filter((n) => tables.some((t) => t.name === n)).length,
     orphanRows: integrity.brokenLinks >= 0 ? integrity.brokenLinks : null,
     uniqueConstraints: unique,
     checkConstraints: checks,
@@ -258,10 +324,9 @@ export function selfDbReport(db: DB, now: Date = new Date()): DbReport {
 
 /** Scores Secval's own database and logs it like any other check. */
 export function checkSelfDatabase(db: DB, now: () => Date = () => new Date()): DbCheck {
-  const { score, rules } = scoreDbReport(selfDbReport(db, now()), now());
-  const check: DbCheck = { host: SELF_HOST, ts: now().toISOString(), ok: true, score, rules, error: null };
-  db.prepare(`INSERT INTO db_checks (host, ts, ok, score, rules_json, error) VALUES (?, ?, ?, ?, ?, ?)`).run(
-    check.host, check.ts, 1, check.score, JSON.stringify(check.rules), null,
-  );
+  const report = selfDbReport(db, now());
+  const { score, rules } = scoreDbReport(report, now());
+  const check: DbCheck = { host: SELF_HOST, ts: now().toISOString(), ok: true, score, rules, error: null, integrity: assessIntegrity(report, now()) };
+  saveCheck(db, check);
   return check;
 }
