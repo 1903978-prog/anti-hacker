@@ -15,9 +15,11 @@ All four apps need Livio's secrets (`/mnt/project-files/secval-release/secrets-t
 ## Findings
 | ID | App | Sev | Finding | Canonical issue | Owner | Status |
 |---|---|---|---|---|---|---|
-| A-CP-700-F1 | compplan | P1 | master a9d26f7 failed the Release gate (NOT APPROVED, run 42326054445); #700's manual-deploy step would bypass it | compplan#705 | compplan thread | OPEN |
-| A-CP-700-F2 | compplan | P2 | no automatic checks on PR #700 (0 check runs) | compplan#705 | compplan thread | OPEN |
-| A-CP-700-F3 | compplan | P2 | routeAuthInventory test red: `post /api/lenovo-selftest` not listed (guarded by header secret) | compplan#705 | compplan thread | OPEN |
+| A-CP-700-F1 | compplan | P1 | master a9d26f7 failed the Release gate (NOT APPROVED, run 42326054445); #700's manual-deploy step would bypass it | compplan#705 | compplan thread | RESOLVED 07 Nov 03:10: #700 body now routes through approval manifest + gate (checked by Secval) |
+| A-CP-700-F2 | compplan | P2 | no automatic checks on PR #700 (0 check runs) | compplan#705 | compplan thread | ADDRESSED: owner evidence doc + reviewer PASS WITH NOTES; Secval re-run agrees (only F3 red). Still 0 GitHub checks |
+| A-CP-700-F3 | compplan | P2 | routeAuthInventory test red: `post /api/lenovo-selftest` not listed (guarded by header secret) | compplan#705 | compplan thread | FIXED on integration 6d6dffb (Secval re-ran: 8/8 pass). NOT in #700 head 7cbeb86, so the release candidate still carries the red test (same as production today) |
 
 Passed for A-CP-700: deal-detail panel preserved (diff identical to 79e4bb7); Secval integration on master (22/22 tests); migration 241 = 2 idempotent NOT VALID CHECKs.
 Evidence log: Secval session re-ran `vitest` on #700 head 7cbeb86: 69 passed, 1 failed (F3), 9 skipped (DB tests need a database).
+
+Secval side: `server/lenovo/check.ts` now treats HTTP 401 like 403 (token differs), because compplan answers 401 since 6d6dffb; regression test in `test/lenovo.test.ts` (fails without the fix).
