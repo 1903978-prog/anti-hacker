@@ -178,10 +178,34 @@ export function sessionRoutes(token: string | undefined, limiter: FailedAuthLimi
  * closed: if no token is configured, every request is refused, so the control
  * plane is never silently left open.
  */
-export function apiAuth(token: string | undefined, limiter?: FailedAuthLimiter) {
+/**
+ * Per-app write-only tokens, from "app=token,app2=token2". Each opens only
+ * POST /api/quality/validate, and only for its own app (checked by the route).
+ */
+export function parseAppTokens(raw: string | undefined): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const part of (raw ?? "").split(",")) {
+    const i = part.indexOf("=");
+    const app = part.slice(0, i).trim().toLowerCase();
+    const tok = part.slice(i + 1).trim();
+    if (i > 0 && app && tok.length >= 24) out.set(app, tok);
+  }
+  return out;
+}
+
+export function apiAuth(token: string | undefined, limiter?: FailedAuthLimiter, appTokens: Map<string, string> = new Map()) {
   const session = token ? sessionValue(token) : "";
   return (req: Request, res: Response, next: NextFunction) => {
     if (req.method === "OPTIONS") return next();
+    const bearer = /^Bearer\s+(.+)$/i.exec(req.get("authorization") ?? "")?.[1]?.trim() ?? "";
+    if (bearer && req.method === "POST" && req.path === "/quality/validate") {
+      for (const [app, t] of appTokens) {
+        if (constantTimeEqual(bearer, t)) {
+          res.locals.qualityApp = app;
+          return next();
+        }
+      }
+    }
     if (!token) {
       return res
         .status(503)

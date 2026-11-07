@@ -270,3 +270,147 @@ describe("compplan dataset specs", () => {
     expect(bad.critical).toBe(true);
   });
 });
+
+describe("Database column on the Health dashboard", () => {
+  it("is measured from the newest data quality check of the app's tables", async () => {
+    const { databaseScore } = await import("../server/health/score.js");
+    const db = freshDb();
+    expect(databaseScore(db, "test.example.com")).toBeNull();
+    const r = validateRefresh(db, sub(), DEFAULT_POLICY, NOW);
+    const s = databaseScore(db, "test.example.com")!;
+    expect(s.source).toBe("measured");
+    expect(s.score).toBe(r.score);
+    expect(s.evidence.join(" ")).toContain("test.people");
+    expect(databaseScore(db, "other.example.com")).toBeNull();
+  });
+  it("gives no number when the only check could not be verified", async () => {
+    const { databaseScore } = await import("../server/health/score.js");
+    const db = freshDb();
+    validateRefresh(db, sub({ sourceReached: false }), DEFAULT_POLICY, NOW);
+    expect(databaseScore(db, "test.example.com")).toBeNull();
+  });
+});
+
+describe("10bonds dataset specs", () => {
+  const bonds = (n = 600) =>
+    Array.from({ length: n }, (_, i) => ({
+      isin: `XS${String(i).padStart(9, "0")}5`, name: `Bond ${i}`, issuer: `Issuer ${i % 50}`, currency: "EUR",
+      coupon: 3, maturity: "2031-06-01", gross_ytm: 3.5, modified_duration: 4.2, years_to_maturity: 4.6,
+      ytm_as_of: "2026-11-05T06:00:00Z", source: "lm-op-model", fetched_at: "2026-11-05T09:59:00Z",
+    }));
+  const tenbonds = (dataset: string, records: Row[], over: Partial<RefreshSubmission> = {}) =>
+    sub({ app: "10bonds", dataset, kind: "sync", records, authoritative: undefined, references: undefined, ...over });
+
+  it("public_bonds: a clean copy scores Good or better on the first run, a broken one fails", async () => {
+    const { getSpec } = await import("../server/quality/datasets/index.js");
+    const spec = getSpec("10bonds.public_bonds")!;
+    const recs = bonds();
+    const first = evaluate(spec, tenbonds(spec.id, recs), null, DEFAULT_POLICY, NOW);
+    expect(first.outcome).toBe("PASS");
+    expect(first.score).toBeGreaterThanOrEqual(95);
+    expect(evaluate(spec, tenbonds(spec.id, recs), buildBaseline(spec, recs), DEFAULT_POLICY, NOW).score).toBe(100);
+    // Duplicate ISIN or a copy that shrank to almost nothing is critical.
+    expect(evaluate(spec, tenbonds(spec.id, [...recs, recs[0]!]), null, DEFAULT_POLICY, NOW).critical).toBe(true);
+    expect(evaluate(spec, tenbonds(spec.id, recs.slice(0, 20)), null, DEFAULT_POLICY, NOW).critical).toBe(true);
+    // Yields 10 days old: freshness drops.
+    const stale = recs.map((r) => ({ ...r, ytm_as_of: "2026-10-26T06:00:00Z" }));
+    expect(evaluate(spec, tenbonds(spec.id, stale), null, DEFAULT_POLICY, NOW).dimensions.find((d) => d.id === "freshness")!.score).toBeLessThan(100);
+  });
+
+  it("best_bonds: checks links and values against the bond copy", async () => {
+    const { getSpec } = await import("../server/quality/datasets/index.js");
+    const spec = getSpec("10bonds.best_bonds")!;
+    const copy = bonds(50);
+    const recs = copy.slice(0, 20).map((b, i) => ({
+      duration: 5, level: (i % 10) + 1, rank: Math.floor(i / 10) + 1, isin: b.isin, gross_ytm: 3.5, modified_duration: 4.2,
+      loss_adjusted_yield: 3.3, as_of: "2026-11-05T06:00:00Z", source: "public.public_bonds",
+    }));
+    const k = (r: Row) => `${r.duration}|${r.level}|${r.isin}`;
+    const authoritative = Object.fromEntries(recs.map((r) => [k(r), { gross_ytm: 3.5, modified_duration: 4.2 }]));
+    const s = tenbonds(spec.id, recs, { kind: "recompute", sourceReached: true, references: { public_bonds: copy.map((b) => b.isin) }, authoritative });
+    const r = evaluate(spec, s, buildBaseline(spec, recs), DEFAULT_POLICY, NOW);
+    expect(r.score).toBe(100);
+    // A ranked bond missing from the copy is a broken link (critical).
+    expect(evaluate(spec, { ...s, references: { public_bonds: [] } }, null, DEFAULT_POLICY, NOW).critical).toBe(true);
+    // A stale cached yield shows as an accuracy mismatch.
+    const wrong = { ...authoritative, [k(recs[0]!)]: { gross_ytm: 9, modified_duration: 4.2 } };
+    expect(evaluate(spec, { ...s, authoritative: wrong }, null, DEFAULT_POLICY, NOW).dimensions.find((d) => d.id === "accuracy")!.score).toBeLessThan(100);
+  });
+});
+
+describe("per-app quality keys", () => {
+  const KEY = "k".repeat(30);
+  const mk = () => createApp(freshDb(), { apiToken: "main-token", qualityTokens: `10bonds=${KEY}, bad=short` });
+  const body = (over: Partial<RefreshSubmission> = {}) => sub({ app: "10bonds", dataset: "10bonds.unknown", ...over });
+
+  it("lets an app send its own data checks and nothing else", async () => {
+    const app = mk();
+    const auth = { authorization: `Bearer ${KEY}` };
+    expect((await request(app).post("/api/quality/validate").set(auth).send(body())).status).toBe(200);
+    // Another app's name: refused.
+    expect((await request(app).post("/api/quality/validate").set(auth).send(body({ app: "compplan" }))).status).toBe(403);
+    // Any other route, reads included: refused.
+    expect((await request(app).get("/api/quality/summary").set(auth)).status).toBe(401);
+    expect((await request(app).get("/api/allowlist").set(auth)).status).toBe(401);
+    // A key shorter than 24 characters is ignored.
+    expect((await request(app).post("/api/quality/validate").set({ authorization: "Bearer short" }).send(body())).status).toBe(401);
+    // The main token still works for everything.
+    expect((await request(app).get("/api/quality/summary").set({ authorization: "Bearer main-token" })).status).toBe(200);
+  });
+});
+
+describe("lm-op-model dataset specs", () => {
+  const quote = (i: number) => ({
+    isin: `DE000A${String(i).padStart(5, "0")}0`, price: 98.5 + (i % 5), price_source: "Börse Frankfurt",
+    price_updated_at: "2026-11-05T08:00:00Z", ytm: 3.1, ytm_source: "Borsa Italiana", low_52: 95, high_52: 101,
+  });
+  const quotes = Array.from({ length: 60 }, (_, i) => quote(i));
+  const catalogue = quotes.map((q) => q.isin);
+
+  it("bond_quotes: a clean price run with a baseline scores 100", async () => {
+    const { getSpec } = await import("../server/quality/datasets/index.js");
+    const spec = getSpec("lm-op-model.bond_quotes")!;
+    const s = sub({ app: "lm-op-model", dataset: "lm-op-model.bond_quotes", records: quotes, references: { bond_catalogue: catalogue }, authoritative: undefined });
+    const r = evaluate(spec, s, buildBaseline(spec, quotes), DEFAULT_POLICY, NOW);
+    expect(r.dimensions.find((d) => d.id === "accuracy")?.state).toBe("not_applicable");
+    expect(r.score).toBe(100);
+    // New prices on every bond are normal in a price run, not a mass overwrite.
+    const moved = quotes.map((q) => ({ ...q, price: q.price + 0.4 }));
+    expect(evaluate(spec, { ...s, records: moved }, buildBaseline(spec, quotes), DEFAULT_POLICY, NOW).score).toBe(100);
+  });
+
+  it("bond_quotes: a price for a bond the app does not know is critical; a yield read as a price is invalid", async () => {
+    const { getSpec } = await import("../server/quality/datasets/index.js");
+    const spec = getSpec("lm-op-model.bond_quotes")!;
+    const s = sub({ app: "lm-op-model", dataset: "lm-op-model.bond_quotes", records: quotes, references: { bond_catalogue: catalogue.slice(1) }, authoritative: undefined });
+    expect(evaluate(spec, s, buildBaseline(spec, quotes), DEFAULT_POLICY, NOW).critical).toBe(true);
+    const bad = quotes.map((q, i) => (i < 6 ? { ...q, price: 450 } : q));
+    const r = evaluate(spec, { ...s, records: bad, references: { bond_catalogue: catalogue } }, buildBaseline(spec, quotes), DEFAULT_POLICY, NOW);
+    expect(r.issues.some((i) => i.code === "invalid_price")).toBe(true);
+    expect(r.score).toBeLessThan(100);
+  });
+
+  it("bond_quotes: prices older than the limit lose freshness", async () => {
+    const { getSpec } = await import("../server/quality/datasets/index.js");
+    const spec = getSpec("lm-op-model.bond_quotes")!;
+    const old = quotes.map((q) => ({ ...q, price_updated_at: "2026-11-02T08:00:00Z" }));
+    const s = sub({ app: "lm-op-model", dataset: "lm-op-model.bond_quotes", records: old, references: { bond_catalogue: catalogue }, authoritative: undefined });
+    const r = evaluate(spec, s, buildBaseline(spec, old), DEFAULT_POLICY, NOW);
+    expect(r.issues.some((i) => i.code === "stale")).toBe(true);
+  });
+
+  it("bond_explorer_bonds: a clean catalogue (recompute, no source) still gets a score", async () => {
+    const { getSpec } = await import("../server/quality/datasets/index.js");
+    const spec = getSpec("lm-op-model.bond_explorer_bonds")!;
+    const cat = Array.from({ length: 120 }, (_, i) => ({
+      isin: `XS${String(i).padStart(9, "0")}1`, name: `Bond ${i}`, currency: "EUR", type: i % 2 ? "corporate" : "government",
+      coupon: 2.5, maturity: "2030-06-01T00:00:00.000Z", issue_date: "2020-06-01T00:00:00.000Z", price: 99, source: "Deutsche Börse import",
+    }));
+    const s = sub({ app: "lm-op-model", dataset: "lm-op-model.bond_explorer_bonds", kind: "recompute", sourceReached: null, records: cat, references: undefined, authoritative: undefined });
+    const r = evaluate(spec, s, buildBaseline(spec, cat), DEFAULT_POLICY, NOW);
+    expect(r.outcome).toBe("PASS");
+    expect(r.score).toBe(100);
+    const dup = evaluate(spec, { ...s, records: [...cat, cat[0]!] }, buildBaseline(spec, cat), DEFAULT_POLICY, NOW);
+    expect(dup.critical).toBe(true);
+  });
+});
