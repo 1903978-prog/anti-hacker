@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { listAllowlist } from "../ownership/allowlist.js";
 import { parseAppTokens } from "../middleware.js";
+import { getLastDrill } from "../backup/drill.js";
 
 type DB = Database.Database;
 
@@ -18,6 +19,8 @@ export interface MeasurementStatus {
   qualityTokenApps: string[];
   databases: Array<{ host: string; lastCheckAt: string | null; outcome: "measured" | "refused" | "stale" | "bad-answer" | "unreachable" | "none" }>;
   quality: Array<{ app: string; lastRunAt: string | null }>;
+  /** Secval's own backup: mode and the last restore drill (time and pass/fail, no detail). */
+  backup: { mode: string; lastDrillAt: string | null; lastDrillOk: boolean | null };
 }
 
 export function outcomeOf(ok: boolean | null, error: string | null): MeasurementStatus["databases"][number]["outcome"] {
@@ -46,5 +49,10 @@ export function measurementStatus(db: DB, env: NodeJS.ProcessEnv = process.env):
     qualityTokenApps: apps,
     databases,
     quality: apps.map((app) => ({ app, lastRunAt: (lastRun.get(app) as { at: string | null }).at })),
+    backup: (() => {
+      const d = getLastDrill(db);
+      const m = env.SECVAL_BACKUP_MODE;
+      return { mode: m === "on" || m === "restore-failed" ? m : "off", lastDrillAt: d?.at ?? null, lastDrillOk: d ? d.ok : null };
+    })(),
   };
 }

@@ -27,7 +27,8 @@ describe("public measurement status (five-app certification P0)", () => {
     const text = JSON.stringify(m);
     expect(text).not.toContain("secret-dbcheck-value");
     expect(text).not.toContain(SECRET);
-    expect(measurementStatus(db, {})).toMatchObject({ commit: null, dbCheckTokenSet: false, qualityTokenApps: [] });
+    expect(measurementStatus(db, {})).toMatchObject({ commit: null, dbCheckTokenSet: false, qualityTokenApps: [], backup: { mode: "off", lastDrillAt: null, lastDrillOk: null } });
+    expect(measurementStatus(db, { SECVAL_BACKUP_MODE: "on" }).backup.mode).toBe("on");
   });
 
   it("gives each app's last database answer as a coarse outcome, no score or error text", async () => {
