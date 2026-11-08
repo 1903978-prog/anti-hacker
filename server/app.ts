@@ -24,6 +24,7 @@ import { dashboard } from "./health/score.js";
 import { dashboardHosts, guessApp, listEstimates, saveReport } from "./health/report.js";
 import { checkAllUptime } from "./health/uptime.js";
 import { checkAllDatabases } from "./health/dbcheck.js";
+import { measurementStatus } from "./health/measurement.js";
 import { allUsage } from "./usage/providers.js";
 import { loadCompliance } from "./aeos/compliance.js";
 import { previewDigest } from "./notify/daily.js";
@@ -94,6 +95,7 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
       ok: true,
       killSwitch: isEngaged(db) ? "engaged" : "released",
       store: { ok: s.ok, checkedAt: s.at, schemaVersion: s.schemaVersion, brokenLinks: s.brokenLinks },
+      measurement: measurementStatus(db),
     });
   });
 

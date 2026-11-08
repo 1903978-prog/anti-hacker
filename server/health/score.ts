@@ -158,6 +158,9 @@ export function databaseScore(db: DB, host: string, now: Date = new Date()): Sco
     times.push(c.ts);
     evidence.push(`Structure check: ${c.score} of 100 (10 points per rule).`,
       ...c.rules.map((r) => `${r.points}/10 ${r.rule} (${r.note})`));
+    if (c.integrity) {
+      evidence.push(`Integrity assessment (separate from the score): ${c.integrity.verdict.toUpperCase()}.`, ...c.integrity.findings);
+    }
   } else if (c && !c.ok) {
     evidence.push(`Last structure check failed: ${c.error ?? "no answer"}.`);
   }

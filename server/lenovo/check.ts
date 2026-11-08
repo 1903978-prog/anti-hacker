@@ -198,7 +198,7 @@ export async function askApp(app: string, env: Record<string, string | undefined
     const text = await r.text();
     if (r.status === 404) return mk("not-measured", "The app does not have the test yet (HTTP 404): the new version is not deployed.");
     if (r.status === 503) return mk("not-measured", "The app has no test token set (HTTP 503).");
-    if (r.status === 403) return mk("fail", "The app refused secval's test token (HTTP 403): the token differs between secval and the app.");
+    if (r.status === 401 || r.status === 403) return mk("fail", `The app refused secval's test token (HTTP ${r.status}): the token differs between secval and the app.`);
     if (r.status === 429) return mk("not-measured", "Asked too soon after the last test (HTTP 429): try again in 20 seconds.");
     if (r.status !== 200) return mk("fail", `The app answered HTTP ${r.status}.`);
     let j: Record<string, unknown>;
