@@ -423,6 +423,7 @@ function refreshAll() {
   if (currentTab === "tests") refreshTests();
   if (currentTab === "usage") refreshUsage();
   if (currentTab === "aeos") refreshAeos();
+  if (currentTab === "relationships") refreshRelationships();
 
 }
 
@@ -480,7 +481,7 @@ const DB_RULES = `<details class="note"><summary>How the Database score is worke
 <p>Ten rules, 10 points each (10 = done, 5 = partly, 0 = missing).</p><ol>${[
   "One master database: all business data in one place, copies are only copies.",
   "No duplicated data: each fact stored once.",
-  "Links between records: foreign keys the database enforces.",
+  "Links between records: every required link is a foreign key the database enforces and checks (independent tables do not count against it).",
   "Unique IDs and rules: primary keys, unique and not-null rules.",
   "Versioned schema changes: tracked migrations, never by hand.",
   "Backups and proven restores: automatic, off-server, restore tested.",
@@ -882,12 +883,71 @@ el("aeosRefresh").onclick = async () => {
   try { await refreshAeos(); } finally { el("aeosRefresh").disabled = false; }
 };
 
+// --- Database relationships ---------------------------------------------------
+// Required foreign keys per app (docs/database-relationships.md). Every percentage shows
+// its numerator and denominator; anything not measured and reviewed says so.
+const relBasis = (b) => (b === "verified" ? '<span class="badge ok">verified</span>' : b === "provisional" ? '<span class="badge">provisional</span>' : '<span class="badge sev medium">unverified</span>');
+const relFact = (f) => (f && f.value !== null ? `${esc(f.value)}${f.basis === "measured" ? "" : ` <small>${esc(f.basis)}</small>`}` : '<span class="sev medium">UNVERIFIED</span>');
+const relNum = (n) => (n === null || n === undefined ? '<span class="sev medium">UNVERIFIED</span>' : esc(n));
+const relRatio = (r) => (r.pct === null ? `<span class="sev medium">UNVERIFIED</span><small>${esc(r.text.replace(/^UNVERIFIED: /, ""))}</small>` : `${esc(r.text)} ${relBasis(r.basis)}`);
+
+function relRow(a) {
+  const td = (label, html, cls = "") => `<td class="${cls}" data-label="${esc(label)}">${html}</td>`;
+  return `<tr>${td("App", `${esc(a.app)} <span class="relstat ${esc(a.status)}">${esc(a.status)}</span>`, "app")}${td("Total tables", relFact(a.totalTables), "n")}${td("FK-linked tables", relFact(a.linkedTables), "n")}${td("Independent tables", relFact(a.independentTables), "n")}${td("Unresolved tables", relNum(a.unresolvedTables), "n")}${td("Required FKs", relNum(a.requiredFks), "n")}${td("Valid FKs", relFact(a.validFks), "n")}${td("Missing/invalid FKs", relNum(a.missingOrInvalid), "n")}${td("FK coverage", relRatio(a.fkCoverage))}${td("Classification", relRatio(a.classification))}</tr>`;
+}
+
+function relAppHtml(a) {
+  const line = (name, value) => `<div class="uline"><div class="un">${esc(name)}</div><div class="um">${value}</div></div>`;
+  const list = (xs) => (xs && xs.length ? `<ul>${xs.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "none");
+  const orphans = a.orphanIssues.length
+    ? `<ul>${a.orphanIssues.map((o) => `<li><b>${esc(o.rows)}</b> rows: ${esc(o.link)} (${esc(o.basis)}). ${esc(o.status)}</li>`).join("")}</ul>`
+    : "none recorded";
+  const b = a.backlog;
+  return `<div class="uprov">
+    <h3>${esc(a.app)} <span class="relstat ${esc(a.status)}">${esc(a.status)}</span></h3>
+    <div class="note">${esc(a.line)}</div>
+    ${line("Why this status", esc(a.statusWhy.join("; ") || "all checks met"))}
+    ${line("Schemas", esc(a.schemas.map((s) => `${s.name} ${s.tables}${s.note ? ` (${s.note})` : ""}`).join(" · ")))}
+    ${line("Discovery (investigated candidates)", relRatio(a.discovery))}
+    ${line("Independent tables", relRatio(a.independent))}
+    ${line("Backlog", `valid ${relFact(b.valid)} · missing ${relFact(b.missing)} · not validated or invalid ${relNum(b.notValidatedOrInvalid)} · candidates open ${relFact(b.candidatesOpen)} · justified non-FK ${relFact(b.exceptions)} · orphan issues <b>${esc(b.orphanIssues)}</b>`)}
+    ${line("Orphan data", orphans)}
+    ${a.links ? line("Required links (measured live)", `<ul>${a.links.map((l) => `<li>${esc(l.child)}.${esc(l.columns)} → ${esc(l.parent)}.${esc(l.parentColumns)}: <b>${esc(l.status)}</b>${l.orphans ? `, ${esc(l.orphans)} orphan rows` : ""}${l.indexed ? "" : ", no index"}</li>`).join("")}</ul>`) : ""}
+    ${a.ownerClaim ? line("Owner's own figures (not verified)", esc(a.ownerClaim)) : ""}
+    ${line("Limits of the evidence", list(a.discoveryLimits))}
+    ${line("Next steps", list(a.nextSteps))}
+    ${line("Pull requests", esc(a.prs.join(", ") || "none"))}
+    ${line("Independent review", esc(a.review))}
+    <div class="note">Source: ${esc(a.source)}</div>
+  </div>`;
+}
+
+async function refreshRelationships() {
+  const { ok, status, body } = await api("/api/db-relationships");
+  if (!ok) {
+    el("relTable").textContent = status === 401 ? NEED_TOKEN : "Could not load the relationship register: " + (body.error || status);
+    el("relApps").innerHTML = "";
+    return;
+  }
+  el("relBanner").innerHTML = body.status === "ok" ? "" : `<strong>${body.status === "no-data" ? "No register yet." : "Register cannot be shown."}</strong> ${esc(body.error || "")}`;
+  const head = ["App", "Total tables", "FK-linked tables", "Independent tables", "Unresolved tables", "Required FKs", "Valid FKs", "Missing/invalid FKs", "FK coverage", "Classification"];
+  el("relTable").innerHTML = body.apps.length
+    ? `<table class="rel"><thead><tr>${head.map((h) => `<th scope="col">${esc(h)}</th>`).join("")}</tr></thead><tbody>${body.apps.map(relRow).join("")}</tbody></table>`
+    : "";
+  el("relApps").innerHTML = `<div class="ugrid" style="margin-top:12px">${body.apps.map(relAppHtml).join("")}</div>`;
+  el("relMsg").textContent = body.collectedAt ? `Register recorded ${niceDate(body.collectedAt, true)}; Secval is measured live.` : "";
+}
+el("relRefresh").onclick = async () => {
+  el("relRefresh").disabled = true;
+  try { await refreshRelationships(); } finally { el("relRefresh").disabled = false; }
+};
+
 // --- Menus (tabs) -------------------------------------------------------------
 // Each menu is a section of this one page. The address (#health, #scans,
 // #tests, #usage, #aeos, #backup, #settings) picks the menu, so links and reloads keep it; the last one
 // used is remembered in this browser. The token box sits above the menus, so it
 // shows whichever menu is open.
-const TABS = ["health", "scans", "tests", "usage", "aeos", "backup", "settings"];
+const TABS = ["health", "scans", "tests", "usage", "aeos", "relationships", "backup", "settings"];
 let currentTab = "health";
 function showTab(name) {
   const tab = TABS.includes(name) ? name : "health";
@@ -899,6 +959,7 @@ function showTab(name) {
   if (tab === "settings" && signedIn && !lenovoLoaded) { lenovoLoaded = true; refreshLenovo(false); refreshLenovoQuestions(); }
   if (tab === "usage" && signedIn) refreshUsage();
   if (tab === "aeos" && signedIn) refreshAeos();
+  if (tab === "relationships" && signedIn) refreshRelationships();
 }
 function storedTab() {
   try { return localStorage.getItem("secval_tab"); } catch { return null; }

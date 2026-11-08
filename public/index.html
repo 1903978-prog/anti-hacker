@@ -115,6 +115,21 @@
       .tbody .tadv.fail { color: var(--text); } .tbody .tadv.not-run { color: var(--muted); font-size: 13px; }
       .tbody .tdet { margin-top: 4px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
       .bigcost { display: inline-block; padding: 0 8px; border: 2px solid var(--high); border-radius: 999px; color: var(--high); font-weight: 700; white-space: nowrap; }
+      table.rel { font-size: 13px; }
+      table.rel th { font-size: 11px; vertical-align: bottom; }
+      table.rel td.n { white-space: nowrap; }
+      table.rel td small { display: block; font-size: 10px; color: var(--muted); white-space: normal; }
+      .relstat { font-weight: 700; }
+      .relstat.Complete { color: var(--good); } .relstat.Incomplete { color: var(--high); } .relstat.Unverified { color: var(--medium); }
+      @media (max-width: 900px) {
+        table.rel, table.rel tbody { display: block; }
+        table.rel thead { display: none; }
+        table.rel tr { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 2px 10px; padding: 8px 0; border-top: 1px solid var(--border); }
+        table.rel td { border: 0; padding: 2px 0; }
+        table.rel td.app { grid-column: 1 / -1; font-weight: 700; }
+        table.rel td::before { content: attr(data-label); display: block; font-size: 10px; font-weight: 600; color: var(--muted); }
+        table.rel td.app::before { content: none; }
+      }
       .ugrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
       .uprov { border: 1px solid var(--border); border-radius: 8px; padding: 12px; min-width: 0; }
       .uprov h3 { font-size: 15px; margin: 0 0 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -147,6 +162,7 @@
       <a href="#tests" data-tab="tests" role="tab">All tests</a>
       <a href="#usage" data-tab="usage" role="tab">Usage</a>
       <a href="#aeos" data-tab="aeos" role="tab">AEOS</a>
+      <a href="#relationships" data-tab="relationships" role="tab">DB links</a>
       <a href="#backup" data-tab="backup" role="tab">Backup</a>
       <a href="#settings" data-tab="settings" role="tab">Settings</a>
     </nav>
@@ -267,6 +283,32 @@
         <div class="row" style="margin-top:8px;align-items:center">
           <span id="aeosMsg" class="note" style="flex:1;margin:0"></span>
           <button id="aeosRefresh" class="ghost">Reload</button>
+        </div>
+      </div>
+      </section>
+
+      <section data-panel="relationships" hidden>
+      <div class="card">
+        <h2>Database relationships: required foreign keys by app</h2>
+        <div class="note" style="margin:-6px 0 12px">
+          Which links between tables must be enforced by the database, and how many are. Every table gets one class:
+          A linked, B link missing, C independent, D special design, E not yet known. Independent tables never lower the
+          coverage. A figure is <strong>verified</strong> only after a measurement on production and an independent review;
+          figures the app reported itself are marked <strong>UNVERIFIED</strong>.
+        </div>
+        <div id="relBanner" class="note" role="status"></div>
+        <div id="relTable" class="muted">Loading…</div>
+        <div id="relApps"></div>
+        <details style="margin-top:10px"><summary>How the figures are worked out</summary><div class="note">
+          <p><b>FK coverage</b> (the main figure) = valid, enforced and checked required foreign keys ÷ all confirmed required ones.
+          <b>Classification</b> = tables with a class A to D ÷ all tables. <b>Discovery</b> = investigated link candidates ÷ all found.
+          <b>Independent</b> = class C tables ÷ all tables (descriptive, not a target).</p>
+          <p><b>Complete</b>: 100% classified, 100% FK coverage, no open candidate, review passed. <b>Incomplete</b>: a confirmed required link
+          is missing or invalid, or orphan rows exist. <b>Unverified</b>: anything else. Full rules: docs/database-relationships.md.</p>
+        </div></details>
+        <div class="row" style="margin-top:8px;align-items:center">
+          <span id="relMsg" class="note" style="flex:1;margin:0"></span>
+          <button id="relRefresh" class="ghost">Reload</button>
         </div>
       </div>
       </section>

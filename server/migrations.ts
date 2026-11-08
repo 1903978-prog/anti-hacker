@@ -136,6 +136,29 @@ export const MIGRATIONS: Migration[] = [
     name: "database integrity assessment",
     sql: `ALTER TABLE db_checks ADD COLUMN integrity_json TEXT;`,
   },
+  {
+    // Relationship audit (08 Nov 2026): a trusted snapshot always comes from a
+    // recorded run (same transaction, runs are append-only), but the link was
+    // not enforced. SQLite cannot add a foreign key to an existing table, so
+    // the table is rebuilt. foreign_keys is ON, so the copy fails (and the whole
+    // migration rolls back) if any snapshot pointed at a missing run.
+    version: 7,
+    name: "quality_snapshots.job_id references quality_runs",
+    sql: `
+    CREATE TABLE quality_snapshots_v7 (
+      dataset      TEXT PRIMARY KEY,
+      job_id       TEXT NOT NULL REFERENCES quality_runs(job_id),
+      taken_at     TEXT NOT NULL,
+      record_count INTEGER NOT NULL,
+      fingerprints TEXT NOT NULL
+    );
+    INSERT INTO quality_snapshots_v7 (dataset, job_id, taken_at, record_count, fingerprints)
+      SELECT dataset, job_id, taken_at, record_count, fingerprints FROM quality_snapshots;
+    DROP TABLE quality_snapshots;
+    ALTER TABLE quality_snapshots_v7 RENAME TO quality_snapshots;
+    CREATE INDEX IF NOT EXISTS quality_snapshots_job_id ON quality_snapshots (job_id);
+    `,
+  },
 ];
 
 /** Applies every migration the database has not seen yet; returns their versions. */

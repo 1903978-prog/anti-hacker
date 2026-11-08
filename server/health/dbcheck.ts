@@ -4,6 +4,7 @@ import { listAllowlist } from "../ownership/allowlist.js";
 import { requestApproval } from "../governance/policy.js";
 import { checkIntegrity } from "../integrity.js";
 import { backupMode, getLastDrill } from "../backup/drill.js";
+import { measureSelf } from "./relationships.js";
 
 /**
  * Database structure check. Once an hour secval asks each proven app for a
@@ -39,6 +40,18 @@ export const dbReportSchema = z.object({
    * excused; only counted together with tablesInLinks.
    */
   standaloneTables: count.nullish(),
+  /**
+   * Required FK enforcement (08 Nov 2026, the primary relationship metric):
+   * relationships the app's register confirms must be foreign keys, and how
+   * many of them are enforced, valid and integrity-checked. Independent
+   * tables are not in either number. docs/database-relationships.md.
+   */
+  requiredLinks: count.nullish(),
+  requiredLinksValidated: count.nullish(),
+  /** Relationship candidates not yet investigated. */
+  linkCandidatesOpen: count.nullish(),
+  /** Tables with a category A-D in the app's register (E = unresolved does not count). */
+  tablesClassified: count.nullish(),
   orphanRows: count.nullable(),
   uniqueConstraints: count,
   checkConstraints: count,
@@ -59,7 +72,33 @@ const HOUR = 60 * 60_000;
 const DAY = 24 * HOUR;
 
 /**
- * How much of the database is held together by enforced links, 0 to 1.
+ * Required FK enforcement coverage, 0 to 1, or null when the app does not
+ * report it. A database with no required link counts as covered only when no
+ * candidate is still open.
+ */
+export function requiredFkCoverage(r: DbReport): number | null {
+  if (r.requiredLinks == null || r.requiredLinksValidated == null) return null;
+  if (r.requiredLinks === 0) return r.linkCandidatesOpen === 0 ? 1 : 0;
+  return Math.min(1, r.requiredLinksValidated / r.requiredLinks);
+}
+
+/** Why the score may not reach 9/10 even when the points add up: hidden relationship or orphan defects. */
+export function scoreCapReasons(r: DbReport): string[] {
+  const why: string[] = [];
+  if (r.orphanRows !== 0) why.push(r.orphanRows === null ? "orphan rows not reported" : `${r.orphanRows} orphan rows`);
+  const cov = requiredFkCoverage(r);
+  if (cov === null) why.push("required foreign keys not reported");
+  else if (r.requiredLinks! > r.requiredLinksValidated!) why.push(`${r.requiredLinks! - r.requiredLinksValidated!} of ${r.requiredLinks} required foreign keys not enforced and validated`);
+  if (r.linkCandidatesOpen == null) why.push("relationship candidates not reported");
+  else if (r.linkCandidatesOpen > 0) why.push(`${r.linkCandidatesOpen} relationship candidates not investigated`);
+  return why;
+}
+/** Highest score allowed while scoreCapReasons() is not empty: below 9/10. */
+export const CAPPED_SCORE = 89;
+
+/**
+ * DIAGNOSTIC ONLY since 08 Nov 2026 (not scored): how much of the database
+ * takes part in a foreign key, 0 to 1.
  * With `tablesInLinks`: the share of tables in at least one foreign key.
  * Without it: foreign keys against the tables - 1 links a connected schema
  * needs at minimum. A few foreign keys across many tables is not coverage
@@ -81,6 +120,14 @@ export function excusedStandalone(r: DbReport): number {
 }
 
 function fkNote(r: DbReport): string {
+  const cov = requiredFkCoverage(r);
+  const diag = `diagnostic, not scored: ${tableLinkNote(r)}`;
+  if (cov === null) return `required foreign keys not reported (${diag})`;
+  const open = r.linkCandidatesOpen == null ? ", candidates not reported" : r.linkCandidatesOpen ? `, ${r.linkCandidatesOpen} candidates open` : "";
+  return `${r.requiredLinksValidated} of ${r.requiredLinks} required foreign keys enforced and validated (${Math.floor(100 * cov)}%)${open}; ${diag}`;
+}
+
+function tableLinkNote(r: DbReport): string {
   const pct = Math.round(100 * fkCoverage(r));
   if (r.tables <= 1) return `${r.foreignKeys} foreign keys, only one table`;
   if (r.tablesInLinks == null) {
@@ -116,11 +163,13 @@ export function assessIntegrity(r: DbReport, now: Date = new Date()): IntegrityA
   if (backupAge === null || backupAge > 26 * HOUR) critical.push(r.lastBackupAt ? `Last backup ${r.lastBackupAt}, older than 26 hours.` : "No backup reported.");
   const restoreAge = age(r.lastRestoreTestAt);
   if (restoreAge === null || restoreAge > 35 * DAY) critical.push(r.lastRestoreTestAt ? `Last restore test ${r.lastRestoreTestAt}, older than 35 days.` : "No restore test reported.");
-  const cov = fkCoverage(r);
-  const ex = excusedStandalone(r);
-  if (ex > 0.3 * r.tables) concerns.push(`${ex} of ${r.tables} tables declared standalone: the list must be reviewed.`);
-  if (r.standaloneTables != null && ex < r.standaloneTables) concerns.push(`${r.standaloneTables} tables declared standalone, only ${ex} excused (linked or over half the tables).`);
-  if (cov < 0.5) concerns.push(`Only ${Math.round(100 * cov)}% foreign-key coverage (${r.foreignKeys} foreign keys, ${r.tables} tables).`);
+  // Independent tables never count against the database (08 Nov 2026): only
+  // required relationships that are missing do.
+  const cov = requiredFkCoverage(r);
+  if (cov === null) concerns.push("Required foreign keys not reported: coverage of required relationships is unknown.");
+  else if (r.requiredLinks! > r.requiredLinksValidated!) concerns.push(`${r.requiredLinks! - r.requiredLinksValidated!} of ${r.requiredLinks} required foreign keys not enforced and validated.`);
+  if (r.linkCandidatesOpen != null && r.linkCandidatesOpen > 0) concerns.push(`${r.linkCandidatesOpen} relationship candidates not investigated yet.`);
+  if (r.tablesClassified != null && r.tablesClassified < r.tables) concerns.push(`${r.tables - r.tablesClassified} of ${r.tables} tables not classified.`);
   if (r.tablesWithoutPrimaryKey > 0) concerns.push(`${r.tablesWithoutPrimaryKey} tables without a primary key.`);
   if (r.checkConstraints === 0 && r.tables > 1) concerns.push("No CHECK rules.");
   if (r.pendingMigrations !== null && r.pendingMigrations > 0) concerns.push(`${r.pendingMigrations} pending migrations.`);
@@ -140,8 +189,8 @@ export function scoreDbReport(r: DbReport, now: Date = new Date()): { score: num
       note: `${r.tablesWithoutPrimaryKey} of ${r.tables} tables without one`,
     },
     {
-      rule: "Links between tables are enforced (foreign keys)",
-      points: Math.round(10 * fkCoverage(r)),
+      rule: "Required links are enforced (foreign keys)",
+      points: Math.floor(10 * (requiredFkCoverage(r) ?? 0)),
       note: fkNote(r),
     },
     {
@@ -185,7 +234,14 @@ export function scoreDbReport(r: DbReport, now: Date = new Date()): { score: num
       note: r.integrityOk === null ? "not reported" : r.integrityOk ? "passed" : "FAILED",
     },
   ];
-  return { score: rules.reduce((a, x) => a + x.points, 0), rules };
+  const sum = rules.reduce((a, x) => a + x.points, 0);
+  const cap = scoreCapReasons(r);
+  if (sum > CAPPED_SCORE && cap.length) {
+    const fk = rules[1]!;
+    fk.note += `. Score capped at ${CAPPED_SCORE} (below 9/10): ${cap.join("; ")}`;
+    return { score: CAPPED_SCORE, rules };
+  }
+  return { score: sum, rules };
 }
 
 export interface DbCheck {
@@ -325,6 +381,7 @@ export function selfDbReport(db: DB, now: Date = new Date()): DbReport {
     checks += ((t.sql ?? "").match(/\bCHECK\s*\(/gi) ?? []).length;
   }
   const integrity = checkIntegrity(db, now);
+  const rel = measureSelf(db);
   const drill = getLastDrill(db);
   const drillOk = backupMode() === "on" && !!drill?.ok;
   return {
@@ -336,7 +393,11 @@ export function selfDbReport(db: DB, now: Date = new Date()): DbReport {
     foreignKeys: fks,
     foreignKeysWithoutIndex: fksNoIndex,
     tablesInLinks: [...linked].filter((n) => tables.some((t) => t.name === n)).length,
-    orphanRows: integrity.brokenLinks >= 0 ? integrity.brokenLinks : null,
+    requiredLinks: rel.required,
+    requiredLinksValidated: rel.valid,
+    linkCandidatesOpen: 0,
+    tablesClassified: rel.tables - rel.categories.E,
+    orphanRows: integrity.brokenLinks >= 0 ? integrity.brokenLinks + rel.links.reduce((a, l) => a + (l.status === "missing" ? (l.orphans ?? 0) : 0), 0) : null,
     uniqueConstraints: unique,
     checkConstraints: checks,
     pendingMigrations: Math.max(0, integrity.expectedSchemaVersion - integrity.schemaVersion),
