@@ -1,0 +1,495 @@
+{
+ "version": 1,
+ "collected_at": "2026-11-08T05:10:00Z",
+ "how_measured": "Counts marked 'measured' come from read-only catalogue and orphan queries the Secval auditor ran on each app's Neon production branch (queries in docs/database-relationships.md). Counts marked 'reported' come from the app owner's register and are not yet independently reviewed. Secval's own row is measured live from its SQLite catalogue.",
+ "apps": [
+  {
+   "key": "compplan",
+   "app": "ATLAS / CompPlan",
+   "owner": "compplan thread (draft PR compplan#746)",
+   "source": "Neon project compplan (autumn-sun-22098033), branch production (default), database neondb, read-only transaction (SET TRANSACTION READ ONLY), 08 Nov 2026 04:51-05:05 UTC, by the Secval auditor",
+   "measuredAt": "2026-11-08T04:51:46Z",
+   "schemas": [
+    {
+     "name": "public",
+     "tables": 408
+    },
+    {
+     "name": "fx_fixture",
+     "tables": 3,
+     "note": "AI Factory synthetic fixture copies (owner, server/factory/fixtureDb.ts); no primary key: finding"
+    }
+   ],
+   "totalTables": {
+    "value": 411,
+    "basis": "measured",
+    "evidence": "pg_class across all non-system schemas: public 408 + fx_fixture 3"
+   },
+   "linkedTables": {
+    "value": 6,
+    "basis": "measured",
+    "evidence": "tables in at least one FK, production catalogue"
+   },
+   "classifiedTotal": {
+    "value": 387,
+    "basis": "reported",
+    "evidence": "owner register d0b126cf: 381 of the 405 code-schema tables + the 6 production-only tables (fx_fixture x3, playing_with_neon, search_index 0 rows, boot_errors) classed C"
+   },
+   "classified": {
+    "A": {
+     "value": null,
+     "basis": "unverified",
+     "evidence": "per-category split not yet reviewed"
+    },
+    "B": {
+     "value": null,
+     "basis": "unverified",
+     "evidence": ""
+    },
+    "C": {
+     "value": null,
+     "basis": "unverified",
+     "evidence": ""
+    },
+    "D": {
+     "value": null,
+     "basis": "unverified",
+     "evidence": ""
+    },
+    "E": {
+     "value": null,
+     "basis": "unverified",
+     "evidence": ""
+    }
+   },
+   "validFks": {
+    "value": 3,
+    "basis": "measured",
+    "evidence": "ceo_brief_run_decisions.brief_id, km_outputs.session_id, intel_decisions.brief_id; all convalidated"
+   },
+   "notValidatedFks": {
+    "value": 0,
+    "basis": "measured",
+    "evidence": "pg_constraint.convalidated"
+   },
+   "confirmedMissing": {
+    "value": 238,
+    "basis": "reported",
+    "evidence": "owner: 241 confirmed required links on the code schema (2 enforced there); production has 3 valid FKs, 241 - 3 = 238 if the third is among them (reconcile pending)"
+   },
+   "invalidFks": {
+    "value": 0,
+    "basis": "measured",
+    "evidence": "no FK with convalidated = false"
+   },
+   "candidatesIdentified": {
+    "value": 357,
+    "basis": "reported",
+    "evidence": "owner register d0b126cf"
+   },
+   "candidatesOpen": {
+    "value": 37,
+    "basis": "reported",
+    "evidence": "owner: discovery 320/357"
+   },
+   "exceptions": {
+    "value": null,
+    "basis": "unverified",
+    "evidence": "owner list not reviewed yet"
+   },
+   "orphanIssues": [
+    {
+     "link": "oa_task_sources.task_id -> employee_tasks.id",
+     "rows": 21,
+     "basis": "measured",
+     "status": "real orphans (owner); repair proposal pending, no deletes"
+    },
+    {
+     "link": "invoice_changes.invoice_id -> invoice_snapshots.invoice_id",
+     "rows": 15,
+     "basis": "measured",
+     "status": "history reference: allowed only where an approved 'deleted' change exists (A-DB-08 ruling)"
+    },
+    {
+     "link": "build_log.build_id -> build_requests.id",
+     "rows": 9,
+     "basis": "measured",
+     "status": "sentinel build_id = 0 (all 9 rows, measured); fix: write NULL, then FK"
+    },
+    {
+     "link": "atlas_opportunities.bd_deal_id -> bd_deals.id",
+     "rows": 3,
+     "basis": "measured",
+     "status": "real orphans (owner)"
+    },
+    {
+     "link": "salary_history.employee_id -> employees.id",
+     "rows": 2,
+     "basis": "measured",
+     "status": "real defect (A-DB-08); Livio design choice needed before any FK"
+    },
+    {
+     "link": "fi_suggestions.bd_deal_id -> bd_deals.id",
+     "rows": 1,
+     "basis": "measured",
+     "status": "real orphans (owner)"
+    }
+   ],
+   "ownerClaim": "compplan thread (08 Nov 05:10, code schema, not production): classification 381/405 = 94.1%, required FK 2/241 = 0.8%, discovery 320/357 = 89.6%, independent/special 113/405; backlog 239 missing, 37 awaiting investigation.",
+   "review": "pending",
+   "discoveryLimits": [
+    "Candidates come from the code link registry, LINK_SPECS and a name guess for <x>_id columns; columns with other names may hold undiscovered links.",
+    "9 earlier candidates were withdrawn by the owner as wrong name guesses (e.g. invoice_snapshots.client_id holds Harvest ids); the auditor accepted the reason for those two with the largest counts, the others are not yet reviewed.",
+    "Withdrawn as wrong guesses by the owner (not orphans): cowork_skills.agent_key (skill slug), slide_backgrounds / slide_methodology_configs.slide_id (deck catalogue ids). Auditor review of the reasons pending.",
+    "Accepted by the auditor as D after production checks: academy_jobs.result_id (3467 rows, all live jobs; routes.ts:92-97), prepared_answers.topic_key (Linda/Catia scopes only; Warren scope 0 missing), board_alerts.topic_key (only kind refresh_failed uses board topics, 0 missing). Owner D reasons for fi_fund_priorities.key, ot_runs.agent, build_requests.flag_key not yet reviewed."
+   ],
+   "prs": [
+    "compplan#746 (draft, register, d0b126cf)",
+    "compplan#725 (draft, restore drill)",
+    "compplan#697 (draft, FK plan)"
+   ],
+   "nextSteps": [
+    "Owner: class the 6 production-only tables and every orphan link above.",
+    "Owner: split the 306 classified tables by category for the auditor's sample review.",
+    "Release: every FK migration needs Livio's approval; no orphan is deleted."
+   ]
+  },
+  {
+   "key": "lm-op-model",
+   "app": "LM OpModel",
+   "owner": "lm-op-model thread (draft PR lm-op-model#845)",
+   "source": "Neon project LM OP MODEL (long-frog-83686748), branch production (default), database neondb, read-only transaction (SET TRANSACTION READ ONLY), 08 Nov 2026 04:51-05:05 UTC, by the Secval auditor",
+   "measuredAt": "2026-11-08T04:51:48Z",
+   "schemas": [
+    {
+     "name": "public",
+     "tables": 193
+    }
+   ],
+   "totalTables": {
+    "value": 193,
+    "basis": "measured",
+    "evidence": "pg_class, schema public only"
+   },
+   "linkedTables": {
+    "value": 56,
+    "basis": "measured",
+    "evidence": "tables in at least one FK"
+   },
+   "classifiedTotal": {
+    "value": 174,
+    "basis": "reported",
+    "evidence": "owner register on the production catalogue file (2b7485fb): A52 B27 C79 D16, E19"
+   },
+   "classified": {
+    "A": {
+     "value": 52,
+     "basis": "reported",
+     "evidence": "owner"
+    },
+    "B": {
+     "value": 27,
+     "basis": "reported",
+     "evidence": "owner"
+    },
+    "C": {
+     "value": 79,
+     "basis": "reported",
+     "evidence": "owner"
+    },
+    "D": {
+     "value": 16,
+     "basis": "reported",
+     "evidence": "owner"
+    },
+    "E": {
+     "value": 19,
+     "basis": "reported",
+     "evidence": "owner"
+    }
+   },
+   "validFks": {
+    "value": 52,
+    "basis": "measured",
+    "evidence": "52 FKs, all convalidated"
+   },
+   "notValidatedFks": {
+    "value": 0,
+    "basis": "measured",
+    "evidence": "pg_constraint.convalidated"
+   },
+   "confirmedMissing": {
+    "value": 22,
+    "basis": "reported",
+    "evidence": "owner: required 74, validated 52"
+   },
+   "invalidFks": {
+    "value": 0,
+    "basis": "measured",
+    "evidence": "no FK with convalidated = false"
+   },
+   "candidatesIdentified": {
+    "value": 114,
+    "basis": "reported",
+    "evidence": "owner register 2df4f308"
+   },
+   "candidatesOpen": {
+    "value": 22,
+    "basis": "reported",
+    "evidence": "owner register 2df4f308 (92 of 114 resolved)"
+   },
+   "exceptions": {
+    "value": 24,
+    "basis": "reported",
+    "evidence": "owner: polymorphic ids, JSON arrays, code-defined ids, outside ids, logs, derived cache"
+   },
+   "orphanIssues": [],
+   "ownerClaim": "lm-op-model thread (08 Nov 05:02, production view from the auditor's catalogue file): Required 74 | Validated 52 | Missing 22 | 52/74 = 70.3% | Independent 79 | Classification 174/193 = 90.2%.",
+   "review": "pending",
+   "discoveryLimits": [
+    "Production orphan counts NOT measured for the 22 missing links: no orphan SQL received yet.",
+    "Schema drift R-DB-DRIFT-01 (owner): 12 production FKs (from draft PR #826, run by hand) are not in the code; a rebuild from code would lose them.",
+    "2 tables without a primary key: ingredients_backup_20260824, bonds_pre_master."
+   ],
+   "prs": [
+    "lm-op-model#845 (draft)"
+   ],
+   "nextSteps": [
+    "Owner: send read-only orphan SQL for the 22 missing links (shared folder).",
+    "Owner: declare the 12 hand-made FKs in migrations (draft, release approval)."
+   ]
+  },
+  {
+   "key": "nexus",
+   "app": "Nexus",
+   "owner": "Nexus thread (draft PR nexus-eendigo#214)",
+   "source": "Neon project Nexus (still-truth-31614363), branch production (default), database neondb, read-only transaction (SET TRANSACTION READ ONLY), 08 Nov 2026 04:51-05:05 UTC, by the Secval auditor",
+   "measuredAt": "2026-11-08T04:51:49Z",
+   "schemas": [
+    {
+     "name": "public",
+     "tables": 160
+    }
+   ],
+   "totalTables": {
+    "value": 160,
+    "basis": "measured",
+    "evidence": "pg_class, schema public only"
+   },
+   "linkedTables": {
+    "value": 114,
+    "basis": "measured",
+    "evidence": "tables in at least one FK"
+   },
+   "classifiedTotal": {
+    "value": 160,
+    "basis": "reported",
+    "evidence": "owner register 4395c045: A95 B38 C27 D0 E0 (30 justified non-FK columns recorded per column)"
+   },
+   "classified": {
+    "A": {
+     "value": 95,
+     "basis": "reported",
+     "evidence": "owner"
+    },
+    "B": {
+     "value": 38,
+     "basis": "reported",
+     "evidence": "owner"
+    },
+    "C": {
+     "value": 27,
+     "basis": "reported",
+     "evidence": "owner"
+    },
+    "D": {
+     "value": 0,
+     "basis": "reported",
+     "evidence": "owner"
+    },
+    "E": {
+     "value": 0,
+     "basis": "reported",
+     "evidence": "owner"
+    }
+   },
+   "validFks": {
+    "value": 123,
+    "basis": "measured",
+    "evidence": "123 FKs convalidated"
+   },
+   "notValidatedFks": {
+    "value": 3,
+    "basis": "measured",
+    "evidence": "task_cards.deliverable_id, task_cards.steerco_event_id, gov_workstreams.deliverable_id: NOT VALID, 0 orphan rows each (measured)"
+   },
+   "confirmedMissing": {
+    "value": 37,
+    "basis": "reported",
+    "evidence": "owner: 32 never built, 4 in undeployed migration 8, 1 declared but absent (gov_workstreams.module_id)"
+   },
+   "invalidFks": {
+    "value": 0,
+    "basis": "measured",
+    "evidence": "none"
+   },
+   "candidatesIdentified": {
+    "value": 198,
+    "basis": "reported",
+    "evidence": "owner register: id-like columns with a decision"
+   },
+   "candidatesOpen": {
+    "value": 3,
+    "basis": "reported",
+    "evidence": "owner doc 195/198; owner message says 2 open (dq_versions.rubric_version, opm_rules answer link): reconcile"
+   },
+   "exceptions": {
+    "value": 30,
+    "basis": "reported",
+    "evidence": "owner: justified non-FK columns"
+   },
+   "orphanIssues": [],
+   "ownerClaim": "Nexus thread (08 Nov 05:03): Required 163 | Validated 123 | Missing/invalid 40 | 123/163 = 75% | Independent 27 | Classification 160/160 = 100%.",
+   "review": "pending",
+   "discoveryLimits": [
+    "Orphan counts measured only for the 3 NOT VALID links; the 37 missing links are UNVERIFIED.",
+    "Metric C counts id-like columns only; links in other columns are not proven absent (owner)."
+   ],
+   "prs": [
+    "nexus-eendigo#214 (draft, register)",
+    "nexus-eendigo#212 (draft, migration 8)"
+   ],
+   "nextSteps": [
+    "Owner: send read-only orphan SQL for the 37 missing links.",
+    "Release: VALIDATE the 3 NOT VALID FKs (0 orphans today); needs Livio's approval."
+   ]
+  },
+  {
+   "key": "10bonds",
+   "app": "10bonds",
+   "owner": "10bonds thread (draft PR 10bonds#497)",
+   "source": "Neon project 10bonds (round-rain-83749143), branch production (default), database neondb, read-only transaction (SET TRANSACTION READ ONLY), 08 Nov 2026 04:51-05:05 UTC, by the Secval auditor",
+   "measuredAt": "2026-11-08T04:51:51Z",
+   "schemas": [
+    {
+     "name": "app",
+     "tables": 83
+    },
+    {
+     "name": "public",
+     "tables": 1,
+     "note": "public_bonds"
+    }
+   ],
+   "totalTables": {
+    "value": 84,
+    "basis": "measured",
+    "evidence": "pg_class across all non-system schemas: app 83 + public 1"
+   },
+   "linkedTables": {
+    "value": 27,
+    "basis": "measured",
+    "evidence": "tables in at least one FK"
+   },
+   "classifiedTotal": {
+    "value": 84,
+    "basis": "reported",
+    "evidence": "owner register docs/fk-register.md (99177ea): A41 C27 D16 (bond_prices_daily moved E -> C)"
+   },
+   "classified": {
+    "A": {
+     "value": 41,
+     "basis": "reported",
+     "evidence": "owner"
+    },
+    "B": {
+     "value": 0,
+     "basis": "reported",
+     "evidence": "owner; auditor challenge: tables with one of the 13 missing links must be B in production, not A"
+    },
+    "C": {
+     "value": 27,
+     "basis": "reported",
+     "evidence": "owner"
+    },
+    "D": {
+     "value": 16,
+     "basis": "reported",
+     "evidence": "owner"
+    },
+    "E": {
+     "value": 0,
+     "basis": "reported",
+     "evidence": "owner"
+    }
+   },
+   "validFks": {
+    "value": 32,
+    "basis": "measured",
+    "evidence": "32 FKs, all convalidated"
+   },
+   "notValidatedFks": {
+    "value": 0,
+    "basis": "measured",
+    "evidence": "fk-orphan-check.sql second query: 0"
+   },
+   "confirmedMissing": {
+    "value": 13,
+    "basis": "reported",
+    "evidence": "owner: 45 required, 13 missing, all added by #497"
+   },
+   "invalidFks": {
+    "value": 0,
+    "basis": "measured",
+    "evidence": "none"
+   },
+   "candidatesIdentified": {
+    "value": 103,
+    "basis": "reported",
+    "evidence": "owner: 45 required + 58 justified non-FK references"
+   },
+   "candidatesOpen": {
+    "value": 0,
+    "basis": "reported",
+    "evidence": "owner"
+   },
+   "exceptions": {
+    "value": 58,
+    "basis": "reported",
+    "evidence": "owner: justified non-FK references, each with a reason"
+   },
+   "orphanIssues": [
+    {
+     "link": "efficient_portfolio_holdings.bes_run_id -> bes_runs.id",
+     "rows": 73560,
+     "basis": "measured",
+     "status": "cause: pruned runs (owner); #497 clears the dead ids: production data change, needs Livio's approval"
+    },
+    {
+     "link": "events.visitor_id -> visitors.visitor_id",
+     "rows": 673,
+     "basis": "measured",
+     "status": "32 visitors, events 18-26 Oct 2026, none since; #497 re-creates the visitor rows: needs approval"
+    },
+    {
+     "link": "pe_runs.bes_run_id -> bes_runs.id",
+     "rows": 3,
+     "basis": "measured",
+     "status": "same cause as holdings; cleared by #497 (approval)"
+    }
+   ],
+   "ownerClaim": "10bonds thread (08 Nov 05:03): Required 45 | Validated 32 | Missing 13 | 32/45 = 71% now, 45/45 after release (not verified) | Classification 84/84.",
+   "review": "pending",
+   "discoveryLimits": [
+    "bond_prices_daily: empty table owned by the app role, never in 10bonds code (owner); drop proposal is a separate approval item."
+   ],
+   "prs": [
+    "10bonds#497 (draft; includes production data repair)"
+   ],
+   "nextSteps": [
+    "Auditor: sample-review the 27 C and 16 D classes and the 58 exceptions.",
+    "Release: #497 needs Livio's approval for its data repair and 13 FKs."
+   ]
+  }
+ ]
+}

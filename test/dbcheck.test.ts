@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { freshDb } from "./helpers.js";
 import { createChallenge, verifyOwnership } from "../server/ownership/proof.js";
 import { engage } from "../server/governance/killswitch.js";
-import { assessIntegrity, checkDatabase, checkSelfDatabase, fkCoverage, latestDbCheck, scoreDbReport, selfDbReport, SELF_HOST, type DbReport, type JsonFetch } from "../server/health/dbcheck.js";
+import { assessIntegrity, CAPPED_SCORE, checkDatabase, checkSelfDatabase, fkCoverage, latestDbCheck, requiredFkCoverage, scoreDbReport, selfDbReport, SELF_HOST, type DbReport, type JsonFetch } from "../server/health/dbcheck.js";
 import { dashboard } from "../server/health/score.js";
 
 const HOST = "compplan.onrender.com";
@@ -22,6 +22,10 @@ const good: DbReport = {
   foreignKeys: 30,
   foreignKeysWithoutIndex: 0,
   tablesInLinks: 40,
+  requiredLinks: 30,
+  requiredLinksValidated: 30,
+  linkCandidatesOpen: 0,
+  tablesClassified: 40,
   orphanRows: 0,
   uniqueConstraints: 12,
   checkConstraints: 5,
@@ -44,31 +48,43 @@ describe("database structure rules", () => {
     );
     // PK 9, FK index 5, check 0, restore 0, migrations 0 -> 100 - 1 - 5 - 10 - 10 - 10
     expect(r.score).toBe(64);
+    // Required links not reported -> 0 on that rule as well
+    expect(scoreDbReport({ ...good, requiredLinks: null, requiredLinksValidated: null }, NOW).score).toBe(CAPPED_SCORE);
     expect(r.rules.find((x) => x.rule.startsWith("Restore"))!.note).toBe("not reported");
   });
-  it("a few foreign keys across many tables no longer earn full points (07 Nov 2026)", () => {
-    const fk = (r: DbReport) => scoreDbReport(r, NOW).rules.find((x) => x.rule.startsWith("Links"))!;
-    // ATLAS-like: 407 tables, 3 foreign keys, no tablesInLinks reported -> 3 of 406 links -> 0 points
-    const atlas = { ...good, tables: 407, foreignKeys: 3, tablesInLinks: undefined };
+  it("scores required FK enforcement; table-link share is diagnostic only (08 Nov 2026)", () => {
+    const fk = (r: DbReport) => scoreDbReport(r, NOW).rules.find((x) => x.rule.startsWith("Required links"))!;
+    // 48 of 60 required links enforced and validated -> 80% -> 8 points
+    const part = { ...good, requiredLinks: 60, requiredLinksValidated: 48 };
+    expect(fk(part).points).toBe(8);
+    expect(fk(part).note).toContain("48 of 60 required foreign keys enforced and validated (80%)");
+    expect(fk(part).note).toContain("diagnostic, not scored");
+    // Rounding never gives full points while one required link is missing
+    expect(fk({ ...good, requiredLinks: 100, requiredLinksValidated: 99 }).points).toBe(9);
+    // Not reported: 0 points, however many tables take part in a foreign key
+    const atlas = { ...good, tables: 407, foreignKeys: 3, tablesInLinks: 6, requiredLinks: undefined, requiredLinksValidated: undefined };
     expect(fk(atlas).points).toBe(0);
-    expect(fk(atlas).note).toContain("3 foreign keys for 407 tables");
-    // Nexus-like: 160 tables, 126 foreign keys -> 79% -> 8 points
-    expect(fk({ ...good, tables: 160, foreignKeys: 126, tablesInLinks: undefined }).points).toBe(8);
-    // tablesInLinks wins when reported
-    expect(fk({ ...good, tables: 193, foreignKeys: 52, tablesInLinks: 96 }).points).toBe(5);
-    expect(fk({ ...good, tables: 193, foreignKeys: 52, tablesInLinks: 96 }).note).toContain("96 of 193 tables linked (50%)");
-    // null (app could not count) falls back like a missing field
-    expect(fk({ ...good, tables: 160, foreignKeys: 126, tablesInLinks: null }).points).toBe(8);
-    // Declared standalone tables are excused, at most half of all tables
-    expect(fk({ ...good, tables: 190, foreignKeys: 60, tablesInLinks: 63, standaloneTables: 100 }).points).toBe(7); // capped at 95 -> 63/95
-    expect(fk({ ...good, tables: 190, foreignKeys: 60, tablesInLinks: 63, standaloneTables: 60 }).points).toBe(5); // 63/130
-    expect(fk({ ...good, tables: 190, foreignKeys: 60, tablesInLinks: 63, standaloneTables: 60 }).note).toContain("60 standalone tables excused");
-    // standalone without tablesInLinks is ignored
-    expect(fk({ ...good, tables: 160, foreignKeys: 126, tablesInLinks: undefined, standaloneTables: 50 }).points).toBe(8);
-    // One table: nothing to link
+    expect(fk(atlas).note).toContain("required foreign keys not reported");
+    expect(fk(atlas).note).toContain("6 of 407 tables linked");
+    // Independent tables never lower the score: few linked tables, all required links valid -> full points
+    const independentHeavy = { ...good, tables: 100, tablesInLinks: 10, foreignKeys: 5, requiredLinks: 5, requiredLinksValidated: 5, tablesClassified: 100 };
+    expect(fk(independentHeavy).points).toBe(10);
+    expect(requiredFkCoverage(independentHeavy)).toBe(1);
+    // No required link: 100% only when no candidate is still open
+    expect(requiredFkCoverage({ ...good, requiredLinks: 0, requiredLinksValidated: 0, linkCandidatesOpen: 0 })).toBe(1);
+    expect(requiredFkCoverage({ ...good, requiredLinks: 0, requiredLinksValidated: 0, linkCandidatesOpen: 3 })).toBe(0);
+    // The diagnostic share is still worked out the old way
     expect(fkCoverage({ ...good, tables: 1, foreignKeys: 0, tablesInLinks: undefined })).toBe(1);
-    // One foreign key in a 2-table database is full coverage
-    expect(fk({ ...good, tables: 2, foreignKeys: 1, tablesInLinks: undefined }).points).toBe(10);
+  });
+  it("a 9/10 score never hides missing required links, open candidates or orphan rows", () => {
+    expect(scoreDbReport({ ...good, requiredLinks: 100, requiredLinksValidated: 99 }, NOW).score).toBe(CAPPED_SCORE);
+    const open = scoreDbReport({ ...good, linkCandidatesOpen: 4 }, NOW);
+    expect(open.score).toBe(CAPPED_SCORE);
+    expect(open.rules[1]!.note).toContain("4 relationship candidates not investigated");
+    expect(scoreDbReport({ ...good, linkCandidatesOpen: undefined }, NOW).score).toBe(CAPPED_SCORE);
+    // Orphan rows cost their rule and also keep the score below 9/10; below the cap nothing changes
+    expect(scoreDbReport({ ...good, orphanRows: 2 }, NOW).score).toBe(CAPPED_SCORE);
+    expect(scoreDbReport({ ...good, orphanRows: 2, lastBackupAt: null }, NOW).score).toBe(80);
   });
   it("an old backup scores 0 on its rule", () => {
     expect(scoreDbReport({ ...good, lastBackupAt: "2026-11-04T00:00:00Z" }, NOW).score).toBe(90);
@@ -81,24 +97,28 @@ describe("integrity assessment (separate from the score)", () => {
   });
   it("broken data or no proven recovery is critical, even with a high score", () => {
     const r = { ...good, orphanRows: 2 };
-    expect(scoreDbReport(r, NOW).score).toBe(90);
+    expect(scoreDbReport(r, NOW).score).toBe(CAPPED_SCORE);
     const a = assessIntegrity(r, NOW);
     expect(a.verdict).toBe("critical");
     expect(a.findings[0]).toContain("2 orphan rows");
     expect(assessIntegrity({ ...good, lastRestoreTestAt: null }, NOW).verdict).toBe("critical");
     expect(assessIntegrity({ ...good, integrityOk: false }, NOW).verdict).toBe("critical");
   });
-  it("low link coverage, missing keys or unreported facts are concerns", () => {
-    const a = assessIntegrity({ ...good, tables: 407, foreignKeys: 3, tablesInLinks: undefined, integrityOk: null }, NOW);
+  it("missing required links, open candidates, unclassified tables or unreported facts are concerns", () => {
+    const a = assessIntegrity({ ...good, requiredLinks: undefined, requiredLinksValidated: undefined, integrityOk: null }, NOW);
     expect(a.verdict).toBe("concerns");
-    expect(a.findings.join(" ")).toContain("Only 1% foreign-key coverage");
+    expect(a.findings.join(" ")).toContain("Required foreign keys not reported");
     expect(a.findings.join(" ")).toContain("Integrity check not reported");
+    const b = assessIntegrity({ ...good, requiredLinks: 60, requiredLinksValidated: 48, linkCandidatesOpen: 5, tablesClassified: 35 }, NOW);
+    expect(b.findings).toEqual(expect.arrayContaining([
+      "12 of 60 required foreign keys not enforced and validated.",
+      "5 relationship candidates not investigated yet.",
+      "5 of 40 tables not classified.",
+    ]));
   });
-  it("a large or over-cap standalone declaration is a concern to review", () => {
-    const a = assessIntegrity({ ...good, tables: 190, tablesInLinks: 63, standaloneTables: 100 }, NOW);
-    expect(a.verdict).toBe("concerns");
-    expect(a.findings.join(" ")).toContain("95 of 190 tables declared standalone");
-    expect(a.findings.join(" ")).toContain("100 tables declared standalone, only 95 excused");
+  it("independent or standalone tables are never a concern by themselves", () => {
+    const a = assessIntegrity({ ...good, tables: 190, tablesInLinks: 20, standaloneTables: 150, tablesClassified: 190 }, NOW);
+    expect(a).toEqual({ verdict: "sound", findings: [] });
   });
   it("is stored with the check and shown on the dashboard", async () => {
     const db = freshDb();
@@ -181,14 +201,17 @@ describe("secval's own database", () => {
     expect(r.checkConstraints).toBeGreaterThan(0);
     // No backup running in tests: backup and restore are not reported, never guessed.
     expect(r.lastBackupAt).toBeNull();
-    // 5 of 13 tables take part in a foreign key since the 07 Nov 2026 coverage rule: 4/10 on links.
-    expect(r.tablesInLinks).toBe(5);
-    expect(scoreDbReport(r, NOW).score).toBe(74);
+    // Secval's register (08 Nov 2026): 4 required links, all enforced since migration 7;
+    // 7 of 13 tables take part in a foreign key (diagnostic only).
+    expect(r).toMatchObject({ requiredLinks: 4, requiredLinksValidated: 4, linkCandidatesOpen: 0, tablesClassified: 13 });
+    expect(r.tablesInLinks).toBe(7);
+    // Backup and restore not reported in tests: 80.
+    expect(scoreDbReport(r, NOW).score).toBe(80);
   });
   it("shows as measured on the dashboard", () => {
     const db = freshDb();
     checkSelfDatabase(db, () => NOW);
     const area = dashboard(db, NOW).find((a) => a.host === SELF_HOST)!.areas.find((a) => a.key === "database")!;
-    expect(area.measured).toMatchObject({ score: 74, source: "measured" });
+    expect(area.measured).toMatchObject({ score: 80, source: "measured" });
   });
 });

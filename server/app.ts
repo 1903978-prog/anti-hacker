@@ -26,6 +26,7 @@ import { checkAllUptime } from "./health/uptime.js";
 import { checkAllDatabases } from "./health/dbcheck.js";
 import { allUsage } from "./usage/providers.js";
 import { loadCompliance } from "./aeos/compliance.js";
+import { loadRelationships } from "./health/relationships.js";
 import { previewDigest } from "./notify/daily.js";
 import { lenovoForHost, lenovoOverview, questionOverview, refreshPassive, runLenovoChecks, runQuestionTests, type LenovoFetch } from "./lenovo/check.js";
 
@@ -43,6 +44,8 @@ export interface AppOptions {
   qualityTokens?: string;
   /** AEOS compliance file (defaults to reports/aeos-compliance.json); tests hand in their own. */
   aeosFile?: string;
+  /** Relationship register (defaults to reports/db-relationships.json); tests hand in their own. */
+  relationshipsFile?: string;
 }
 import { DEFAULT_WEEKLY, getLastRun, runWeeklySweep } from "./schedule/weekly.js";
 import { backupMode, backupStatus, runRestoreDrill } from "./backup/drill.js";
@@ -345,6 +348,13 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
     options.aeosFile ?? join(dirname(fileURLToPath(import.meta.url)), "..", "reports", "aeos-compliance.json");
   app.get("/api/aeos", (_req, res) => {
     res.json(loadCompliance(aeosFile));
+  });
+
+  // --- Database relationships (08 Nov 2026): reviewed register + Secval measured live ----
+  const relationshipsFile =
+    options.relationshipsFile ?? join(dirname(fileURLToPath(import.meta.url)), "..", "reports", "db-relationships.json");
+  app.get("/api/db-relationships", (_req, res) => {
+    res.json(loadRelationships(relationshipsFile, db));
   });
 
   // What tomorrow's daily e-mail would say, and whether e-mail is configured.

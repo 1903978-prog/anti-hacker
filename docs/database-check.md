@@ -22,6 +22,10 @@ The report is counts and yes/no answers only. **Never send row data, table names
   "foreignKeys": 30,
   "foreignKeysWithoutIndex": 0,
   "tablesInLinks": 38,
+  "requiredLinks": 31,
+  "requiredLinksValidated": 31,
+  "linkCandidatesOpen": 0,
+  "tablesClassified": 40,
   "orphanRows": 0,
   "uniqueConstraints": 12,
   "checkConstraints": 5,
@@ -32,7 +36,9 @@ The report is counts and yes/no answers only. **Never send row data, table names
 }
 ```
 
-`tablesInLinks` (optional, recommended) is the number of tables that take part in at least one foreign key, as child or parent. `standaloneTables` (optional, only used with `tablesInLinks`) is the number of tables that are standalone by nature (cache, settings, log, reference list) and have no foreign key. Each one must be listed with its reason in the app's own repository, where the auditor reviews it. They are taken out of the denominator, at most half of all tables; a declaration above 30% of the tables, or above the cap, is a concern in the integrity assessment. `orphanRows`, `pendingMigrations`, `lastBackupAt`, `lastRestoreTestAt` and `integrityOk` may be `null` when the app cannot tell. A `null` scores 0 on its rule and the dashboard says "not reported". Never guess a value.
+`requiredLinks`, `requiredLinksValidated`, `linkCandidatesOpen` and `tablesClassified` (08 Nov 2026) come from the app's relationship register (`docs/database-relationships.md`): the relationships that must be foreign keys, how many of them are enforced, valid and checked for orphans, how many candidates are still being investigated, and how many tables have a class A to D. **These drive the foreign-key rule.** Without them the rule scores 0.
+
+`tablesInLinks` (optional, diagnostic only since 08 Nov 2026, not scored) is the number of tables that take part in at least one foreign key, as child or parent. `standaloneTables` (optional, only used with `tablesInLinks`) is the number of tables that are standalone by nature (cache, settings, log, reference list) and have no foreign key. Each one must be listed with its reason in the app's own repository, where the auditor reviews it. Since 08 Nov 2026 neither field changes the score: independent tables never count against a database. `orphanRows`, `pendingMigrations`, `lastBackupAt`, `lastRestoreTestAt` and `integrityOk` may be `null` when the app cannot tell. A `null` scores 0 on its rule and the dashboard says "not reported". Never guess a value.
 
 ## Secval itself
 
@@ -43,7 +49,7 @@ Secval scores its own SQLite database directly every hour (no network): catalogu
 | Rule | Full points when |
 |---|---|
 | Every table has a primary key | share of tables with one (rounded) |
-| Links between tables are enforced | share of tables in at least one foreign key (`tablesInLinks / (tables - excused standalone tables)`); without `tablesInLinks`, foreign keys against the `tables - 1` links a connected schema needs; one table = full points. Changed 07 Nov 2026: a single foreign key no longer earns full points |
+| Required links are enforced | `requiredLinksValidated / requiredLinks`, rounded down (one missing link never rounds up to 10). No required link: 10 only if `linkCandidatesOpen` is 0. Not reported: 0. The table-link share (`tablesInLinks`) is shown in the note as a diagnostic and never scored. Changed 08 Nov 2026 (Livio's relationship audit) |
 | Linked columns are indexed | share of foreign keys whose columns lead an index |
 | No broken links | `orphanRows` is 0 |
 | Duplicates blocked | at least one UNIQUE constraint |
@@ -58,8 +64,10 @@ Secval scores its own SQLite database directly every hour (no network): catalogu
 Next to the score, every check stores a verdict that is never averaged into the number, so a high score cannot hide a defect that blocks "done":
 
 - **Critical:** integrity check failed, orphan rows, no backup within 26 hours, no restore test within 35 days.
-- **Concerns:** foreign-key coverage under 50%, tables without a primary key, no CHECK rules, pending migrations, integrity or orphan rows not reported.
+- **Concerns:** required foreign keys missing or not reported, relationship candidates still open, tables not classified, tables without a primary key, no CHECK rules, pending migrations, integrity or orphan rows not reported.
 - **Sound:** none of the above.
+
+**Score cap (08 Nov 2026):** a database cannot show 9/10 or more (the score stays at 89) while orphan rows exist or are not reported, a required foreign key is missing or not validated, required links are not reported, or relationship candidates are still open. The foreign-key rule's note says why.
 
 The dashboard evidence shows it as "Integrity assessment (separate from the score): CRITICAL / CONCERNS / SOUND" with the findings. An app is ready only with a high score **and** a sound assessment.
 

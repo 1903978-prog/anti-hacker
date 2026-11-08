@@ -67,3 +67,19 @@ Updates:
 - A-DB-08 re-check (16:50; auditor read compplan f17f5b8c): VERIFIED in code. In `server/referentialIntegrity.ts`, the "invoice change -> invoice" check lets a miss through only when an approved "deleted" change exists for that same invoice_id. `server/secvalDbHealth.ts:122` sends those counts as `orphanRows` (null if any check failed). The invoice_changes ruling is met in code; production data is not yet measured. Corrected cause for salary_history: trash-bin deletion keeps the history on purpose. The FK needs Livio's design choice first: Retire instead of Delete, or park the salary history in the trash. This goes into the consolidated request. Until then: CRITICAL (2 orphan rows), OPEN.
 - A-DB-09 (NEW, 08 Nov 00:21, compplan; reported by the owner, not yet re-read by the auditor): a per-row primary-key comparison of the restore found a restore defect. bytea columns came back as JSON text of a Buffer: 35 warren_attachments rows and 1 vc_company_documents row. Production data is not affected; a restore from backup would be wrong. Fix + regression test are on #725 at c3df24ea, which also tightens the restore gate (inserted = dump rows) and compares orphan keys as sets. OPEN until a drill on the fixed code passes and the auditor reads the diff. Tables the app rewrites at boot must be listed as documented exceptions.
 - A-DB-09 (08 Nov 00:50): the auditor confirmed through the GitHub API that compplan run 42430371637 ("DR Restore Drill") ran on b011027c (PR #725) and ended with conclusion `success`. The row-level figures (407 tables, 513,713 rows matched by primary key, 0 failures; fx_runs.status documented as an exception) come from the owner and the auditor has not read them in the logs. Status is IMPLEMENTED, not live. It closes after Livio approves the release of #725 and a drill passes on the deployed code.
+
+## Relationship coverage audit (Livio, 08 Nov 2026)
+
+Standard: `docs/database-relationships.md`. Consolidated register: `reports/db-relationships.json` (shown in the Secval "DB links" tab). AD-01 is replaced by AD-02: independent tables no longer change the score; the FK rule scores required-FK enforcement.
+
+The auditor now has read-only access to the four Neon production branches and measured (08 Nov 04:51-05:12 UTC, inside `SET TRANSACTION READ ONLY`):
+
+| ID | App | Measured on production | Status |
+|---|---|---|---|
+| A-DB-10 | compplan | 411 tables (public 408, fx_fixture 3 without PK); 3 FKs, all valid; 6 tables in links. 280 candidate links counted: real orphans oa_task_sources.task_id 21, invoice_changes.invoice_id 15 (history rule), build_log.build_id 9 (sentinel 0), atlas_opportunities.bd_deal_id 3, salary_history.employee_id 2, fi_suggestions.bd_deal_id 1. A-DB-01 phase 0 is DONE. | OPEN |
+| A-DB-11 | lm-op-model | 193 tables, 52 FKs all valid, 56 in links, 2 without PK. 12 FKs exist only in production (from draft PR #826, applied by hand): schema drift R-DB-DRIFT-01. Orphans on the 22 missing links not measured yet. | OPEN |
+| A-DB-12 | Nexus | 160 tables, 126 FKs (123 valid, 3 NOT VALID with 0 orphans each), 114 in links. gov_workstreams.module_id declared in models, absent in production. | OPEN |
+| A-DB-13 | 10bonds | 84 tables (app 83, public 1), 32 FKs all valid, 27 in links (owner's earlier 63 tables was wrong). Orphans on #497's new links: efficient_portfolio_holdings.bes_run_id 73560, events.visitor_id 673, pe_runs.bes_run_id 3. #497's repair changes production data: needs Livio's release approval. bond_prices_daily: empty, not in code. | OPEN |
+| A-DB-14 | Secval | 13 tables, 4 required links; 3 enforced in production, quality_snapshots.job_id -> quality_runs missing (migration 7 in this branch adds it). | IMPLEMENTED, not released |
+
+Owner figures (not verified): compplan 2/241 required FKs on the code schema, classification 381/405; lm-op-model 52/74, 174/193; Nexus 123/163, 160/160; 10bonds 32/45, 84/84. Independent review of each register is pending.
