@@ -8,7 +8,6 @@ import { startCiWatch } from "./health/ci.js";
 import { startRestoreDrill } from "./backup/drill.js";
 import { startDropboxWatch } from "./backup/dropbox.js";
 import { startIntegrityWatch } from "./integrity.js";
-import { startLenovoMonitor } from "./lenovo/monitor.js";
 
 const db = openDb();
 const app = createApp(db, { apiToken: process.env.SECVAL_API_TOKEN });
@@ -37,9 +36,8 @@ startRestoreDrill(db);
 startDropboxWatch();
 // GitHub build/deploy results cap Reliability and Deploy while a run is red.
 startCiWatch();
-// Lenovo 24/7 monitor: app status every minute, real self-test answers and 10bonds
-// job throughput every 5 minutes, all through the policy gate (LENOVO_MONITOR=off stops it).
-startLenovoMonitor(db);
+// Lenovo monitor: NO timer (Livio, 12 Nov 2026). Checks run only when the Refresh
+// button is pressed (POST /api/lenovo/matrix/refresh); no automatic alerts or reports.
 // The daily health e-mail is OFF (Livio 28/10: not asked for). The text is still
 // available at GET /api/digest/preview; startDailyDigest() must stay uncalled.
 // Health reports kept in the repo (reports/*-health.md) appear as estimates.

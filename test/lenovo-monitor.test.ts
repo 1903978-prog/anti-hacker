@@ -7,7 +7,7 @@ import { engage } from "../server/governance/killswitch.js";
 import type { DB } from "../server/db.js";
 import {
   FRESH_STATE, applyAlerts, defaultProbes, matrix, nextState, pruneSamples, reportTick, resetMonitor, restoreStates,
-  runDue, runProbe, selftestProbe, summaryText, tenBondsProbe, uptime, versionProbe, alertState, type MonitorFetch,
+  refreshNow, runDue, runProbe, selftestProbe, summaryText, tenBondsProbe, uptime, versionProbe, alertState, type MonitorFetch,
 } from "../server/lenovo/monitor.js";
 
 const HOSTS = ["compplan.onrender.com", "nexus-eendigo.fly.dev", "lm-op-model.fly.dev", "10bonds.com"];
@@ -212,5 +212,48 @@ describe("policy gate, storage and reporting", () => {
     expect(s.status).toBe(200);
     expect(s.text).toContain("last 7 days");
     expect(JSON.stringify(m.body) + s.text).not.toContain("secret-token");
+  });
+});
+
+describe("on demand only (Livio, 12 Nov 2026)", () => {
+  it("no timer starts the monitor: index.ts never imports it", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync(new URL("../server/index.ts", import.meta.url), "utf8");
+    expect(src).not.toMatch(/startLenovoMonitor|lenovo\/monitor/);
+    const mon = readFileSync(new URL("../server/lenovo/monitor.ts", import.meta.url), "utf8");
+    expect(mon).not.toMatch(/setInterval|startLenovoMonitor/);
+  });
+  it("Refresh runs every probe once, one at a time, and sends no e-mail", async () => {
+    const db = proven();
+    let inFlight = 0, maxInFlight = 0, calls = 0, mails = 0;
+    const f: MonitorFetch = async () => {
+      calls++; inFlight++; maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((r) => setTimeout(r, 1));
+      inFlight--;
+      return ok(500, "down");
+    };
+    const deps = { now: () => new Date(T0), cfg: { apiKey: "k", to: "x", from: "y" }, send: async () => { mails++; return true; } };
+    expect(await refreshNow(db, defaultProbes(), { LENOVO_SELFTEST_TOKEN: "t" }, f, deps as never)).toBe(7);
+    expect(await refreshNow(db, defaultProbes(), { LENOVO_SELFTEST_TOKEN: "t" }, f, deps as never)).toBe(7);
+    expect(maxInFlight).toBe(1);
+    expect(calls).toBe(14);
+    expect(mails).toBe(0);
+    expect((db.prepare("SELECT COUNT(*) n FROM lenovo_alerts").get() as { n: number }).n).toBe(0);
+  });
+  it("the kill switch still stops every probe on Refresh", async () => {
+    const db = proven();
+    engage(db, "test", "test");
+    let calls = 0;
+    await refreshNow(db, defaultProbes(), { LENOVO_SELFTEST_TOKEN: "t" }, async () => { calls++; return ok(200, {}); });
+    expect(calls).toBe(0);
+  });
+  it("POST /api/lenovo/matrix/refresh needs login and returns the fresh matrix", async () => {
+    const db = proven();
+    const app = createApp(db, { apiToken: "secret-token", lenovoEnv: { LENOVO_SELFTEST_TOKEN: "t" }, lenovoFetch: async () => ok(200, { lenovo: { verdict: "online", say: "ok" }, ok: true, answer: "Rome", connected: true, jobsDoneLastHour: 1, queued: 0, processing: 0 }) });
+    expect((await request(app).post("/api/lenovo/matrix/refresh")).status).toBe(401);
+    const r = await request(app).post("/api/lenovo/matrix/refresh").set("authorization", "Bearer secret-token");
+    expect(r.status).toBe(200);
+    expect(r.body.probesRun).toBe(7);
+    expect(r.body.rows.find((x: { app: string }) => x.app === "nexus").cells[3].last.ok).toBe(true);
   });
 });

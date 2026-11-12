@@ -374,6 +374,28 @@ el("lenovoBtn").onclick = async () => {
   await refreshLenovoQuestions();
   el("lenovoBtn").disabled = false;
 };
+// Lenovo monitor: runs ONLY when Refresh is pressed (Livio, 12 Nov 2026). No timer, no e-mail.
+function renderLenovoMatrix(body) {
+  const rows = (body && body.rows) || [];
+  const head = "<tr><th>App</th>" + [1, 2, 3, 4, 5].map((l) => `<th>Level ${l}</th>`).join("") + "</tr>";
+  const cell = (c) => {
+    if (!c.applies) return '<td class="note">not applicable</td>';
+    if (!c.last) return '<td><span class="badge">not checked</span></td>';
+    const b = c.last.ok === true ? '<span class="badge ok">ok</span>' : c.last.ok === false ? '<span class="badge bad">failing</span>' : '<span class="badge">not measured</span>';
+    return `<td title="${esc(c.name + ": " + c.last.detail)}">${b}</td>`;
+  };
+  const when = body && body.generatedAt ? `Checked ${esc(new Date(body.generatedAt).toLocaleString())}. ` : "";
+  el("lenovoMatrix").innerHTML = `${when}Levels: 1 Lenovo host, 2 Infrastructure, 3 Authentication, 4 App connection, 5 Real answer. Hover a cell for the reason.` +
+    `<div class="tablewrap"><table>${head}${rows.map((r) => `<tr><td><b>${esc(r.app)}</b></td>${r.cells.map(cell).join("")}</tr>`).join("")}</table></div>`;
+}
+el("lenovoMatrixBtn").onclick = async () => {
+  el("lenovoMatrixBtn").disabled = true;
+  el("lenovoMatrix").textContent = "Checking every app (up to 2 minutes)…";
+  const { ok, body } = await api("/api/lenovo/matrix/refresh", { method: "POST", body: "{}" });
+  if (ok) renderLenovoMatrix(body);
+  else el("lenovoMatrix").textContent = (body && body.error) || "The check could not run.";
+  el("lenovoMatrixBtn").disabled = false;
+};
 let rollbackArmed = null;
 async function refreshRollback() {
   const { ok, body } = await api("/api/deploys");

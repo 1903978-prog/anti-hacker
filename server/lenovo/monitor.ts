@@ -491,19 +491,34 @@ export async function reportTick(db: DB, deps: AlertDeps = {}): Promise<"none" |
   return sent;
 }
 
-/** Starts the in-process monitor: a 60 s tick runs due probes; reports and pruning ride the same tick. */
-export function startLenovoMonitor(db: DB): () => void {
-  if (process.env.LENOVO_MONITOR === "off") return () => {};
-  restoreStates(db);
-  let lastPrune = 0;
-  const tick = () => {
-    void runDue(db).catch(() => { /* a failed round must not crash the server */ });
-    void reportTick(db).catch(() => {});
-    if (Date.now() - lastPrune > 86_400_000) { lastPrune = Date.now(); try { pruneSamples(db); } catch { /* next day */ } }
-  };
-  const first = setTimeout(tick, 45_000);
-  const timer = setInterval(tick, MINUTE);
-  first.unref?.();
-  timer.unref?.();
-  return () => { clearTimeout(first); clearInterval(timer); };
+/**
+ * On demand only (Livio, 12 Nov 2026: "stop checks per minute, check must run only when I press refresh button").
+ * Runs every probe once, one at a time, through the policy gate, and stores the readings. It sends no e-mail
+ * and writes no alert: alerts need repeated readings over time, which on-demand checks do not give.
+ * Nothing in secval calls this on a timer; only the Refresh button (POST /api/lenovo/matrix/refresh) does.
+ */
+export async function refreshNow(db: DB, probes: Probe[] = defaultProbes(), env: Record<string, string | undefined> = process.env, f: MonitorFetch = realFetch, deps: AlertDeps = {}): Promise<number | "busy"> {
+  if (running) return "busy";
+  running = true;
+  let n = 0;
+  try {
+    for (const p of probes) {
+      const ts = (deps.now?.() ?? new Date()).toISOString();
+      const decision = requestApproval(db, { actor: "lenovo-monitor", target: p.host, mode: "passive" });
+      let samples: Sample[];
+      if (!decision.allowed) {
+        samples = p.covers.map((c) => ({ ...c, ok: null, ms: null, detail: `Not measured: secval's policy refused the check (${decision.reason}).` }));
+      } else {
+        try { samples = await p.run(f, env); } catch (e) {
+          samples = p.covers.map((c) => ({ ...c, ok: null, ms: null, detail: `Not measured: probe error ${short((e as Error)?.message)}.` }));
+        }
+      }
+      recordSamples(db, p.id, ts, samples);
+      n++;
+    }
+    try { pruneSamples(db, deps.now?.() ?? new Date()); } catch { /* next refresh */ }
+  } finally {
+    running = false;
+  }
+  return n;
 }
