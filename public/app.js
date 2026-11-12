@@ -424,6 +424,7 @@ function refreshAll() {
   if (currentTab === "usage") refreshUsage();
   if (currentTab === "aeos") refreshAeos();
   if (currentTab === "relationships") refreshRelationships();
+  if (currentTab === "eees") refreshEees();
 
 }
 
@@ -942,12 +943,112 @@ el("relRefresh").onclick = async () => {
   try { await refreshRelationships(); } finally { el("relRefresh").disabled = false; }
 };
 
+// --- EEES v1.0 quality standard ---------------------------------------------------
+// 30 dimensions per app from eees/evidence/*.json plus Secval's own monitors.
+// The assured score is conservative: UNKNOWN counts as 0 and hard gates cap it.
+// Every number opens to its checks and evidence; nothing here is a decoration.
+const eeesCls = (n) => (n === null || n === undefined ? "" : n >= 8 ? "good" : n >= 5 ? "mid" : "bad");
+const eeesNum = (n) => (n === null || n === undefined ? "–" : Number(n).toFixed(1));
+const EEES_STATUS = { verified: "verified", failed: "FAILED", unknown: "UNKNOWN", na: "N/A" };
+let eeesData = null;
+
+function eeesRow(a) {
+  const td = (label, html, cls = "") => `<td class="${cls}" data-label="${esc(label)}">${html}</td>`;
+  const dom = (id) => {
+    const d = a.domains.find((x) => x.id === id);
+    return d && d.assured !== null ? `<span class="eq ${eeesCls(d.assured)}">${eeesNum(d.assured)}</span>` : "N/A";
+  };
+  const ver = a.productionVersion ? `${esc(a.productionVersion.sha || "unknown")}<small>${esc(niceDate(a.productionVersion.checkedAt))}</small>` : '<span class="sev medium">UNKNOWN</span>';
+  const trend = a.trend ? `${a.trend.delta >= 0 ? "+" : ""}${esc(a.trend.delta)}<small>since ${esc(niceDate(a.trend.date))}</small>` : "<small>first assessment</small>";
+  const rel = a.releaseStatus === "BLOCKED" ? "sev high" : a.releaseStatus === "NOT READY" ? "sev medium" : "badge ok";
+  return `<tr>${td("App", `<button class="link" data-eees="${esc(a.id)}">${esc(a.name)}</button>${a.kind === "subsystem" ? `<small>part of ${esc(a.parent)} (not in ESII)</small>` : ""}`, "app")}${td("Production version", ver, "n")}${td("Assured /10", `<b class="eq ${eeesCls(a.assured)}">${eeesNum(a.assured)}</b>${a.cap !== null ? `<small>capped at ${esc(a.cap)}</small>` : ""}`, "n")}${["DATA", "SEC", "BIZ", "OPS", "ENG"].map((id) => td(id, dom(id), "n")).join("")}${td("Audit coverage", `${esc(a.coverage)}%`, "n")}${td("Production confidence", `${esc(a.productionConfidence.label)}<small>${esc(a.productionConfidence.pct)}%</small>`, "n")}${td("Critical findings", `<b>${esc(a.criticalFindings.length)}</b>`, "n")}${td("Last independent verification", a.lastIndependentVerification ? esc(niceDate(a.lastIndependentVerification)) : "none yet", "n")}${td("Trend", trend, "n")}${td("Release status", `<span class="${rel}">${esc(a.releaseStatus)}</span>`)}</tr>`;
+}
+
+function eeesCheckHtml(c) {
+  const ev = c.evidence.length
+    ? `<ul>${c.evidence.map((e) => `<li>${esc(e.kind)}, ${esc(e.environment)}, ${esc(niceDate(e.date))}${e.reviewer ? `, reviewer ${esc(e.reviewer)}` : ""}: <code>${esc(e.link)}</code></li>`).join("")}</ul>`
+    : "";
+  const st = c.status === "verified" ? "badge ok" : c.status === "failed" ? "sev high" : "sev medium";
+  return `<div class="uline"><div class="un">${esc(c.id)} ${esc(c.title)} <span class="${st}">${esc(EEES_STATUS[c.status])}</span>${c.level ? ` <span class="badge">${esc(c.level)}, credit ${esc(Math.round(c.credit * 100))}%</span>` : ""}</div>
+    <div class="um">${c.note ? `${esc(c.note)}. ` : ""}${c.reason ? `<i>${esc(c.reason)}</i>. ` : ""}Test: ${esc(c.acceptance)} <small>(${esc(c.method)}, ${esc(c.cadence)}; source: ${esc(c.source)}${c.references.length ? `; ${esc(c.references.join(", "))}` : ""})</small></div>${ev}</div>`;
+}
+
+function eeesDimHtml(d) {
+  const n = d.counts;
+  const score = d.state === "na" ? "N/A" : d.state === "unknown" ? "UNKNOWN (0)" : eeesNum(d.adjusted);
+  return `<details class="eeesdim"><summary><span class="eq ${d.state === "scored" ? eeesCls(d.adjusted) : "mid"}">${esc(score)}</span> ${esc(d.id)} ${esc(d.name)} <small>(${esc(d.effectiveWeight)}% · ${n.verified} verified, ${n.failed} failed, ${n.unknown} unknown${n.na ? `, ${n.na} N/A` : ""} of ${n.required})</small></summary>
+    <div class="note"><b>10/10 means:</b> ${esc(d.definitionOf10)}</div>
+    <div class="note">Raw ${eeesNum(d.raw)} · evidence-adjusted ${eeesNum(d.adjusted)} · evidence date ${d.evidenceDate ? esc(niceDate(d.evidenceDate)) : "none"} · environments ${esc(d.environments.join(", ") || "none")} · reviewers ${esc(d.reviewers.join(", ") || "none")}${d.naJustification ? ` · N/A: ${esc(d.naJustification)}` : ""}</div>
+    ${d.defects.length ? `<div class="note"><b>Open defects:</b> ${d.defects.map((x) => `${esc(x.id)} ${esc(x.severity)} (${esc(x.status)}) ${esc(x.title)}`).join("; ")}</div>` : ""}
+    ${d.checks.map(eeesCheckHtml).join("")}
+  </details>`;
+}
+
+function eeesAppHtml(a) {
+  const line = (name, value) => `<div class="uline"><div class="un">${esc(name)}</div><div class="um">${value}</div></div>`;
+  const list = (xs) => (xs && xs.length ? `<ul>${xs.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "none");
+  const gates = `<ul>${a.gates.map((g) => `<li><b>${esc(g.id)}</b> ${esc(g.status.toUpperCase())}${g.applied ? ` (caps at ${esc(g.cap)})` : ""}: ${esc(g.text)}. <i>${esc(g.reason)}</i></li>`).join("")}</ul>`;
+  const rgates = a.releaseGates.map((r) => `${esc(r.id)} ${esc(r.status.toUpperCase())}`).join(" · ");
+  const imp = a.improvements.slice(0, 10);
+  const imps = imp.length
+    ? `<ol>${imp.map((i) => `<li><b>${esc(i.check || i.dimension)} ${esc(i.title)}</b> (${esc(i.realOrUnverified)}, +${esc(i.expectedGain)} points). ${esc(i.why)}. Impact: ${esc(i.businessImpact)}. Effort: ${esc(i.effort)}. Risk: ${esc(i.risk)}. Owner: ${esc(i.owner)}.${i.defects.length ? ` Defects: ${esc(i.defects.join(", "))}.` : ""} Proof needed: ${esc(i.testsToClose)}</li>`).join("")}</ol>${a.improvements.length > 10 ? `<div class="note">${a.improvements.length - 10} more in /api/eees.</div>` : ""}`
+    : "none below 9.5";
+  return `<div class="app">
+    <div class="apphead"><span class="overall ${eeesCls(a.assured)}">${eeesNum(a.assured)}</span><h3 class="sub3" style="margin:0">${esc(a.name)}</h3>
+      <span class="note">tier ${esc(a.tier)} · owner ${esc(a.owner)} · assessed ${a.assessedAt ? esc(niceDate(a.assessedAt)) : "never"}</span></div>
+    ${line("How the score is made", `weighted evidence-adjusted ${eeesNum(a.weighted)}${a.cap !== null ? `, capped at ${esc(a.cap)} by hard gates` : ""} → assured <b>${eeesNum(a.assured)}</b>. Raw share of verified checks (no ceilings, not an assurance figure): ${eeesNum(a.raw)}.`)}
+    ${line("Release status", `<b>${esc(a.releaseStatus)}</b>. ${esc(a.releaseReasons.join("; "))}. Release gates: ${rgates}. A ready status still needs Livio's exact-SHA approval.`)}
+    ${line("Production-readiness threshold", `<b>${esc(a.readiness.label)}</b>${a.readiness.unmet.length ? `: ${esc(a.readiness.unmet.join("; "))}` : ""}`)}
+    ${line("Hard gates", gates)}
+    ${line("Critical findings", list(a.criticalFindings))}
+    ${line("Recommended improvements (highest business risk first)", imps)}
+    ${a.defectRegister ? line("Defect register", `${esc(Object.entries(a.defectRegister.counts).map(([k, v]) => `${k} ${v}`).join(" · "))}. ${esc(a.defectRegister.note || "")} <code>${esc(a.defectRegister.link)}</code>`) : ""}
+    ${a.notes.length ? line("Notes", list(a.notes)) : ""}
+    <h3 class="sub3">30 dimensions (open one to see its checks and evidence)</h3>
+    ${a.domains.map((dom) => `<h3 class="tgroup">${esc(dom.name)} · ${dom.assured === null ? "N/A" : eeesNum(dom.assured)} · ${esc(dom.weight)}%</h3>${a.dimensions.filter((d) => d.domain === dom.id).map(eeesDimHtml).join("")}`).join("")}
+  </div>`;
+}
+
+function showEeesApp(id) {
+  const a = eeesData && eeesData.apps.find((x) => x.id === id);
+  el("eeesDetail").innerHTML = a ? eeesAppHtml(a) : "";
+}
+
+async function refreshEees() {
+  const { ok, status, body } = await api("/api/eees");
+  if (!ok) {
+    el("eeesTable").textContent = status === 401 ? NEED_TOKEN : "Could not load EEES: " + (body.error || status);
+    el("eeesDetail").innerHTML = "";
+    return;
+  }
+  eeesData = body;
+  const p = body.portfolio;
+  el("eeesBanner").innerHTML = body.problems.length ? `<strong>File problems:</strong> ${esc(body.problems.join("; "))}` : "";
+  el("eeesSummary").innerHTML = `<div class="tsum"><span><b class="eq ${eeesCls(p.esii)}">${eeesNum(p.esii)}</b>ESII portfolio index /10</span><span><b>${esc(p.coverage)}%</b>audit coverage</span><span><b>${esc(p.appsAssessed)}/${esc(p.appsTotal)}</b>apps with evidence</span><span><b class="f">${esc(p.blocked.length)}</b>release blocked</span></div><div class="note">${esc(p.formula)}</div>`;
+  const head = ["App", "Production version", "Assured /10", "DATA", "SEC", "BIZ", "OPS", "ENG", "Audit coverage", "Production confidence", "Critical findings", "Last independent verification", "Trend", "Release status"];
+  el("eeesTable").innerHTML = `<table class="rel eees"><thead><tr>${head.map((h) => `<th scope="col">${esc(h)}</th>`).join("")}</tr></thead><tbody>${body.apps.map(eeesRow).join("")}</tbody></table>`;
+  el("eeesTop").innerHTML = `<h3 class="sub3">Top three improvements per app</h3>${body.apps.filter((a) => a.top3.length).map((a) => `<div class="uline"><div class="un">${esc(a.name)}</div><div class="um">${a.top3.map((i) => `${esc(i.check || i.dimension)} ${esc(i.title)} (${esc(i.realOrUnverified)})`).join(" · ")}</div></div>`).join("")}`;
+  el("eeesMsg").textContent = `EEES ${body.standard.version}, computed ${niceDate(body.computedAt, true)} from the evidence files and Secval's monitors.`;
+  if (eeesData && el("eeesDetail").dataset.app) showEeesApp(el("eeesDetail").dataset.app);
+}
+el("eeesTable").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-eees]");
+  if (!b) return;
+  el("eeesDetail").dataset.app = b.dataset.eees;
+  showEeesApp(b.dataset.eees);
+  el("eeesDetail").scrollIntoView({ block: "start" });
+});
+el("eeesRefresh").onclick = async () => {
+  el("eeesRefresh").disabled = true;
+  try { await refreshEees(); } finally { el("eeesRefresh").disabled = false; }
+};
+
 // --- Menus (tabs) -------------------------------------------------------------
 // Each menu is a section of this one page. The address (#health, #scans,
 // #tests, #usage, #aeos, #backup, #settings) picks the menu, so links and reloads keep it; the last one
 // used is remembered in this browser. The token box sits above the menus, so it
 // shows whichever menu is open.
-const TABS = ["health", "scans", "tests", "usage", "aeos", "relationships", "backup", "settings"];
+const TABS = ["health", "eees", "scans", "tests", "usage", "aeos", "relationships", "backup", "settings"];
 let currentTab = "health";
 function showTab(name) {
   const tab = TABS.includes(name) ? name : "health";
@@ -960,6 +1061,7 @@ function showTab(name) {
   if (tab === "usage" && signedIn) refreshUsage();
   if (tab === "aeos" && signedIn) refreshAeos();
   if (tab === "relationships" && signedIn) refreshRelationships();
+  if (tab === "eees" && signedIn) refreshEees();
 }
 function storedTab() {
   try { return localStorage.getItem("secval_tab"); } catch { return null; }

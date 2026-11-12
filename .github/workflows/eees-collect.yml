@@ -1,0 +1,70 @@
+# EEES v1.0 repository collector, reusable by every Eendigo app.
+#
+# An app adopts it with a small workflow in its own repo (see
+# eees/README.md). It runs the app's own typecheck, lint and tests, scans
+# tracked files for secrets, checks CI/lockfile/docs and runs npm audit, then
+# uploads eees-evidence.json as an artifact. Repository evidence only
+# (EEES level "synthetic", max 6/10): it never touches production.
+#
+# Triggers: called by another workflow (on its pull_request into the shipping
+# branch) or run by hand. Never on push (Livio's Actions rules, 28 Oct).
+name: EEES collect
+
+on:
+  workflow_call:
+    inputs:
+      app:
+        description: EEES app id (eees/apps.json)
+        required: true
+        type: string
+      node-version:
+        required: false
+        type: string
+        default: "22"
+  workflow_dispatch:
+    inputs:
+      app:
+        description: EEES app id (eees/apps.json)
+        required: true
+        default: secval
+
+concurrency:
+  group: eees-collect-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 50
+      - name: Get the EEES collector (pinned to the standard version)
+        uses: actions/checkout@v4
+        with:
+          repository: 1903978-prog/anti-hacker
+          ref: integration
+          path: .eees-standard
+          sparse-checkout: |
+            scripts/eees
+            eees
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version || '22' }}
+      - name: Install dependencies (if a lockfile exists)
+        run: if [ -f package-lock.json ]; then npm ci; fi
+      - name: Collect repository evidence
+        # Never fails the build: the evidence file records pass/fail per check.
+        run: node .eees-standard/scripts/eees/collect.mjs --app "${{ inputs.app }}" --run --audit --out eees-evidence.json || true
+      - name: Summary
+        run: |
+          node -e 'const f=require("./eees-evidence.json");const r=Object.entries(f.checks).map(([k,v])=>`| ${k} | ${v.status} | ${String(v.note).replace(/\|/g,"/")} |`);console.log(["## EEES repository checks ("+f.app+" @ "+f.commit.slice(0,8)+")","","| Check | Result | Detail |","|---|---|---|",...r].join("\n"))' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eees-evidence-${{ inputs.app }}
+          path: eees-evidence.json
+          retention-days: 30

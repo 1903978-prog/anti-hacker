@@ -15,7 +15,7 @@ import { createApp } from "../server/app.js";
 import { loadReportFiles } from "../server/health/seed.js";
 
 const TOKEN = "page-check-token";
-const TABS = ["health", "scans", "tests", "usage", "aeos", "relationships", "settings"];
+const TABS = ["health", "eees", "scans", "tests", "usage", "aeos", "relationships", "settings"];
 const WIDTHS = [1440, 390, 360];
 const axeSource = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
 
@@ -87,6 +87,17 @@ async function main(): Promise<void> {
             if (process.env.PAGE_SHOTS) await page.screenshot({ path: `${process.env.PAGE_SHOTS}/health-${width}-${scheme}.png`, fullPage: true });
             checks++;
           }
+          if (tab === "eees") {
+            // Also check an app's opened scorecard with one dimension expanded (checks and evidence).
+            await page.locator("button[data-eees]").first().click();
+            await page.locator("#eeesDetail details.eeesdim").first().waitFor();
+            await page.locator("#eeesDetail details.eeesdim summary").first().click();
+            const wideDetail = await sideways(page);
+            if (wideDetail) problems.push(`${where} app scorecard: ${wideDetail}`);
+            for (const v of await axe(page)) problems.push(`${where} app scorecard: ${v}`);
+            if (process.env.PAGE_SHOTS) await page.screenshot({ path: `${process.env.PAGE_SHOTS}/eees-${width}-${scheme}.png`, fullPage: true });
+            checks++;
+          }
         }
         await ctx.close();
       }
@@ -95,7 +106,7 @@ async function main(): Promise<void> {
     await browser.close();
     server.close();
   }
-  console.log(`page check: ${checks} page views (${TABS.length} tabs + app details x ${WIDTHS.join("/")} px x light/dark), ${loaded} sample reports`);
+  console.log(`page check: ${checks} page views (${TABS.length} tabs + app details + EEES scorecard x ${WIDTHS.join("/")} px x light/dark), ${loaded} sample reports`);
   if (problems.length) {
     console.log(`FAILED, ${problems.length} problem(s):\n` + [...new Set(problems)].join("\n"));
     process.exit(1);

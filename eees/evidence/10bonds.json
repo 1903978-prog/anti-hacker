@@ -1,0 +1,95 @@
+{
+  "standard": "EEES",
+  "standardVersion": "1.0.0",
+  "app": "10bonds",
+  "assessedAt": "2026-11-12",
+  "assessor": "Secval auditor thread (Claude agent), 12 Nov 2026. Every entry cites a reproducible file or measurement; none has had a human independent review yet.",
+  "productionVersion": {
+    "sha": "a73c6126",
+    "source": "/mnt/project-files/10bonds/stage2-after-read-2026-11-10.md (repair run on main a73c6126, 10 Nov); later releases not re-read by Secval",
+    "checkedAt": "2026-11-10"
+  },
+  "lastIndependentVerification": null,
+  "checks": {
+    "D02.1": {
+      "status": "verified",
+      "evidence": [
+        {
+          "link": "/mnt/project-files/10bonds/stage2-after-read-2026-11-10.md",
+          "kind": "measurement",
+          "date": "2026-11-10",
+          "environment": "production"
+        }
+      ],
+      "note": "45 of 45 foreign keys validated, 0 NOT VALID",
+      "level": "production"
+    },
+    "D02.2": {
+      "status": "verified",
+      "evidence": [
+        {
+          "link": "/mnt/project-files/10bonds/stage2-after-read-2026-11-10.md",
+          "kind": "measurement",
+          "date": "2026-11-10",
+          "environment": "production"
+        }
+      ],
+      "note": "0 orphans on all 13 checked links (docs/fk-orphan-check.sql)",
+      "level": "production"
+    },
+    "D08.3": {
+      "status": "failed",
+      "evidence": [
+        {
+          "link": "/mnt/project-files/architecture-audit-2026-11-11/AUDIT-REPORT.md section 6",
+          "kind": "measurement",
+          "date": "2026-11-11",
+          "environment": "production"
+        }
+      ],
+      "note": "Two application database roles have more privileges than they need (details in the private audit file)"
+    },
+    "D23.1": {
+      "status": "verified",
+      "evidence": [
+        {
+          "link": "/mnt/project-files/architecture-audit-2026-11-11/data-flows.csv F11",
+          "kind": "measurement",
+          "date": "2026-11-10",
+          "environment": "production"
+        }
+      ],
+      "note": "Accounts backup daily 02:15 with restore test 10 Nov 09:56 (flow F11, prior evidence)",
+      "level": "production"
+    }
+  },
+  "dimensionsNA": {},
+  "gates": {},
+  "releaseGates": {},
+  "defects": [
+    {
+      "id": "10B-ROLES",
+      "title": "Application database roles have more privileges than they need",
+      "severity": "P1",
+      "category": "security",
+      "status": "open",
+      "dimensions": [
+        "D08"
+      ],
+      "link": "/mnt/project-files/architecture-audit-2026-11-11/AUDIT-REPORT.md section 6",
+      "owner": "10bonds thread",
+      "exploitable": false,
+      "impact": "A leaked application credential would give more access than needed"
+    }
+  ],
+  "history": [
+    {
+      "date": "2026-11-12",
+      "assured": 0.3,
+      "raw": 0.33,
+      "coverage": 5.3,
+      "standardVersion": "1.0.0"
+    }
+  ],
+  "notes": []
+}

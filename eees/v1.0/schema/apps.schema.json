@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "standardVersion": {
+      "type": "string"
+    },
+    "updated": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}(T[\\d:.]+Z?)?$"
+    },
+    "note": {
+      "type": "string"
+    },
+    "apps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "application",
+              "subsystem",
+              "infrastructure"
+            ]
+          },
+          "parent": {
+            "type": "string"
+          },
+          "tier": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "standard",
+              "public"
+            ]
+          },
+          "owner": {
+            "type": "string"
+          },
+          "repo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hosts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "deploy": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "tier",
+          "owner",
+          "repo",
+          "hosts",
+          "evidence"
+        ]
+      }
+    }
+  },
+  "required": [
+    "standardVersion",
+    "updated",
+    "apps"
+  ]
+}

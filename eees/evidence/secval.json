@@ -1,0 +1,223 @@
+{
+  "standard": "EEES",
+  "standardVersion": "1.0.0",
+  "app": "secval",
+  "assessedAt": "2026-11-12",
+  "assessor": "Secval auditor thread (Claude agent), 12 Nov 2026. Every entry cites a reproducible file or measurement; none has had a human independent review yet.",
+  "productionVersion": {
+    "sha": null,
+    "source": "Not read this session (no access to the live service from this container); integration head 74ca7e4",
+    "checkedAt": "2026-11-12"
+  },
+  "lastIndependentVerification": null,
+  "checks": {
+    "D01.2": {
+      "status": "verified",
+      "level": "synthetic",
+      "evidence": [
+        {
+          "link": "eees collector: anti-hacker@74ca7e4c (D01.2)",
+          "kind": "measurement",
+          "date": "2026-11-12T02:39:51.635Z",
+          "environment": "repository"
+        }
+      ],
+      "note": "1 migration file(s), e.g. server/migrations.ts"
+    },
+    "D09.1": {
+      "status": "verified",
+      "level": "synthetic",
+      "evidence": [
+        {
+          "link": "eees collector: anti-hacker@74ca7e4c (D09.1)",
+          "kind": "measurement",
+          "date": "2026-11-12T02:39:51.635Z",
+          "environment": "repository"
+        }
+      ],
+      "note": "0 secret patterns in 209 tracked files (working tree only, history not scanned)"
+    },
+    "D09.2": {
+      "status": "verified",
+      "level": "synthetic",
+      "evidence": [
+        {
+          "link": "eees collector: anti-hacker@74ca7e4c (D09.2)",
+          "kind": "measurement",
+          "date": "2026-11-12T02:39:51.635Z",
+          "environment": "repository"
+        }
+      ],
+      "note": "no .env, .pem or key files tracked"
+    },
+    "D25.1": {
+      "status": "verified",
+      "level": "synthetic",
+      "evidence": [
+        {
+          "link": "eees collector: anti-hacker@74ca7e4c (D25.1)",
+          "kind": "test-run",
+          "date": "2026-11-12T02:39:51.635Z",
+          "environment": "repository"
+        }
+      ],
+      "note": "npm run typecheck: passed ()"
+    },
+    "D25.2": {
+      "status": "verified",
+      "level": "synthetic",
+      "evidence": [
+        {
+          "link": "eees collector: anti-hacker@74ca7e4c (D25.2)",
+          "kind": "test-run",
+          "date": "2026-11-12T02:39:51.635Z",
+          "environment": "repository"
+        }
+      ],
+      "note": "npm run lint: passed ()"
+    },
+    "D26.1": {
+      "status": "verified",
+      "level": "synthetic",
+      "evidence": [
+        {
+          "link": "eees collector: anti-hacker@74ca7e4c (D26.1)",
+          "kind": "test-run",
+          "date": "2026-11-12T02:39:51.635Z",
+          "environment": "repository"
+        }
+      ],
+      "note": "npm run test: passed (    Isolate  30 workers spawned · ~112ms startup each (spawn + environment, per file) |              at least ~1.01s faster with isolate: false — reuses workers across files instead of one per file)"
+    },
+    "D26.2": {
+      "status": "verified",
+      "level": "synthetic",
+      "evidence": [
+        {
+          "link": "eees collector: anti-hacker@74ca7e4c (D26.2)",
+          "kind": "measurement",
+          "date": "2026-11-12T02:39:51.635Z",
+          "environment": "repository"
+        }
+      ],
+      "note": "0 skipped or focused tests in 33 test files"
+    },
+    "D27.1": {
+      "status": "verified",
+      "level": "synthetic",
+      "evidence": [
+        {
+          "link": "eees collector: anti-hacker@74ca7e4c (D27.1)",
+          "kind": "measurement",
+          "date": "2026-11-12T02:39:51.635Z",
+          "environment": "repository"
+        }
+      ],
+      "note": "tests run on pull requests: .github/workflows/ci.yml"
+    },
+    "D27.2": {
+      "status": "failed",
+      "evidence": [
+        {
+          "link": "eees collector: anti-hacker@74ca7e4c (D27.2)",
+          "kind": "measurement",
+          "date": "2026-11-12T02:39:51.635Z",
+          "environment": "repository"
+        }
+      ],
+      "note": "missing concurrency/cancel-in-progress: .github/workflows/keep-awake.yml"
+    },
+    "D28.1": {
+      "status": "verified",
+      "level": "synthetic",
+      "evidence": [
+        {
+          "link": "eees collector: anti-hacker@74ca7e4c (D28.1)",
+          "kind": "measurement",
+          "date": "2026-11-12T02:39:51.635Z",
+          "environment": "repository"
+        }
+      ],
+      "note": "deploy config: render.yaml"
+    },
+    "D29.1": {
+      "status": "verified",
+      "level": "synthetic",
+      "evidence": [
+        {
+          "link": "eees collector: anti-hacker@74ca7e4c (D29.1)",
+          "kind": "measurement",
+          "date": "2026-11-12T02:39:51.635Z",
+          "environment": "repository"
+        }
+      ],
+      "note": "lockfile: package-lock.json"
+    },
+    "D29.2": {
+      "status": "failed",
+      "evidence": [
+        {
+          "link": "eees collector: anti-hacker@74ca7e4c (D29.2)",
+          "kind": "test-run",
+          "date": "2026-11-12T02:39:51.635Z",
+          "environment": "repository"
+        }
+      ],
+      "note": "npm audit (production deps): 0 critical, 1 high, 0 moderate"
+    },
+    "D29.3": {
+      "status": "failed",
+      "evidence": [
+        {
+          "link": "eees collector: anti-hacker@74ca7e4c (D29.3)",
+          "kind": "measurement",
+          "date": "2026-11-12T02:39:51.635Z",
+          "environment": "repository"
+        }
+      ],
+      "note": "no Dependabot or Renovate configuration"
+    },
+    "D30.1": {
+      "status": "verified",
+      "level": "synthetic",
+      "evidence": [
+        {
+          "link": "eees collector: anti-hacker@74ca7e4c (D30.1)",
+          "kind": "measurement",
+          "date": "2026-11-12T02:39:51.635Z",
+          "environment": "repository"
+        }
+      ],
+      "note": "README: README.md; ownership/rules: AGENTS.md, CLAUDE.md"
+    },
+    "D30.3": {
+      "status": "verified",
+      "level": "synthetic",
+      "evidence": [
+        {
+          "link": "eees collector: anti-hacker@74ca7e4c (D30.3)",
+          "kind": "measurement",
+          "date": "2026-11-12T02:39:51.635Z",
+          "environment": "repository"
+        }
+      ],
+      "note": ".engineering/ last changed 2026-11-08T05:14:24+00:00 (3 days ago)"
+    }
+  },
+  "dimensionsNA": {},
+  "gates": {},
+  "releaseGates": {},
+  "defects": [],
+  "history": [
+    {
+      "date": "2026-11-12",
+      "assured": 0.6,
+      "raw": 0.91,
+      "coverage": 11.9,
+      "standardVersion": "1.0.0"
+    }
+  ],
+  "notes": [
+    "Repository checks come from scripts/eees/collect.mjs (synthetic level). Uptime, scan, CI and backup results are added live by the Secval server itself."
+  ]
+}

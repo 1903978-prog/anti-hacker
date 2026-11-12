@@ -6,6 +6,7 @@ Only add tasks the user assigned. Each task also needs severity P0-P3, acceptanc
 | ID | Workstream | Title | Status | Verification | Release approved | Severity | PR | SHA |
 |---|---|---|---|---|---|---|---|---|
 | T-SECVAL-1 | Health | Database column measured (data quality + hourly structure check) | READY FOR RELEASE REVIEW | VERIFIED | No (draft only, D-002) | P2 | #48 | a61fea5 |
+| T-SECVAL-3 | Quality | EEES v1.0: standard, 30-criteria registry, scoring engine, evidence registry, ESII, dashboard tab, collector, per-app integration notes | IMPLEMENTED | PARTIAL | No (draft only, D-002) | P2 | see PR | see PR |
 | T-SECVAL-2 | Health | Database relationship coverage: A-E standard, register, metrics A-E, DB links tab, required-FK score rule, migration 7 | IMPLEMENTED | PARTIAL | No (draft only) | P1 | stacked on #50 | see PR |
 
 ## Task details

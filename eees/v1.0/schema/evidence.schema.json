@@ -1,0 +1,485 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "standard": {
+      "type": "string",
+      "const": "EEES"
+    },
+    "standardVersion": {
+      "type": "string"
+    },
+    "app": {
+      "type": "string"
+    },
+    "assessedAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}(T[\\d:.]+Z?)?$"
+    },
+    "assessor": {
+      "type": "string"
+    },
+    "productionVersion": {
+      "default": null,
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "sha": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source": {
+              "type": "string"
+            },
+            "checkedAt": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}(T[\\d:.]+Z?)?$"
+            }
+          },
+          "required": [
+            "sha",
+            "source",
+            "checkedAt"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "lastIndependentVerification": {
+      "default": null,
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}(T[\\d:.]+Z?)?$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "checks": {
+      "default": {},
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^D\\d{2}\\.\\d+$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "verified",
+              "failed",
+              "unknown",
+              "na"
+            ]
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "synthetic",
+              "prodlike",
+              "production",
+              "independent-sustained"
+            ]
+          },
+          "evidence": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "link": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "measurement",
+                    "test-run",
+                    "ci-run",
+                    "review",
+                    "drill",
+                    "telemetry",
+                    "agent-claim"
+                  ]
+                },
+                "date": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}(T[\\d:.]+Z?)?$"
+                },
+                "environment": {
+                  "type": "string",
+                  "enum": [
+                    "production",
+                    "prodlike",
+                    "test",
+                    "repository"
+                  ]
+                },
+                "reviewer": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "link",
+                "kind",
+                "date",
+                "environment"
+              ]
+            }
+          },
+          "note": {
+            "type": "string"
+          },
+          "justification": {
+            "type": "string"
+          },
+          "reviewer": {
+            "type": "string"
+          },
+          "effort": {
+            "type": "string"
+          },
+          "risk": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      }
+    },
+    "dimensionsNA": {
+      "default": {},
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^D\\d{2}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "justification": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reviewer": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "justification",
+          "reviewer"
+        ]
+      }
+    },
+    "gates": {
+      "default": {},
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^G\\d$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "pass",
+              "fail",
+              "unknown"
+            ]
+          },
+          "note": {
+            "type": "string"
+          },
+          "evidence": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "link": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "measurement",
+                    "test-run",
+                    "ci-run",
+                    "review",
+                    "drill",
+                    "telemetry",
+                    "agent-claim"
+                  ]
+                },
+                "date": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}(T[\\d:.]+Z?)?$"
+                },
+                "environment": {
+                  "type": "string",
+                  "enum": [
+                    "production",
+                    "prodlike",
+                    "test",
+                    "repository"
+                  ]
+                },
+                "reviewer": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "link",
+                "kind",
+                "date",
+                "environment"
+              ]
+            }
+          }
+        },
+        "required": [
+          "status"
+        ]
+      }
+    },
+    "releaseGates": {
+      "default": {},
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "pass",
+              "fail",
+              "unknown"
+            ]
+          },
+          "note": {
+            "type": "string"
+          },
+          "evidence": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "link": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "measurement",
+                    "test-run",
+                    "ci-run",
+                    "review",
+                    "drill",
+                    "telemetry",
+                    "agent-claim"
+                  ]
+                },
+                "date": {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}(T[\\d:.]+Z?)?$"
+                },
+                "environment": {
+                  "type": "string",
+                  "enum": [
+                    "production",
+                    "prodlike",
+                    "test",
+                    "repository"
+                  ]
+                },
+                "reviewer": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "link",
+                "kind",
+                "date",
+                "environment"
+              ]
+            }
+          }
+        },
+        "required": [
+          "status"
+        ]
+      }
+    },
+    "defects": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "P0",
+              "P1",
+              "P2",
+              "P3"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "security",
+              "data",
+              "financial",
+              "recovery",
+              "governance",
+              "functional",
+              "reliability",
+              "other"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "fixed-unreleased",
+              "closed-verified"
+            ]
+          },
+          "exploitable": {
+            "type": "boolean"
+          },
+          "material": {
+            "type": "boolean"
+          },
+          "dimensions": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^D\\d{2}$"
+            }
+          },
+          "link": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "impact": {
+            "type": "string"
+          },
+          "effort": {
+            "type": "string"
+          },
+          "risk": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "severity",
+          "category",
+          "status"
+        ]
+      }
+    },
+    "defectRegister": {
+      "type": "object",
+      "properties": {
+        "link": {
+          "type": "string"
+        },
+        "counts": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "link",
+        "counts"
+      ]
+    },
+    "history": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}(T[\\d:.]+Z?)?$"
+          },
+          "assured": {
+            "type": "number"
+          },
+          "raw": {
+            "type": "number"
+          },
+          "coverage": {
+            "type": "number"
+          },
+          "standardVersion": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "assured",
+          "raw",
+          "coverage",
+          "standardVersion"
+        ]
+      }
+    },
+    "notes": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "standard",
+    "standardVersion",
+    "app",
+    "assessedAt",
+    "assessor"
+  ]
+}

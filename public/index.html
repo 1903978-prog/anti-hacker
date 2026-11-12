@@ -119,6 +119,13 @@
       table.rel th { font-size: 11px; vertical-align: bottom; }
       table.rel td.n { white-space: nowrap; }
       table.rel td small { display: block; font-size: 10px; color: var(--muted); white-space: normal; }
+      table.eees td.n { white-space: normal; }
+      .eq { font-weight: 700; } .eq.good { color: var(--good); } .eq.mid { color: var(--medium); } .eq.bad { color: var(--high); }
+      details.eeesdim { border-top: 1px solid var(--border); padding: 6px 0; margin: 0; }
+      details.eeesdim summary { color: var(--text); font-size: 13px; }
+      details.eeesdim .uline ul { margin: 4px 0 0; }
+      #eeesDetail:not(:empty) { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+      #eeesDetail ol { margin: 4px 0 0; padding-left: 18px; font-size: 13px; }
       .relstat { font-weight: 700; }
       .relstat.Complete { color: var(--good); } .relstat.Incomplete { color: var(--high); } .relstat.Unverified { color: var(--medium); }
       @media (max-width: 900px) {
@@ -158,6 +165,7 @@
     </header>
     <nav class="tabs" role="tablist">
       <a href="#health" data-tab="health" role="tab">Health dashboard</a>
+      <a href="#eees" data-tab="eees" role="tab">EEES quality</a>
       <a href="#scans" data-tab="scans" role="tab">Security scans</a>
       <a href="#tests" data-tab="tests" role="tab">All tests</a>
       <a href="#usage" data-tab="usage" role="tab">Usage</a>
@@ -203,6 +211,27 @@
         <div id="reportMsg" class="note">Saved as estimates, with the date. secval picks the app for you; change it if it guessed wrong.</div>
       </div>
 
+      </section>
+
+      <section data-panel="eees" hidden>
+      <div class="card">
+        <h2>EEES v1.0: engineering quality by app (30 dimensions)</h2>
+        <div class="note" style="margin:-6px 0 12px">
+          The <strong>assured score</strong> is conservative: anything not proven counts as 0 (UNKNOWN is never a pass),
+          synthetic tests alone can reach at most 6, production-like tests 8, production without independent and sustained
+          proof 9, and hard gates (security, data, money, recovery, P1 defects) cap it. Open an app to see each of its 30
+          dimensions, the checks behind them, the evidence and what to fix first. Standard: eees/v1.0/STANDARD.md.
+        </div>
+        <div id="eeesBanner" class="note" role="status"></div>
+        <div id="eeesSummary"></div>
+        <div id="eeesTable" class="muted">Loading…</div>
+        <div id="eeesTop"></div>
+        <div id="eeesDetail"></div>
+        <div class="row" style="margin-top:8px;align-items:center">
+          <span id="eeesMsg" class="note" style="flex:1;margin:0"></span>
+          <button id="eeesRefresh" class="ghost">Reload</button>
+        </div>
+      </div>
       </section>
 
       <section data-panel="scans" hidden>

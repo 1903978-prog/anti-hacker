@@ -1,0 +1,69 @@
+{
+  "standard": "EEES",
+  "standardVersion": "1.0.0",
+  "app": "lm-op-model",
+  "assessedAt": "2026-11-12",
+  "assessor": "Secval auditor thread (Claude agent), 12 Nov 2026. Every entry cites a reproducible file or measurement; none has had a human independent review yet.",
+  "productionVersion": {
+    "sha": "60e19c94",
+    "source": "/mnt/project-files/lm-op-model/incident-2026-11-10/lm-after-863-measure.md (#863 live, read 10 Nov); LM #878/#885 on HOLD, not live",
+    "checkedAt": "2026-11-10"
+  },
+  "lastIndependentVerification": null,
+  "checks": {
+    "D02.1": {
+      "status": "verified",
+      "evidence": [
+        {
+          "link": "/mnt/project-files/lm-op-model/incident-2026-11-10/lm-after-863-measure.md",
+          "kind": "measurement",
+          "date": "2026-11-10",
+          "environment": "production"
+        }
+      ],
+      "note": "74 foreign keys installed and validated, 0 NOT VALID; 3 of them conflict with recorded decisions D7/D8/D10 (corrective PR #870 not live)",
+      "level": "production"
+    },
+    "D23.1": {
+      "status": "verified",
+      "evidence": [
+        {
+          "link": "/mnt/project-files/architecture-audit-2026-11-11/data-flows.csv F8",
+          "kind": "measurement",
+          "date": "2026-11-11",
+          "environment": "production"
+        }
+      ],
+      "note": "Central daily backup (flow F8) healthy and restore-validated 11 Nov",
+      "level": "production"
+    }
+  },
+  "dimensionsNA": {},
+  "gates": {},
+  "releaseGates": {},
+  "defects": [
+    {
+      "id": "LM-870",
+      "title": "3 foreign keys installed by #863 contradict recorded decisions D7, D8, D10 (fix PR #870 awaiting independent approval)",
+      "severity": "P1",
+      "category": "data",
+      "status": "fixed-unreleased",
+      "dimensions": [
+        "D02",
+        "D12"
+      ],
+      "link": "/mnt/project-files/lm-op-model/pr870-one-time-exception.md",
+      "owner": "LM thread"
+    }
+  ],
+  "history": [
+    {
+      "date": "2026-11-12",
+      "assured": 0.2,
+      "raw": 0.23,
+      "coverage": 3,
+      "standardVersion": "1.0.0"
+    }
+  ],
+  "notes": []
+}

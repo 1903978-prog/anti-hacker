@@ -1,0 +1,26 @@
+{
+  "standard": "EEES",
+  "standardVersion": "1.0.0",
+  "app": "lenovo",
+  "assessedAt": "2026-11-12",
+  "assessor": "Secval auditor thread (Claude agent), 12 Nov 2026. Every entry cites a reproducible file or measurement; none has had a human independent review yet.",
+  "productionVersion": null,
+  "lastIndependentVerification": null,
+  "checks": {},
+  "dimensionsNA": {},
+  "gates": {},
+  "releaseGates": {},
+  "defects": [],
+  "history": [
+    {
+      "date": "2026-11-12",
+      "assured": 0,
+      "raw": 0,
+      "coverage": 0,
+      "standardVersion": "1.0.0"
+    }
+  ],
+  "notes": [
+    "Secval's Lenovo check (qwen3:8b only, keep_alive) exists but its results are not yet mapped to EEES checks. Everything UNKNOWN."
+  ]
+}

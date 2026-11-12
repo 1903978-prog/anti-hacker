@@ -1,0 +1,84 @@
+{
+  "standardVersion": "1.0.0",
+  "updated": "2026-11-12",
+  "source": "Seeded from /mnt/project-files/architecture-audit-2026-11-11/data-flows.csv (read-only cross-app audit, 11 Nov 2026). A null field means NOT DOCUMENTED and counts as a documentation gap. status: healthy | failing | unknown, as last measured; measuredAt is the date of that measurement.",
+  "requiredFields": [
+    "producer", "consumer", "sourceOfTruth", "identityMapping", "auth", "protocolVersion", "schema",
+    "transformation", "frequency", "freshnessSloHours", "deliverySemantics", "idempotency",
+    "errorHandling", "reconciliation", "monitoring", "recovery", "e2eEvidence"
+  ],
+  "flows": [
+    {
+      "id": "F1", "name": "Harvest invoices", "producer": "external:Harvest", "consumer": "atena", "critical": true,
+      "sourceOfTruth": "Harvest", "identityMapping": "Harvest invoice id", "auth": "Harvest API token", "protocolVersion": "Harvest API v2",
+      "schema": null, "transformation": null, "frequency": "daily 01:00", "freshnessSloHours": 26, "deliverySemantics": "API pull, full refresh",
+      "idempotency": null, "errorHandling": "harvest health banner + log", "reconciliation": null, "monitoring": "harvest health banner",
+      "recovery": null, "e2eEvidence": null,
+      "status": "healthy", "measuredAt": "2026-11-11", "evidence": "/mnt/project-files/architecture-audit-2026-11-11/data-flows.csv (last success 11 Nov 01:00)"
+    },
+    {
+      "id": "F2", "name": "HubSpot contacts and companies", "producer": "external:HubSpot", "consumer": "atena", "critical": false,
+      "sourceOfTruth": "HubSpot", "identityMapping": null, "auth": "HubSpot token", "protocolVersion": null,
+      "schema": null, "transformation": null, "frequency": "regular", "freshnessSloHours": null, "deliverySemantics": "API sync",
+      "idempotency": null, "errorHandling": null, "reconciliation": null, "monitoring": null,
+      "recovery": null, "e2eEvidence": null,
+      "status": "failing", "measuredAt": "2026-11-11", "evidence": "/mnt/project-files/architecture-audit-2026-11-11/data-flows.csv (contacts fresh; companies 5 days old)"
+    },
+    {
+      "id": "F3", "name": "Read.ai meetings", "producer": "external:Read.ai", "consumer": "atena", "critical": false,
+      "sourceOfTruth": "Read.ai", "identityMapping": null, "auth": null, "protocolVersion": null,
+      "schema": null, "transformation": null, "frequency": "per meeting (webhook)", "freshnessSloHours": null, "deliverySemantics": "webhook",
+      "idempotency": null, "errorHandling": null, "reconciliation": null, "monitoring": null,
+      "recovery": null, "e2eEvidence": null,
+      "status": "unknown", "measuredAt": "2026-11-11", "evidence": "/mnt/project-files/architecture-audit-2026-11-11/data-flows.csv (nothing new for 15 days, cause unknown)"
+    },
+    {
+      "id": "F4", "name": "Nexus call recordings to ATENA", "producer": "nexus", "consumer": "atena", "critical": true,
+      "sourceOfTruth": "Nexus", "identityMapping": "nexus:<recording id> prefix", "auth": "token-protected pull /api/recorder/export", "protocolVersion": null,
+      "schema": null, "transformation": null, "frequency": "daily 02:00 UTC + button", "freshnessSloHours": 26, "deliverySemantics": "pull",
+      "idempotency": null, "errorHandling": "logged error only", "reconciliation": null, "monitoring": null,
+      "recovery": null, "e2eEvidence": "/mnt/project-files/nexus-atena-sync/rehearsal-2026-11-11/rehearsal.out (rehearsal, not production)",
+      "status": "unknown", "measuredAt": "2026-11-11", "evidence": "11 Nov audit: never delivered (0 rows). Fix released 11 Nov (Nexus #236, ATENA #814); first production import due 12 Nov 02:00 UTC, NOT yet measured by Secval."
+    },
+    {
+      "id": "F5", "name": "Nexus bridge (projects, people, clients, meetings, tasks)", "producer": "nexus", "consumer": "atena", "critical": false,
+      "sourceOfTruth": "Nexus", "identityMapping": null, "auth": "Ed25519-signed read-only GET", "protocolVersion": null,
+      "schema": null, "transformation": null, "frequency": "on demand", "freshnessSloHours": null, "deliverySemantics": "synchronous read",
+      "idempotency": "read-only", "errorHandling": "returns reason text", "reconciliation": null, "monitoring": null,
+      "recovery": null, "e2eEvidence": null,
+      "status": "unknown", "measuredAt": "2026-11-11", "evidence": "/mnt/project-files/architecture-audit-2026-11-11/data-flows.csv (not testable from the audit container)"
+    },
+    {
+      "id": "F6", "name": "Public bond copy LM to 10bonds", "producer": "lm-op-model", "consumer": "10bonds", "critical": true,
+      "sourceOfTruth": "LM OpModel", "identityMapping": null, "auth": null, "protocolVersion": null,
+      "schema": null, "transformation": "one-way transactional replace", "frequency": "daily", "freshnessSloHours": 26, "deliverySemantics": "transactional replace",
+      "idempotency": "full replace", "errorHandling": "refuses empty or half exports", "reconciliation": null, "monitoring": "data-watch workflow",
+      "recovery": null, "e2eEvidence": null,
+      "status": "healthy", "measuredAt": "2026-11-11", "evidence": "/mnt/project-files/architecture-audit-2026-11-11/data-flows.csv (fresh; 16,154 of 17,886 bonds; livio_rating empty)"
+    },
+    {
+      "id": "F7", "name": "Health and quality reports to Secval", "producer": "atena,nexus,lm-op-model,10bonds", "consumer": "secval", "critical": false,
+      "sourceOfTruth": "each app", "identityMapping": "app host", "auth": "per-app write-only token", "protocolVersion": null,
+      "schema": "server/health/dbcheck.ts dbReportSchema", "transformation": null, "frequency": "hourly", "freshnessSloHours": 72, "deliverySemantics": "Secval pulls",
+      "idempotency": "append-only time series", "errorHandling": "report up to 3 days accepted", "reconciliation": null, "monitoring": "Secval dashboard",
+      "recovery": null, "e2eEvidence": null,
+      "status": "unknown", "measuredAt": "2026-11-11", "evidence": "/mnt/project-files/architecture-audit-2026-11-11/data-flows.csv (not read in that run)"
+    },
+    {
+      "id": "F8", "name": "Central backup (compplan, LM, 10bonds) to Dropbox", "producer": "atena,lm-op-model,10bonds", "consumer": "external:Dropbox", "critical": true,
+      "sourceOfTruth": "each app database", "identityMapping": null, "auth": "Dropbox app token", "protocolVersion": null,
+      "schema": null, "transformation": "database dump", "frequency": "daily", "freshnessSloHours": 26, "deliverySemantics": "GitHub workflow in LM repo",
+      "idempotency": null, "errorHandling": "status.json + alert", "reconciliation": "restore-validated", "monitoring": "status.json",
+      "recovery": null, "e2eEvidence": null,
+      "status": "healthy", "measuredAt": "2026-11-11", "evidence": "/mnt/project-files/architecture-audit-2026-11-11/data-flows.csv (healthy; restore-validated; 10bonds public copy only)"
+    },
+    {
+      "id": "F13", "name": "Cross-app uptime monitor", "producer": "atena,nexus,lm-op-model", "consumer": "atena,nexus,lm-op-model", "critical": false,
+      "sourceOfTruth": null, "identityMapping": null, "auth": null, "protocolVersion": null,
+      "schema": null, "transformation": null, "frequency": "periodic", "freshnessSloHours": null, "deliverySemantics": "HTTP GET version/health",
+      "idempotency": "read-only", "errorHandling": null, "reconciliation": null, "monitoring": "alerts",
+      "recovery": null, "e2eEvidence": null,
+      "status": "unknown", "measuredAt": "2026-11-11", "evidence": "/mnt/project-files/architecture-audit-2026-11-11/data-flows.csv (three redundant copies of the same code)"
+    }
+  ]
+}
