@@ -29,6 +29,7 @@ import { allUsage } from "./usage/providers.js";
 import { loadCompliance } from "./aeos/compliance.js";
 import { loadRelationships } from "./health/relationships.js";
 import { previewDigest } from "./notify/daily.js";
+import { matrix as lenovoMatrix, summaryText as lenovoSummary } from "./lenovo/monitor.js";
 import { lenovoForHost, lenovoOverview, questionOverview, refreshPassive, runLenovoChecks, runQuestionTests, type LenovoFetch } from "./lenovo/check.js";
 
 export interface AppOptions {
@@ -281,6 +282,16 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
   app.get("/api/lenovo", async (_req, res) => {
     await refreshPassive(options.lenovoEnv ?? process.env, { fetch: options.lenovoFetch }).catch(() => {});
     res.json(lenovoOverview(options.lenovoEnv ?? process.env));
+  });
+
+  // Lenovo 24/7 monitor: five levels per app, last reading, alert state, measured uptime (not measured is shown as such).
+  app.get("/api/lenovo/matrix", (_req, res) => {
+    res.json({ generatedAt: new Date().toISOString(), rows: lenovoMatrix(db) });
+  });
+
+  app.get("/api/lenovo/summary", (req, res) => {
+    const days = req.query.days === "7" ? 7 : 1;
+    res.type("text/plain").send(lenovoSummary(db, days));
   });
 
   app.get("/api/lenovo/questions", (_req, res) => {

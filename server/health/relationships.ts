@@ -50,6 +50,7 @@ export const SECVAL_EXCEPTIONS: Array<{ link: string; reason: string }> = [
   { link: "scans.target -> allowlist.domain", reason: "Scan history must outlive an allowlist removal; the policy engine checks the allowlist before every scan, and the audit trail is append-only, so an FK would block removals or rewrite history." },
   { link: "audit_log.target -> (any)", reason: "Append-only audit trail; target is free text (domain, URL or setting) and must never change or disappear." },
   { link: "uptime_checks / db_checks / health_reports / health_scores / health_infra .host -> app catalogue", reason: "The parent is the app catalogue in code (server/health/seed.ts), not a table; history must survive an app leaving the catalogue." },
+  { link: "lenovo_samples / lenovo_alerts .app -> Lenovo monitor rows", reason: "The parent is the list of monitored apps in code (server/lenovo/monitor.ts MONITOR_ROWS), not a table; readings and alerts must survive an app leaving the list." },
   { link: "quality_runs.dataset -> dataset registry", reason: "The parent is the dataset registry in code (server/quality/datasets/), not a table; runs are append-only history." },
 ];
 
@@ -68,6 +69,8 @@ export const SECVAL_TABLES: Record<string, { category: Category; reason: string 
   uptime_checks: { category: "D", reason: "time series keyed by an app host from the code catalogue" },
   db_checks: { category: "D", reason: "time series keyed by an app host from the code catalogue" },
   schema_migrations: { category: "C", reason: "migration bookkeeping" },
+  lenovo_samples: { category: "D", reason: "Lenovo monitor readings keyed by an app name from the code list" },
+  lenovo_alerts: { category: "D", reason: "append-only Lenovo alert history keyed by an app name from the code list" },
 };
 
 export interface LinkResult extends RequiredLink {

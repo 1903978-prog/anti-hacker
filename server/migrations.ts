@@ -158,6 +158,39 @@ export const MIGRATIONS: Migration[] = [
     ALTER TABLE quality_snapshots_v7 RENAME TO quality_snapshots;
     CREATE INDEX IF NOT EXISTS quality_snapshots_job_id ON quality_snapshots (job_id);
     `,
+  },  {
+    // Lenovo 24/7 monitor (Livio's P0, 12 Nov 2026): one row per reading (app,
+    // level 1-5; ok NULL = not measured) and an append-only alert history.
+    version: 8,
+    name: "lenovo monitor readings and alerts",
+    sql: `
+    CREATE TABLE IF NOT EXISTS lenovo_samples (
+      id     INTEGER PRIMARY KEY,
+      ts     TEXT NOT NULL,
+      app    TEXT NOT NULL,
+      level  INTEGER NOT NULL CHECK (level BETWEEN 1 AND 5),
+      probe  TEXT NOT NULL,
+      ok     INTEGER CHECK (ok IS NULL OR ok IN (0, 1)),
+      ms     INTEGER,
+      detail TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS lenovo_samples_app_level_ts ON lenovo_samples (app, level, ts);
+    CREATE INDEX IF NOT EXISTS lenovo_samples_ts ON lenovo_samples (ts);
+    CREATE TABLE IF NOT EXISTS lenovo_alerts (
+      id      INTEGER PRIMARY KEY,
+      ts      TEXT NOT NULL,
+      app     TEXT NOT NULL,
+      level   INTEGER NOT NULL CHECK (level BETWEEN 1 AND 5),
+      state   TEXT NOT NULL CHECK (state IN ('warning', 'critical', 'recovered')),
+      detail  TEXT NOT NULL,
+      emailed INTEGER NOT NULL DEFAULT 0 CHECK (emailed IN (0, 1))
+    );
+    CREATE INDEX IF NOT EXISTS lenovo_alerts_app_level ON lenovo_alerts (app, level, id);
+    CREATE TRIGGER IF NOT EXISTS lenovo_alerts_no_update BEFORE UPDATE ON lenovo_alerts
+      BEGIN SELECT RAISE(ABORT, 'lenovo_alerts is append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS lenovo_alerts_no_delete BEFORE DELETE ON lenovo_alerts
+      BEGIN SELECT RAISE(ABORT, 'lenovo_alerts is append-only'); END;
+    `,
   },
 ];
 
