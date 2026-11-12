@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import request from "supertest";
 import { openDb } from "../server/db.js";
+import { seedAllowlist, markProven, addDomain } from "../server/ownership/allowlist.js";
 import { createApp } from "../server/app.js";
 import { askApp, checkApp, lenovoForHost, lenovoOverview, refreshPassive, resetLenovoCache, type LenovoFetch } from "../server/lenovo/check.js";
 
@@ -23,6 +24,15 @@ function fake(over: { open?: number; pull?: number; chatStatus?: number } = {}):
 }
 
 beforeEach(() => resetLenovoCache());
+
+/** Every Lenovo request passes the policy gate: the app hosts and the gateway must be proven first. */
+function provenDb() {
+  const db = openDb(":memory:");
+  seedAllowlist(db);
+  addDomain(db, "lenovo.example.com", "test", "test gateway");
+  for (const h of ["compplan.onrender.com", "nexus-eendigo.fly.dev", "lm-op-model.fly.dev", "lenovo.example.com"]) markProven(db, h, "dns", "test");
+  return db;
+}
 
 describe("lenovo check", () => {
   it("apps that do not use the Lenovo are 'not connected', never a failure", async () => {
@@ -76,7 +86,7 @@ describe("lenovo check", () => {
   });
 
   it("API: overview and run need the token and return results", async () => {
-    const app = createApp(openDb(":memory:"), { apiToken: "tok", lenovoEnv: ENV, lenovoFetch: fake() });
+    const app = createApp(provenDb(), { apiToken: "tok", lenovoEnv: ENV, lenovoFetch: fake() });
     await request(app).get("/api/lenovo").expect(401);
     const run = await request(app).post("/api/lenovo/check").set("authorization", "Bearer tok").send({}).expect(200);
     expect(run.body.find((a: { app: string }) => a.app === "compplan").status).toBe("ok");
@@ -89,7 +99,7 @@ describe("lenovo check", () => {
     expect(lenovoForHost("nexus-eendigo.fly.dev", ENV).status).toBe("not-measured");
     expect(lenovoForHost("compplan.onrender.com", ENV).status).toBe("not-measured");
     expect(lenovoForHost("compplan.onrender.com", {}).status).toBe("alert");
-    const app = createApp(openDb(":memory:"), { apiToken: "tok", lenovoEnv: ENV, lenovoFetch: fake({ pull: 200 }) });
+    const app = createApp(provenDb(), { apiToken: "tok", lenovoEnv: ENV, lenovoFetch: fake({ pull: 200 }) });
     await request(app).post("/api/lenovo/check").set("authorization", "Bearer tok").send({}).expect(200);
     const d = await request(app).get("/api/dashboard").set("authorization", "Bearer tok").expect(200);
     const row = (h: string) => d.body.find((a: { host: string }) => a.host === h);
@@ -128,7 +138,7 @@ describe("lenovo live question test", () => {
   };
 
   it("shows the answer per app, failing apps with their reason, never the secret", async () => {
-    const app = createApp(openDb(":memory:"), { apiToken: "tok", lenovoEnv: ENV, lenovoFetch: selftest() });
+    const app = createApp(provenDb(), { apiToken: "tok", lenovoEnv: ENV, lenovoFetch: selftest() });
     await request(app).get("/api/lenovo/questions").expect(401);
     const run = await request(app).post("/api/lenovo/questions").set("authorization", "Bearer tok").send({}).expect(200);
     const row = (a: string) => run.body.find((q: { app: string }) => q.app === a);
@@ -148,7 +158,7 @@ describe("lenovo live question test", () => {
   });
 
   it("the Lenovo check also runs the question and the dashboard tooltip carries the answer", async () => {
-    const app = createApp(openDb(":memory:"), { apiToken: "tok", lenovoEnv: ENV, lenovoFetch: selftest() });
+    const app = createApp(provenDb(), { apiToken: "tok", lenovoEnv: ENV, lenovoFetch: selftest() });
     await request(app).post("/api/lenovo/check").set("authorization", "Bearer tok").send({}).expect(200);
     expect(lenovoForHost("compplan.onrender.com", ENV).summary).toContain('answered: "The capital of Italy is Rome."');
   });
@@ -173,5 +183,20 @@ describe("lenovo flapping (4/11/2026)", () => {
     const flaky: LenovoFetch = async () => ({ status: 200, text: async () => JSON.stringify({ lenovo: { verdict: n++ === 0 ? "offline" : "online", say: "x" } }) });
     await refreshPassive({}, { fetch: flaky, now: () => 2_000_000_000_000 });
     expect(cp()).toBe("ok");
+  });
+});
+
+describe("lenovo check policy gate", () => {
+  it("an unproven gateway or app host is never contacted (rule 5) and shows not measured", async () => {
+    const db = openDb(":memory:");
+    seedAllowlist(db);
+    let calls = 0;
+    const app = createApp(db, { apiToken: "tok", lenovoEnv: ENV, lenovoFetch: async () => { calls++; return { status: 200, text: async () => "{}" }; } });
+    const r = await request(app).post("/api/lenovo/check").set("authorization", "Bearer tok");
+    expect(r.status).toBe(200);
+    expect(calls).toBe(0);
+    const compplan = r.body.find((x: { app: string }) => x.app === "compplan");
+    expect(compplan.status).toBe("not-measured");
+    expect(compplan.summary).toContain("policy refused");
   });
 });

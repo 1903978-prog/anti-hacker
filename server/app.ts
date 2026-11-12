@@ -279,8 +279,10 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
   });
 
   // --- Lenovo (local Ollama) connection per app ---------------------------
+  // Every Lenovo request passes the policy gate first (rule 5): unproven hosts and the kill switch stop it.
+  const lenovoApprove = (target: string) => requestApproval(db, { actor: "lenovo-check", target, mode: "passive" });
   app.get("/api/lenovo", async (_req, res) => {
-    await refreshPassive(options.lenovoEnv ?? process.env, { fetch: options.lenovoFetch }).catch(() => {});
+    await refreshPassive(options.lenovoEnv ?? process.env, { fetch: options.lenovoFetch, approve: lenovoApprove }).catch(() => {});
     res.json(lenovoOverview(options.lenovoEnv ?? process.env));
   });
 
@@ -299,11 +301,11 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
   });
 
   app.post("/api/lenovo/questions", async (_req, res) => {
-    res.json(await runQuestionTests(options.lenovoEnv ?? process.env, { fetch: options.lenovoFetch }));
+    res.json(await runQuestionTests(options.lenovoEnv ?? process.env, { fetch: options.lenovoFetch, approve: lenovoApprove }));
   });
 
   app.post("/api/lenovo/check", async (_req, res) => {
-    res.json(await runLenovoChecks(options.lenovoEnv ?? process.env, { fetch: options.lenovoFetch }));
+    res.json(await runLenovoChecks(options.lenovoEnv ?? process.env, { fetch: options.lenovoFetch, approve: lenovoApprove }));
   });
 
   // --- Schedule (weekly automatic sweep) ------------------------------------
@@ -323,7 +325,7 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
   // --- Health dashboard -----------------------------------------------------
   app.get("/api/dashboard", async (_req, res) => {
     const env = options.lenovoEnv ?? process.env;
-    await refreshPassive(env, { fetch: options.lenovoFetch }).catch(() => {});
+    await refreshPassive(env, { fetch: options.lenovoFetch, approve: lenovoApprove }).catch(() => {});
     res.json(dashboard(db).map((a) => ({ ...a, lenovo: lenovoForHost(a.host, env) })));
   });
 
