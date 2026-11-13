@@ -157,6 +157,12 @@ describe("lenovo live question test", () => {
     expect((await q(403)).status).toBe("fail");
     expect((await q(401)).reason).toContain("token differs"); // compplan answers 401 since 07 Nov 2026 (compplan#705 F3)
     expect((await askApp("compplan", {}, { fetch: selftest() })).status).toBe("not-measured");
+    // The Cloudflare secret is never used as the self-test token (review 13 Nov 2026).
+    let called = 0;
+    const counting: LenovoFetch = async (url, init) => { called++; return selftest()(url, init); };
+    const cfOnly = await askApp("compplan", { OLLAMA_CF_ACCESS_CLIENT_SECRET: "super-secret-xyz" }, { fetch: counting });
+    expect(cfOnly.status).toBe("not-measured");
+    expect(called).toBe(0);
   });
 
   it("the Lenovo check also runs the question and the dashboard tooltip carries the answer", async () => {

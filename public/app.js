@@ -375,6 +375,15 @@ el("lenovoBtn").onclick = async () => {
   el("lenovoBtn").disabled = false;
 };
 // Lenovo monitor: runs ONLY when Refresh is pressed (Livio, 12 Nov 2026). No timer, no e-mail.
+/** Dates shown as "03 Nov 2026, 14:05" (standing date rule). */
+function fmtDateTime(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  const m = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()];
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(d.getDate())} ${m} ${d.getFullYear()}, ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 function renderLenovoMatrix(body) {
   const rows = (body && body.rows) || [];
   const scopeOf = { 1: "shared", 2: "shared", 3: "this app", 4: "this app", 5: "this app" };
@@ -384,12 +393,12 @@ function renderLenovoMatrix(body) {
     if (!c.applies) return '<td class="note">not applicable</td>';
     const st = c.status || "unknown";
     const b = st === "ok" ? '<span class="badge ok">ok</span>' : st === "failing" ? '<span class="badge bad">failing</span>' : '<span class="badge">UNKNOWN</span>';
-    const lastOk = c.lastOk ? `last ok ${esc(new Date(c.lastOk).toLocaleString())}` : "never ok";
+    const lastOk = c.lastOk ? `last ok ${esc(fmtDateTime(c.lastOk))}` : "never ok";
     const why = c.last ? c.last.detail : "never checked";
     const tip = `${c.meaning}. ${st === "unknown" && c.last && c.last.ok !== null ? "Reading too old to count. " : ""}${why}`;
     return `<td title="${esc(tip)}" data-status="${esc(st)}">${b}<br><span class="note">${c.last ? esc(age(c.ageSeconds)) : "not checked"} · ${lastOk}</span></td>`;
   };
-  const when = body && body.generatedAt ? `Checked ${esc(new Date(body.generatedAt).toLocaleString())}. ` : "";
+  const when = body && body.generatedAt ? `Checked ${esc(fmtDateTime(body.generatedAt))}. ` : "";
   const staleMin = body && body.staleAfterSeconds ? Math.round(body.staleAfterSeconds / 60) : 15;
   el("lenovoMatrix").innerHTML = `<p class="note" id="lenovoAvailability"><b>${esc((body && body.availabilityNote) || "Lenovo 99% availability: NOT MEASURED.")}</b></p>` +
     `<p class="note">${when}Levels 1-2 are the shared Lenovo (one measurement used by every app): Lenovo available. Level 3 sign-in, level 4 app connected, level 5 AI jobs actually completed, each for that app. A reading older than ${staleMin} minutes, missing or not measured shows UNKNOWN, never ok. Hover a cell for the reason.</p>` +
