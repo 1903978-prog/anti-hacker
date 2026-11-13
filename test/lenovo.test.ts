@@ -9,6 +9,7 @@ const ENV = {
   OLLAMA_BASE_URL: "https://lenovo.example.com/",
   OLLAMA_CF_ACCESS_CLIENT_ID: "id-abc",
   OLLAMA_CF_ACCESS_CLIENT_SECRET: "super-secret-xyz",
+  LENOVO_SELFTEST_TOKEN: "selftest-tok-123",
 };
 
 function fake(over: { open?: number; pull?: number; chatStatus?: number } = {}): LenovoFetch {
@@ -129,7 +130,7 @@ describe("lenovo live question test", () => {
   const selftest = (over: { status?: number; body?: unknown } = {}): LenovoFetch => async (url, init) => {
     const path = new URL(url).pathname;
     if (path === "/api/lenovo-selftest") {
-      if (init.headers["x-lenovo-selftest"] !== "super-secret-xyz") return { status: 403, text: async () => "{}" };
+      if (init.headers["x-lenovo-selftest"] !== "selftest-tok-123") return { status: 403, text: async () => "{}" };
       const host = new URL(url).hostname;
       const body = over.body ?? (host.startsWith("nexus") ? { ok: false, answer: "", reason: "unreachable: cannot be reached", ms: 40 } : { ok: true, answer: "The capital of Italy is Rome.", reason: "", ms: 1234 });
       return { status: over.status ?? 200, text: async () => JSON.stringify(body) };
@@ -145,6 +146,7 @@ describe("lenovo live question test", () => {
     expect(row("compplan")).toMatchObject({ status: "ok", question: "What is the capital of Italy?", answer: "The capital of Italy is Rome.", ms: 1234 });
     expect(row("nexus")).toMatchObject({ status: "fail", reason: expect.stringContaining("unreachable") });
     expect(JSON.stringify(run.body)).not.toContain("super-secret-xyz");
+    expect(JSON.stringify(run.body)).not.toContain("selftest-tok-123");
     const again = await request(app).get("/api/lenovo/questions").set("authorization", "Bearer tok").expect(200);
     expect(again.body).toHaveLength(3);
   });

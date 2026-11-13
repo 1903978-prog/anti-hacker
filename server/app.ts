@@ -29,7 +29,7 @@ import { allUsage } from "./usage/providers.js";
 import { loadCompliance } from "./aeos/compliance.js";
 import { loadRelationships } from "./health/relationships.js";
 import { previewDigest } from "./notify/daily.js";
-import { matrix as lenovoMatrix, refreshNow as lenovoRefreshNow, summaryText as lenovoSummary } from "./lenovo/monitor.js";
+import { AVAILABILITY_NOTE as lenovoAvailability, STALE_AFTER_SECONDS as lenovoStale, matrix as lenovoMatrix, refreshNow as lenovoRefreshNow, summaryText as lenovoSummary } from "./lenovo/monitor.js";
 import { lenovoForHost, lenovoOverview, questionOverview, refreshPassive, runLenovoChecks, runQuestionTests, type LenovoFetch } from "./lenovo/check.js";
 
 export interface AppOptions {
@@ -288,14 +288,14 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
 
   // Lenovo 24/7 monitor: five levels per app, last reading, alert state, measured uptime (not measured is shown as such).
   app.get("/api/lenovo/matrix", (_req, res) => {
-    res.json({ generatedAt: new Date().toISOString(), rows: lenovoMatrix(db) });
+    res.json({ generatedAt: new Date().toISOString(), availability: "NOT MEASURED", availabilityNote: lenovoAvailability, staleAfterSeconds: lenovoStale, rows: lenovoMatrix(db) });
   });
 
   // The only way the Lenovo monitor runs: Livio presses Refresh (no timer, no e-mail).
   app.post("/api/lenovo/matrix/refresh", async (_req, res) => {
     const n = await lenovoRefreshNow(db, undefined, options.lenovoEnv ?? process.env, options.lenovoFetch);
     if (n === "busy") { res.status(409).json({ error: "A refresh is already running." }); return; }
-    res.json({ generatedAt: new Date().toISOString(), probesRun: n, rows: lenovoMatrix(db) });
+    res.json({ generatedAt: new Date().toISOString(), probesRun: n, availability: "NOT MEASURED", availabilityNote: lenovoAvailability, staleAfterSeconds: lenovoStale, rows: lenovoMatrix(db) });
   });
 
   app.get("/api/lenovo/summary", (req, res) => {

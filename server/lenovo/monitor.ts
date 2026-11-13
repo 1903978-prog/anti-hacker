@@ -181,8 +181,13 @@ export function tenBondsProbe(host = "10bonds.com"): Probe {
         { app: "10bonds", level: 4, ms: r.ms, ok: connected, detail: `Worker ${connected ? "connected" : "NOT connected"}, last seen ${agoText}${j.version ? `, version ${short(j.version)}` : ""}.` },
         {
           app: "10bonds", level: 5, ms: r.ms,
-          ok: done1h > 0 || (queued === 0 && processing === 0),
-          detail: `${done1h} jobs done in the last hour, ${queued} queued, ${processing} processing.`,
+          // A job completed is the only proof; an idle queue proves nothing (review 13 Nov 2026).
+          ok: done1h > 0 ? true : queued > 0 || processing > 0 ? false : null,
+          detail: done1h > 0
+            ? `${done1h} jobs done in the last hour, ${queued} queued, ${processing} processing.`
+            : queued > 0 || processing > 0
+              ? `No job completed in the last hour while ${queued} queued, ${processing} processing.`
+              : "Not measured: no job completed in the last hour and the queue is empty, so nothing proves the worker can finish one.",
         },
       ];
     },
@@ -197,7 +202,7 @@ export function selftestProbe(app: "compplan" | "nexus" | "lm-op-model", host: s
     everyMs: 5 * MINUTE,
     covers: [{ app, level: 3 }, { app, level: 5 }],
     run: async (f, env) => {
-      const token = env.LENOVO_SELFTEST_TOKEN || env.OLLAMA_CF_ACCESS_CLIENT_SECRET || "";
+      const token = env.LENOVO_SELFTEST_TOKEN || ""; // never the Cloudflare Access secret (review 13 Nov 2026)
       const nm = (why: string, ms: number | null = null): Sample[] => [3, 5].map((level) => ({ app, level: level as Level, ok: null, ms, detail: `Not measured: ${why}` }));
       if (!token) return nm("LENOVO_SELFTEST_TOKEN is not set in secval.");
       const r = await get(f, `https://${host}/api/lenovo-selftest`, 75_000, {
@@ -421,7 +426,32 @@ export interface MatrixCell {
   uptime24h: Uptime;
   uptime7d: Uptime;
   uptime30d: Uptime;
+  /** "shared" = one Lenovo measurement used by every app (levels 1-2); "app" = this app's own check (levels 3-5). */
+  scope: "shared" | "app";
+  /** What the level proves, in plain words (Livio, 13 Nov 2026: available / connected / jobs completed kept apart). */
+  meaning: string;
+  /** Time of the last reading that PASSED, or null. */
+  lastOk: string | null;
+  /** Seconds since the newest reading (any result), or null when never checked. */
+  ageSeconds: number | null;
+  /** ok | failing | unknown | n/a. A reading that is missing, not measured or older than STALE_AFTER_SECONDS is "unknown", never ok. */
+  status: "ok" | "failing" | "unknown" | "n/a";
 }
+
+/** Older than this, a reading proves nothing about now: shown as UNKNOWN (Livio, 13 Nov 2026). */
+export const STALE_AFTER_SECONDS = 15 * 60;
+
+export const LEVEL_MEANING: Record<Level, string> = {
+  1: "Lenovo available: the machine answers (shared by every app)",
+  2: "Lenovo available: the AI gateway and model answer (shared by every app)",
+  3: "App can sign in to the Lenovo",
+  4: "App connected: the app reaches the Lenovo",
+  5: "AI jobs actually completed for this app",
+};
+
+/** Refresh-only readings cannot measure unattended availability, so no percentage is claimed (Livio, 13 Nov 2026). */
+export const AVAILABILITY_NOTE =
+  "Lenovo 99% availability: NOT MEASURED. Checks run only when Refresh is pressed, so they show the state at that moment; they cannot establish how often the Lenovo was up while nobody was looking. That needs readings taken on a schedule over weeks.";
 
 export function matrix(db: DB, now = new Date()): Array<{ app: MonitorRow; cells: MatrixCell[] }> {
   const ago = (d: number) => new Date(now.getTime() - d * 86_400_000).toISOString();
@@ -442,15 +472,32 @@ export function matrix(db: DB, now = new Date()): Array<{ app: MonitorRow; cells
         uptime24h: applies ? uptime(db, app, level, ago(1)) : empty,
         uptime7d: applies ? uptime(db, app, level, ago(7)) : empty,
         uptime30d: applies ? uptime(db, app, level, ago(30)) : empty,
+        scope: level <= 2 ? "shared" : "app",
+        meaning: LEVEL_MEANING[level],
+        lastOk: applies ? lastOkTs(db, app, level) : null,
+        ageSeconds: row ? Math.max(0, Math.round((now.getTime() - Date.parse(row.ts)) / 1000)) : null,
+        status: !applies ? "n/a" : cellStatus(row, now),
       };
     }),
   }));
 }
 
+function lastOkTs(db: DB, app: MonitorRow, level: Level): string | null {
+  const r = db.prepare(`SELECT ts FROM lenovo_samples WHERE app = ? AND level = ? AND ok = 1 ORDER BY ts DESC, id DESC LIMIT 1`).get(app, level) as { ts: string } | undefined;
+  return r?.ts ?? null;
+}
+
+export function cellStatus(row: { ts: string; ok: number | null } | undefined, now: Date): "ok" | "failing" | "unknown" {
+  if (!row || row.ok === null) return "unknown";
+  const age = (now.getTime() - Date.parse(row.ts)) / 1000;
+  if (!Number.isFinite(age) || age > STALE_AFTER_SECONDS) return "unknown";
+  return row.ok === 1 ? "ok" : "failing";
+}
+
 /** Plain-text daily (1 day) or weekly (7 days) reliability summary. "Not measured" is said, never hidden. */
 export function summaryText(db: DB, days: 1 | 7, now = new Date()): string {
   const since = new Date(now.getTime() - days * 86_400_000).toISOString();
-  const lines = [`Lenovo reliability, last ${days === 1 ? "24 hours" : "7 days"} (to ${now.toISOString().slice(0, 16).replace("T", " ")} UTC). Target: 99% measured, design 99.9%.`, ""];
+  const lines = [`Lenovo reliability, last ${days === 1 ? "24 hours" : "7 days"} (to ${now.toISOString().slice(0, 16).replace("T", " ")} UTC). Readings come from manual Refresh only: these percentages are NOT availability (99% availability: NOT MEASURED).`, ""];
   for (const app of MONITOR_ROWS) {
     lines.push(app === "lenovo" ? "Lenovo (shared machine)" : app);
     for (const level of APPLIES[app]) {

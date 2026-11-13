@@ -7,7 +7,7 @@ import { engage } from "../server/governance/killswitch.js";
 import type { DB } from "../server/db.js";
 import {
   FRESH_STATE, applyAlerts, defaultProbes, matrix, nextState, pruneSamples, reportTick, resetMonitor, restoreStates,
-  refreshNow, runDue, runProbe, selftestProbe, summaryText, tenBondsProbe, uptime, versionProbe, alertState, type MonitorFetch,
+  refreshNow, runDue, runProbe, cellStatus, STALE_AFTER_SECONDS, AVAILABILITY_NOTE, selftestProbe, summaryText, tenBondsProbe, uptime, versionProbe, alertState, type MonitorFetch,
 } from "../server/lenovo/monitor.js";
 
 const HOSTS = ["compplan.onrender.com", "nexus-eendigo.fly.dev", "lm-op-model.fly.dev", "10bonds.com"];
@@ -255,5 +255,97 @@ describe("on demand only (Livio, 12 Nov 2026)", () => {
     expect(r.status).toBe(200);
     expect(r.body.probesRun).toBe(7);
     expect(r.body.rows.find((x: { app: string }) => x.app === "nexus").cells[3].last.ok).toBe(true);
+  });
+});
+
+describe("status table honesty (Livio, 13 Nov 2026)", () => {
+  const ins = (db: DB, app: string, level: number, ts: string, ok: number | null) =>
+    db.prepare(`INSERT INTO lenovo_samples (ts, app, level, probe, ok, ms, detail) VALUES (?, ?, ?, 'x', ?, 1, 'd')`).run(ts, app, level, ok);
+  it("missing, not-measured and stale readings are UNKNOWN, never ok", () => {
+    const now = new Date(T0);
+    expect(cellStatus(undefined, now)).toBe("unknown");
+    expect(cellStatus({ ts: at(-1), ok: null }, now)).toBe("unknown");
+    expect(cellStatus({ ts: at(-1), ok: 1 }, now)).toBe("ok");
+    expect(cellStatus({ ts: at(-1), ok: 0 }, now)).toBe("failing");
+    const stale = new Date(T0 - (STALE_AFTER_SECONDS + 1) * 1000).toISOString();
+    expect(cellStatus({ ts: stale, ok: 1 }, now)).toBe("unknown");
+    expect(cellStatus({ ts: stale, ok: 0 }, now)).toBe("unknown");
+  });
+  it("cells carry last ok, age, scope and meaning", () => {
+    const db = proven();
+    ins(db, "10bonds", 4, at(-120), 1);
+    ins(db, "10bonds", 4, at(-2), 0);
+    ins(db, "lenovo", 1, at(-60), 1);
+    const m = matrix(db, new Date(T0));
+    const c4 = m.find((r) => r.app === "10bonds")!.cells.find((c) => c.level === 4)!;
+    expect(c4.status).toBe("failing");
+    expect(c4.lastOk).toBe(at(-120));
+    expect(c4.ageSeconds).toBe(120);
+    expect(c4.scope).toBe("app");
+    expect(c4.meaning).toMatch(/connected/);
+    const l1 = m.find((r) => r.app === "lenovo")!.cells.find((c) => c.level === 1)!;
+    expect(l1.scope).toBe("shared");
+    expect(l1.status).toBe("unknown"); // 60 minutes old
+    expect(l1.lastOk).toBe(at(-60));
+    const c5 = m.find((r) => r.app === "nexus")!.cells.find((c) => c.level === 5)!;
+    expect(c5.status).toBe("unknown");
+    expect(c5.meaning).toMatch(/jobs actually completed/);
+    expect(m.find((r) => r.app === "nexus")!.cells.find((c) => c.level === 1)!.status).toBe("n/a");
+  });
+  it("the matrix routes say 99% availability is NOT MEASURED", async () => {
+    const db = proven();
+    const app = createApp(db, { apiToken: "secret-token", lenovoEnv: {} });
+    const r = await request(app).get("/api/lenovo/matrix").set("authorization", "Bearer secret-token");
+    expect(r.status).toBe(200);
+    expect(r.body.availability).toBe("NOT MEASURED");
+    expect(r.body.availabilityNote).toBe(AVAILABILITY_NOTE);
+  });
+  it("the availability note explains manual Refresh cannot measure it", () => {
+    expect(AVAILABILITY_NOTE).toMatch(/NOT MEASURED/);
+    expect(AVAILABILITY_NOTE).toMatch(/Refresh/);
+  });
+});
+
+describe("review fixes (13 Nov 2026)", () => {
+  it("a second Refresh while one runs is refused (busy), and the next one runs after", async () => {
+    const db = proven();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const slow: MonitorFetch = async () => { await gate; return ok(500, "x"); };
+    const first = refreshNow(db, defaultProbes(), { LENOVO_SELFTEST_TOKEN: "t" }, slow);
+    expect(await refreshNow(db, defaultProbes(), { LENOVO_SELFTEST_TOKEN: "t" }, slow)).toBe("busy");
+    release();
+    expect(await first).toBe(7);
+    expect(await refreshNow(db, defaultProbes(), { LENOVO_SELFTEST_TOKEN: "t" }, async () => ok(500, "x"))).toBe(7);
+  });
+  it("Refresh never calls a host that is not proven; it records not measured", async () => {
+    const db = freshDb(); // nothing proven
+    const hosts: string[] = [];
+    await refreshNow(db, defaultProbes(), { LENOVO_SELFTEST_TOKEN: "t" }, async (url) => { hosts.push(url); return ok(200, {}); });
+    expect(hosts).toEqual([]);
+    const m = matrix(db, new Date());
+    const c = m.find((r) => r.app === "nexus")!.cells.find((x) => x.level === 4)!;
+    expect(c.last?.ok).toBeNull();
+    expect(c.status).toBe("unknown");
+  });
+  it("the Cloudflare Access secret is never sent as the self-test token", async () => {
+    const db = proven();
+    const sent: string[] = [];
+    await refreshNow(db, defaultProbes(), { OLLAMA_CF_ACCESS_CLIENT_SECRET: "cf-secret" }, async (_u, init) => {
+      const h = (init?.headers ?? {}) as Record<string, string>;
+      if (h["x-lenovo-selftest"]) sent.push(h["x-lenovo-selftest"]);
+      return ok(200, {});
+    });
+    expect(sent).toEqual([]);
+  });
+  it("10bonds level 5 is never ok without a completed job", async () => {
+    const run = async (body: object) => {
+      const db = proven();
+      await runProbe(db, tenBondsProbe(), {}, async () => ok(200, body), { now: () => new Date(T0), cfg: { apiKey: null, to: "", from: "" } });
+      return matrix(db, new Date(T0)).find((r) => r.app === "10bonds")!.cells.find((c) => c.level === 5)!;
+    };
+    expect((await run({ connected: false, jobsDoneLastHour: 0, queued: 0, processing: 0 })).status).toBe("unknown");
+    expect((await run({ connected: true, jobsDoneLastHour: 0, queued: 5, processing: 0 })).status).toBe("failing");
+    expect((await run({ connected: true, jobsDoneLastHour: 2, queued: 0, processing: 0 })).status).toBe("ok");
   });
 });

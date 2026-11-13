@@ -198,8 +198,8 @@ export async function askApp(app: string, env: Record<string, string | undefined
   const f = deps.fetch ?? realFetch;
   const at = new Date().toISOString();
   const mk = (status: QuestionResult["status"], reason: string, answer = "", ms: number | null = null): QuestionResult => ({ app, question: QUESTION, answer, status, reason, ms, at });
-  const token = env.LENOVO_SELFTEST_TOKEN || env.OLLAMA_CF_ACCESS_CLIENT_SECRET || "";
-  if (!token) return mk("not-measured", "Missing in secval: LENOVO_SELFTEST_TOKEN (or OLLAMA_CF_ACCESS_CLIENT_SECRET).");
+  const token = env.LENOVO_SELFTEST_TOKEN || "";
+  if (!token) return mk("not-measured", "Missing in secval: LENOVO_SELFTEST_TOKEN.");
   const url = SELFTEST_URLS[app];
   if (!url) return mk("not-measured", "No test address for this app.");
   const no = refused(deps, url);
