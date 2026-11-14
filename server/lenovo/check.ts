@@ -40,6 +40,16 @@ export interface LenovoDeps {
   now?: () => number;
   /** Connected app list (defaults to env LENOVO_CONNECTED_APPS, else compplan, nexus, lm-op-model). */
   connected?: string[];
+  /** Policy gate (secval rule 5): asked before any request leaves secval. Refused = nothing is sent, "not measured". */
+  approve?: (target: string) => { allowed: boolean; reason: string };
+}
+
+function refused(deps: LenovoDeps, url: string): string | null {
+  if (!deps.approve) return null;
+  let host = "";
+  try { host = new URL(url).hostname; } catch { return "the address is not valid"; }
+  const d = deps.approve(host);
+  return d.allowed ? null : `secval's policy refused the check (${d.reason})`;
 }
 
 const realFetch: LenovoFetch = async (url, init) => {
@@ -104,6 +114,8 @@ export async function checkApp(
     return { app, status: "alert", summary: checks[0]!.detail, checkedAt, checks };
   }
   add("env", "Connection settings are present", "pass", "All three variables are set.");
+  const no = refused(deps, base);
+  if (no) return { app, status: "not-measured", summary: `Not measured: ${no}.`, checkedAt, checks };
 
   const authHeaders = { "CF-Access-Client-Id": cid, "CF-Access-Client-Secret": secret };
   const attempt = async (
@@ -186,10 +198,12 @@ export async function askApp(app: string, env: Record<string, string | undefined
   const f = deps.fetch ?? realFetch;
   const at = new Date().toISOString();
   const mk = (status: QuestionResult["status"], reason: string, answer = "", ms: number | null = null): QuestionResult => ({ app, question: QUESTION, answer, status, reason, ms, at });
-  const token = env.LENOVO_SELFTEST_TOKEN || env.OLLAMA_CF_ACCESS_CLIENT_SECRET || "";
-  if (!token) return mk("not-measured", "Missing in secval: LENOVO_SELFTEST_TOKEN (or OLLAMA_CF_ACCESS_CLIENT_SECRET).");
+  const token = env.LENOVO_SELFTEST_TOKEN || "";
+  if (!token) return mk("not-measured", "Missing in secval: LENOVO_SELFTEST_TOKEN.");
   const url = SELFTEST_URLS[app];
   if (!url) return mk("not-measured", "No test address for this app.");
+  const no = refused(deps, url);
+  if (no) return mk("not-measured", `Not measured: ${no}.`);
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 75_000);
   const t0 = (deps.now ?? Date.now)();
@@ -317,6 +331,8 @@ export async function refreshPassive(
     passiveAt.set(app, now);
     const full = last.get(app);
     if (full?.checks.length && full.checkedAt && now - Date.parse(full.checkedAt) < FULL_KEEP_MS) return;
+    const no = refused(deps, VERSION_URLS[app]!);
+    if (no) { last.set(app, { app, status: "not-measured", summary: `Not measured: ${no}.`, checkedAt: new Date(now).toISOString(), checks: [] }); return; }
     const read = async (): Promise<LenovoAppResult> => {
       const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 8_000);
       const at = new Date(now).toISOString();

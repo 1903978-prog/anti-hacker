@@ -77,9 +77,9 @@ describe("relationship metrics A-E", () => {
 describe("Secval's own register", () => {
   it("classifies every table and finds all four required links enforced", () => {
     const s = measureSelf(freshDb());
-    expect(s.tables).toBe(13);
+    expect(s.tables).toBe(15);
     expect(s.unclassifiedTables).toEqual([]);
-    expect(s.categories).toEqual({ A: 7, B: 0, C: 3, D: 3, E: 0 });
+    expect(s.categories).toEqual({ A: 7, B: 0, C: 3, D: 5, E: 0 });
     expect(s.required).toBe(4);
     expect(s.valid).toBe(4);
     expect(s.links.every((l) => l.indexed || l.child === "findings" || l.child.startsWith("health_"))).toBe(true);
@@ -106,7 +106,7 @@ describe("Secval's own register", () => {
     db.exec(`CREATE TABLE mystery (id INTEGER PRIMARY KEY)`);
     const s = measureSelf(db);
     expect(s.unclassifiedTables).toEqual(["mystery"]);
-    expect(appMetrics(selfRegister(db)).classification.text).toBe("13 / 14 = 92.8%");
+    expect(appMetrics(selfRegister(db)).classification.text).toBe("15 / 16 = 93.7%");
   });
   it("stays unverified until someone else reviews it", () => {
     const x = appMetrics(selfRegister(freshDb()));

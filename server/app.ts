@@ -29,6 +29,7 @@ import { allUsage } from "./usage/providers.js";
 import { loadCompliance } from "./aeos/compliance.js";
 import { loadRelationships } from "./health/relationships.js";
 import { previewDigest } from "./notify/daily.js";
+import { AVAILABILITY_NOTE as lenovoAvailability, STALE_AFTER_SECONDS as lenovoStale, matrix as lenovoMatrix, refreshNow as lenovoRefreshNow, summaryText as lenovoSummary } from "./lenovo/monitor.js";
 import { lenovoForHost, lenovoOverview, questionOverview, refreshPassive, runLenovoChecks, runQuestionTests, type LenovoFetch } from "./lenovo/check.js";
 
 export interface AppOptions {
@@ -278,9 +279,28 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
   });
 
   // --- Lenovo (local Ollama) connection per app ---------------------------
+  // Every Lenovo request passes the policy gate first (rule 5): unproven hosts and the kill switch stop it.
+  const lenovoApprove = (target: string) => requestApproval(db, { actor: "lenovo-check", target, mode: "passive" });
   app.get("/api/lenovo", async (_req, res) => {
-    await refreshPassive(options.lenovoEnv ?? process.env, { fetch: options.lenovoFetch }).catch(() => {});
+    await refreshPassive(options.lenovoEnv ?? process.env, { fetch: options.lenovoFetch, approve: lenovoApprove }).catch(() => {});
     res.json(lenovoOverview(options.lenovoEnv ?? process.env));
+  });
+
+  // Lenovo 24/7 monitor: five levels per app, last reading, alert state, measured uptime (not measured is shown as such).
+  app.get("/api/lenovo/matrix", (_req, res) => {
+    res.json({ generatedAt: new Date().toISOString(), availability: "NOT MEASURED", availabilityNote: lenovoAvailability, staleAfterSeconds: lenovoStale, rows: lenovoMatrix(db) });
+  });
+
+  // The only way the Lenovo monitor runs: Livio presses Refresh (no timer, no e-mail).
+  app.post("/api/lenovo/matrix/refresh", async (_req, res) => {
+    const n = await lenovoRefreshNow(db, undefined, options.lenovoEnv ?? process.env, options.lenovoFetch);
+    if (n === "busy") { res.status(409).json({ error: "A refresh is already running." }); return; }
+    res.json({ generatedAt: new Date().toISOString(), probesRun: n, availability: "NOT MEASURED", availabilityNote: lenovoAvailability, staleAfterSeconds: lenovoStale, rows: lenovoMatrix(db) });
+  });
+
+  app.get("/api/lenovo/summary", (req, res) => {
+    const days = req.query.days === "7" ? 7 : 1;
+    res.type("text/plain").send(lenovoSummary(db, days));
   });
 
   app.get("/api/lenovo/questions", (_req, res) => {
@@ -288,11 +308,11 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
   });
 
   app.post("/api/lenovo/questions", async (_req, res) => {
-    res.json(await runQuestionTests(options.lenovoEnv ?? process.env, { fetch: options.lenovoFetch }));
+    res.json(await runQuestionTests(options.lenovoEnv ?? process.env, { fetch: options.lenovoFetch, approve: lenovoApprove }));
   });
 
   app.post("/api/lenovo/check", async (_req, res) => {
-    res.json(await runLenovoChecks(options.lenovoEnv ?? process.env, { fetch: options.lenovoFetch }));
+    res.json(await runLenovoChecks(options.lenovoEnv ?? process.env, { fetch: options.lenovoFetch, approve: lenovoApprove }));
   });
 
   // --- Schedule (weekly automatic sweep) ------------------------------------
@@ -312,7 +332,7 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
   // --- Health dashboard -----------------------------------------------------
   app.get("/api/dashboard", async (_req, res) => {
     const env = options.lenovoEnv ?? process.env;
-    await refreshPassive(env, { fetch: options.lenovoFetch }).catch(() => {});
+    await refreshPassive(env, { fetch: options.lenovoFetch, approve: lenovoApprove }).catch(() => {});
     res.json(dashboard(db).map((a) => ({ ...a, lenovo: lenovoForHost(a.host, env) })));
   });
 
