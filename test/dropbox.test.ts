@@ -63,9 +63,9 @@ describe("dropbox backup check", () => {
     expect(r.apps.find((a) => a.app === "compplan")!.status).toBe("ok");
   });
 
-  it("secval needs only code copies (its database is checked in Backblaze)", () => {
+  it("does not check secval (nothing backs it up into this folder; its database is in Backblaze)", () => {
     const r = judge(copies(["261113", "261114"]), NOW);
-    expect(r.apps.find((a) => a.app === "secval")!.recentDb).toBeNull();
+    expect(r.apps.map((a) => a.app)).not.toContain("secval");
   });
 
   it("turns the central status file's problems into red lines, even when it says nothing is overdue", () => {
@@ -103,10 +103,6 @@ describe("dropbox backup check", () => {
     expect(r.status).toBe("red");
     expect(r.apps.every((a) => a.status === "red")).toBe(true);
     expect(r.apps.find((a) => a.app === "nexus")!.problems).toEqual(["only 1 database copy in the last 8 days (needs 2)"]);
-    expect(r.apps.find((a) => a.app === "secval")!.problems).toEqual([
-      "only 0 code copies in the last 8 days (needs 2)",
-      "newest code copy is from 02 Nov 2026 (12 days old)",
-    ]);
   });
 
   it("looks only in the one folder Livio chose", async () => {

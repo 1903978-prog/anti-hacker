@@ -37,13 +37,13 @@ export const MIN_COPIES = 2;
 export const WINDOW_DAYS = 8;
 export const NEWEST_MAX_DAYS = 2;
 
-/** The apps whose copies are checked. secval's database is kept by Litestream in Backblaze instead. */
+/** The apps whose copies are checked: the four subfolders of "backups nov26" (checked 14 Nov 2026).
+ * secval is not one of them: its database is kept by Litestream in Backblaze and nothing copies its code there. */
 export const BACKUP_APPS: { app: string; needsDb: boolean }[] = [
   { app: "compplan", needsDb: true },
   { app: "lm-op-model", needsDb: true },
   { app: "nexus", needsDb: true },
   { app: "10bonds", needsDb: true },
-  { app: "secval", needsDb: false },
 ];
 
 /** Livio, 14 Nov 2026: every app backs up into ONE folder, one subfolder per app. */
