@@ -177,6 +177,10 @@
       .uline .un { font-weight: 600; overflow-wrap: anywhere; }
       .uline .um { color: var(--muted); }
       .uline .um b { color: var(--text); }
+      .alarm { background: #a8180f; color: #fff; border-radius: 10px; padding: 16px 20px; margin-bottom: 16px; }
+      .alarm h2 { color: #fff; font-size: 26px; margin: 0 0 8px; letter-spacing: .02em; }
+      .alarm div { font-size: 16px; line-height: 1.5; }
+      .alarm a { color: #fff; text-decoration: underline; }
     </style>
   </head>
   <body>
@@ -199,6 +203,7 @@
       <a href="#settings" data-tab="settings" role="tab">Settings</a>
     </nav>
     <main>
+      <div id="backupAlarm" class="alarm" role="alert" hidden></div>
       <div class="card" id="tokenBox" hidden>
         <h2>Secret token</h2>
         <div class="row">
@@ -449,7 +454,7 @@
         <div class="note">secval copies its data to Backblaze all the time. Once a day it restores that copy into a scratch file and checks it, so you know the backup really works. You don't need to do anything.</div>
         <h2 style="margin-top:14px">Dropbox copies</h2>
         <div id="dropboxText" class="note" style="margin:0">Loading…</div>
-        <div class="note">Every Monday your PC saves a code copy and a database copy of each app to Dropbox. secval checks daily that last Monday's copies are there. Amber means one is missing.</div>
+        <div class="note">secval checks the Dropbox folder "backups nov26" every day (one subfolder per app). Each app needs at least 2 code copies and 2 database copies from the last 8 days, the newest at most 2 days old. If not, a red warning appears at the top of every page. secval's own database is in Backblaze and is checked by the restore test above.</div>
       </div>
       </section>
 
