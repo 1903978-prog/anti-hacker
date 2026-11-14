@@ -8,6 +8,8 @@ import { startCiWatch } from "./health/ci.js";
 import { startRestoreDrill } from "./backup/drill.js";
 import { startDropboxWatch } from "./backup/dropbox.js";
 import { startIntegrityWatch } from "./integrity.js";
+import { startDbarchScheduler } from "./dbarch/schedule.js";
+import { defaultDeps as dbarchDeps } from "./dbarch/routes.js";
 
 const db = openDb();
 const app = createApp(db, { apiToken: process.env.SECVAL_API_TOKEN });
@@ -26,6 +28,8 @@ startIntegrityWatch(db);
 // Weekly automatic sweep (Monday 08:00 Europe/Paris). In-process timer; a
 // sweep missed while the free tier slept runs within a minute of waking.
 startScheduler(db);
+// Database Architecture & Integrity: Quick Refresh every 6 h, Deep Audit every 24 h (read-only; no e-mail).
+startDbarchScheduler(db, dbarchDeps());
 // Health dashboard: check each proven app's home page every 30 minutes.
 startUptimeChecker(db);
 // Database column: ask each proven app for its database report every hour.

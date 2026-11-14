@@ -13,9 +13,12 @@ import { chromium, type Page } from "playwright";
 import { openDb } from "../server/db.js";
 import { createApp } from "../server/app.js";
 import { loadReportFiles } from "../server/health/seed.js";
+import { runAll } from "../server/dbarch/engine.js";
+import { CLASSIFIED } from "../server/dbarch/registry.js";
+import { FakePg, sampleTables } from "../test/dbarch-fake.js";
 
 const TOKEN = "page-check-token";
-const TABS = ["health", "eees", "scans", "tests", "usage", "aeos", "relationships", "settings"];
+const TABS = ["health", "eees", "scans", "tests", "usage", "aeos", "relationships", "database", "settings"];
 const WIDTHS = [1440, 390, 360];
 const axeSource = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
 
@@ -47,7 +50,12 @@ async function axe(page: Page): Promise<string[]> {
 
 async function main(): Promise<void> {
   const db = openDb(":memory:");
-  const app = createApp(db, { apiToken: TOKEN }); // seeds the allowlist the reports attach to
+  // Database scorecard sample data: fixture databases (no network), one classified orphan for a full-looking page.
+  CLASSIFIED.atlas.push({ column: "projects.client_id", classification: "mandatory", evidence: "page-check sample" });
+  const dbEnv = { SECVAL_DBARCH_URL_ATLAS: "a", SECVAL_DBARCH_URL_LM_OP_MODEL: "l", SECVAL_DBARCH_URL_NEXUS: "n" };
+  const dbarch = { env: dbEnv, now: () => new Date(), connect: async () => new FakePg(sampleTables({ orphan: true })) };
+  const app = createApp(db, { apiToken: TOKEN, dbarch }); // seeds the allowlist the reports attach to
+  await runAll(db, "deep", dbarch);
   const loaded = loadReportFiles(db).filter((r) => r.loaded).length;
   const server = app.listen(0);
   await new Promise((r) => server.once("listening", r));
@@ -77,6 +85,21 @@ async function main(): Promise<void> {
           if (wide) problems.push(`${where}: ${wide}`);
           for (const v of await axe(page)) problems.push(`${where}: ${v}`);
           checks++;
+          if (tab === "database") {
+            // Open a score, an app and a finding: the detail panel must also fit and pass axe.
+            await page.locator("button.dbcell").first().waitFor({ timeout: 5000 });
+            await page.click("#dbConn");
+            await page.locator("#dbConnOut .app").first().waitFor({ timeout: 5000 });
+            for (const [what, sel] of [["score", "button.dbcell"], ["app", "button[data-open-app]"], ["finding", "button[data-finding]"]] as const) {
+              await page.locator(sel).first().click();
+              await page.waitForTimeout(150);
+              const w = await sideways(page);
+              if (w) problems.push(`${where} ${what} detail: ${w}`);
+              for (const v of await axe(page)) problems.push(`${where} ${what} detail: ${v}`);
+              if (process.env.PAGE_SHOTS) await page.screenshot({ path: `${process.env.PAGE_SHOTS}/database-${what}-${width}-${scheme}.png`, fullPage: true });
+              checks++;
+            }
+          }
           if (tab === "health") {
             // Also check an app's opened details (scores, reasons, infrastructure).
             await page.locator("button.link[data-open]").first().click();
