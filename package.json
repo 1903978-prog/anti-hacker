@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Authorized continuous security-validation platform — a self-service scanner for Livio's own assets. Safety/governance layer gates every action.",
+  "description": "Authorized continuous security-validation platform \u2014 a self-service scanner for Livio's own assets. Safety/governance layer gates every action.",
   "engines": {
     "node": ">=20"
   },
@@ -16,7 +16,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:page": "tsx scripts/page-check.ts",
-    "verify": "npm run typecheck && npm run lint && npm test && npm run test:page"
+    "verify": "npm run typecheck && npm run lint && npm test && npm run test:page",
+    "eees:collect": "node scripts/eees/collect.mjs",
+    "eees:record": "tsx scripts/eees/record.ts",
+    "eees:schema": "tsx scripts/eees/schema.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.0.0",

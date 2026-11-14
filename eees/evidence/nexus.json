@@ -1,0 +1,86 @@
+{
+  "standard": "EEES",
+  "standardVersion": "1.0.0",
+  "app": "nexus",
+  "assessedAt": "2026-11-12",
+  "assessor": "Secval auditor thread (Claude agent), 12 Nov 2026. Every entry cites a reproducible file or measurement; none has had a human independent review yet.",
+  "productionVersion": {
+    "sha": null,
+    "source": "Last Secval read: 2ed2901e on 10 Nov (/mnt/project-files/nexus/stage2-after-read-2026-11-10.md); later releases #236 (37a7d3e3, 11 Nov) and #237 (GO 12 Nov) not re-read by Secval",
+    "checkedAt": "2026-11-10"
+  },
+  "lastIndependentVerification": null,
+  "checks": {
+    "D02.1": {
+      "status": "verified",
+      "evidence": [
+        {
+          "link": "/mnt/project-files/nexus/stage2-after-read-2026-11-10.md",
+          "kind": "measurement",
+          "date": "2026-11-10",
+          "environment": "production"
+        }
+      ],
+      "note": "165 of 165 foreign keys validated, 0 NOT VALID (160 tables)",
+      "level": "production"
+    },
+    "D02.2": {
+      "status": "verified",
+      "evidence": [
+        {
+          "link": "/mnt/project-files/nexus/stage2-after-read-2026-11-10.md",
+          "kind": "measurement",
+          "date": "2026-11-10",
+          "environment": "production"
+        }
+      ],
+      "note": "0 orphans on all 165 links",
+      "level": "production"
+    },
+    "D01.2": {
+      "status": "verified",
+      "evidence": [
+        {
+          "link": "/mnt/project-files/nexus/stage2-after-read-2026-11-10.md",
+          "kind": "measurement",
+          "date": "2026-11-10",
+          "environment": "production"
+        }
+      ],
+      "note": "schema_migrations 1-18 applied in order on production",
+      "level": "production"
+    },
+    "D23.1": {
+      "status": "verified",
+      "evidence": [
+        {
+          "link": "/mnt/project-files/architecture-audit-2026-11-11/data-flows.csv F9",
+          "kind": "measurement",
+          "date": "2026-11-11",
+          "environment": "production"
+        }
+      ],
+      "note": "Nexus daily backup to Dropbox healthy 11 Nov (flow F9)",
+      "level": "production"
+    },
+    "D20.2": {
+      "status": "unknown",
+      "evidence": [],
+      "note": "A capacity forecast exists (Dropbox backup space runs out in November without the dedup fix, see nexus/dropbox-retention/capacity-forecast-2026-11-11.md); no alert before 80% verified"
+    }
+  },
+  "dimensionsNA": {},
+  "gates": {},
+  "releaseGates": {},
+  "defects": [],
+  "history": [
+    {
+      "date": "2026-11-12",
+      "assured": 0.4,
+      "raw": 0.43,
+      "coverage": 5,
+      "standardVersion": "1.0.0"
+    }
+  ],
+  "notes": []
+}

@@ -1,0 +1,1522 @@
+{
+  "standard": "EEES",
+  "version": "1.0.0",
+  "title": "Eendigo Engineering Excellence Standard",
+  "adopted": "2026-11-12",
+  "approvedBy": "Livio (project chat, 12 Nov 2026 02:18 UTC)",
+  "domains": [
+    {
+      "id": "DATA",
+      "name": "Data Architecture & Interoperability",
+      "weight": 21
+    },
+    {
+      "id": "SEC",
+      "name": "Security, Privacy & Governance",
+      "weight": 24
+    },
+    {
+      "id": "BIZ",
+      "name": "Business Functionality & Intelligence",
+      "weight": 22
+    },
+    {
+      "id": "OPS",
+      "name": "Reliability & Operations",
+      "weight": 20
+    },
+    {
+      "id": "ENG",
+      "name": "Software Engineering & Delivery",
+      "weight": 13
+    }
+  ],
+  "dimensions": [
+    {
+      "id": "D01",
+      "n": 1,
+      "domain": "DATA",
+      "name": "Database architecture and migrations",
+      "weight": 4,
+      "definitionOf10": "Every table has an explicit primary key and an owner; all schema changes go through versioned, reviewed migrations with tested rollback; production schema is measured equal to the migration history; no schema drift.",
+      "checks": [
+        {
+          "id": "D01.1",
+          "title": "Every production table has a primary key",
+          "acceptance": "Read-only catalogue query on production lists tables without a PK; result must be 0 (excluding documented framework tables).",
+          "method": "read-only-query",
+          "cadence": "weekly",
+          "references": [
+            "NIST CSF 2.0 PR.DS",
+            "SSDF PW.1"
+          ]
+        },
+        {
+          "id": "D01.2",
+          "title": "Schema changes only through versioned migrations",
+          "acceptance": "Repository has a migrations directory and a migration ledger table; production ledger head equals the latest migration in the released commit.",
+          "method": "automated",
+          "cadence": "per-release",
+          "references": [
+            "SSDF PS.1",
+            "SSDF PW.4"
+          ],
+          "collector": "migrations-present"
+        },
+        {
+          "id": "D01.3",
+          "title": "Migration rehearsal before release",
+          "acceptance": "Each release with a migration has a recorded rehearsal on a production copy (row counts before/after, no data loss) and a tested rollback script.",
+          "method": "drill",
+          "cadence": "per-release",
+          "references": [
+            "SSDF PW.8",
+            "NIST CSF 2.0 PR.PS"
+          ]
+        },
+        {
+          "id": "D01.4",
+          "title": "No schema drift between code and production",
+          "acceptance": "Generated schema from code compared with production catalogue (read-only); differences = 0 or documented.",
+          "method": "read-only-query",
+          "cadence": "weekly",
+          "references": [
+            "NIST CSF 2.0 ID.AM"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D02",
+      "n": 2,
+      "domain": "DATA",
+      "name": "Data integrity and concurrency",
+      "weight": 4,
+      "definitionOf10": "All required relationships are enforced and validated foreign keys with zero orphans; NOT NULL/UNIQUE/CHECK constraints encode business rules; concurrent writes are transactional and idempotent; measured on production.",
+      "checks": [
+        {
+          "id": "D02.1",
+          "title": "Required foreign keys enforced",
+          "acceptance": "Required-FK coverage (validated required FKs / confirmed required links) measured read-only on production = 100%.",
+          "method": "read-only-query",
+          "cadence": "weekly",
+          "references": [
+            "NIST CSF 2.0 PR.DS"
+          ],
+          "secvalSignal": "fk-coverage"
+        },
+        {
+          "id": "D02.2",
+          "title": "Zero orphan rows on required links",
+          "acceptance": "Orphan query per required link on production returns 0 rows.",
+          "method": "read-only-query",
+          "cadence": "weekly",
+          "references": [
+            "NIST CSF 2.0 PR.DS"
+          ]
+        },
+        {
+          "id": "D02.3",
+          "title": "Business rules as database constraints",
+          "acceptance": "Critical invariants (amounts >= 0, valid states, unique identities) exist as CHECK/UNIQUE constraints; negative test inserts are rejected in a test database.",
+          "method": "test-run",
+          "cadence": "per-release",
+          "references": [
+            "OWASP ASVS 5.0 Validation and Business Logic"
+          ]
+        },
+        {
+          "id": "D02.4",
+          "title": "Concurrent and repeated writes are safe",
+          "acceptance": "Integration test runs the same write twice and in parallel; result is one correct record (idempotency key or transaction), no lost update.",
+          "method": "test-run",
+          "cadence": "per-release",
+          "references": [
+            "OWASP API Security Top 10 2023 API6"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D03",
+      "n": 3,
+      "domain": "DATA",
+      "name": "Data quality and provenance",
+      "weight": 3,
+      "definitionOf10": "Every critical dataset has measured quality rules (completeness, validity, uniqueness, consistency), each record's source and load time are recorded, test data never sits in production, and duplicates are resolved by rule.",
+      "checks": [
+        {
+          "id": "D03.1",
+          "title": "Quality rules measured on critical datasets",
+          "acceptance": "Data-quality run on production datasets with a recorded score and failing-rule list, not older than its cadence.",
+          "method": "read-only-query",
+          "cadence": "daily",
+          "references": [
+            "NIST AI RMF MEASURE"
+          ],
+          "secvalSignal": "data-quality"
+        },
+        {
+          "id": "D03.2",
+          "title": "Source and load time recorded per record",
+          "acceptance": "Critical tables carry source system + loaded/updated timestamps; query shows < 1% nulls.",
+          "method": "read-only-query",
+          "cadence": "monthly",
+          "references": [
+            "NIST CSF 2.0 ID.AM"
+          ]
+        },
+        {
+          "id": "D03.3",
+          "title": "No test or fixture data in production",
+          "acceptance": "Read-only scan for fixture schemas, test emails, seed markers in production = 0 findings.",
+          "method": "read-only-query",
+          "cadence": "monthly",
+          "references": [
+            "NIST CSF 2.0 PR.DS"
+          ]
+        },
+        {
+          "id": "D03.4",
+          "title": "Duplicate identities detected and resolved",
+          "acceptance": "Duplicate-key queries (email, external id, code) on production = 0 unresolved duplicates.",
+          "method": "read-only-query",
+          "cadence": "weekly",
+          "references": []
+        }
+      ]
+    },
+    {
+      "id": "D04",
+      "n": 4,
+      "domain": "DATA",
+      "name": "Data flows and freshness",
+      "weight": 4,
+      "definitionOf10": "Every inbound and outbound flow has an owner, a freshness SLO and monitoring; each flow's last success is measured inside its SLO; failures alert and are reconciled.",
+      "checks": [
+        {
+          "id": "D04.1",
+          "title": "Each consumed flow has a freshness SLO and owner",
+          "acceptance": "Flow inventory (eees/flows.json) lists owner, frequency and freshness SLO for every flow the app consumes.",
+          "method": "review",
+          "cadence": "monthly",
+          "references": [
+            "Google SRE SLI/SLO"
+          ]
+        },
+        {
+          "id": "D04.2",
+          "title": "Last successful run inside SLO",
+          "acceptance": "Measured last-success timestamp of every consumed flow is within its SLO on production.",
+          "method": "telemetry",
+          "cadence": "daily",
+          "references": [
+            "Google SRE SLI/SLO",
+            "NIST CSF 2.0 DE.CM"
+          ],
+          "flowDerived": true
+        },
+        {
+          "id": "D04.3",
+          "title": "Flow failure raises an alert",
+          "acceptance": "A forced failure in a non-production run produces an alert to the owner within one cycle.",
+          "method": "drill",
+          "cadence": "monthly",
+          "references": [
+            "NIST CSF 2.0 DE.AE"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D05",
+      "n": 5,
+      "domain": "DATA",
+      "name": "Integration and API contracts",
+      "weight": 3,
+      "definitionOf10": "Every API and integration has a versioned schema, contract tests on both sides, authenticated access, error/retry semantics and an inventory with no undocumented endpoints.",
+      "checks": [
+        {
+          "id": "D05.1",
+          "title": "API inventory is complete",
+          "acceptance": "Route inventory generated from code equals documented inventory; undocumented routes = 0.",
+          "method": "automated",
+          "cadence": "per-release",
+          "references": [
+            "OWASP API Security Top 10 2023 API9"
+          ],
+          "collector": "route-inventory"
+        },
+        {
+          "id": "D05.2",
+          "title": "Contract tests for each integration",
+          "acceptance": "Producer and consumer contract tests exist and pass in CI for every cross-app interface.",
+          "method": "test-run",
+          "cadence": "per-release",
+          "references": [
+            "SSDF PW.8"
+          ]
+        },
+        {
+          "id": "D05.3",
+          "title": "Inputs validated against a schema",
+          "acceptance": "Every write endpoint validates its body with a schema; fuzz/negative tests are rejected with 4xx.",
+          "method": "test-run",
+          "cadence": "per-release",
+          "references": [
+            "OWASP ASVS 5.0 Validation and Business Logic",
+            "OWASP API Security Top 10 2023 API3"
+          ]
+        },
+        {
+          "id": "D05.4",
+          "title": "Flow documentation complete",
+          "acceptance": "Every flow the app produces or consumes has every required EEES flow field filled (eees/flows.json requiredFields: the 15 items of the standard, with frequency and freshness SLO and producer and consumer listed separately).",
+          "method": "review",
+          "cadence": "monthly",
+          "references": [],
+          "flowDerived": true
+        }
+      ]
+    },
+    {
+      "id": "D06",
+      "n": 6,
+      "domain": "DATA",
+      "name": "Cross-application consistency",
+      "weight": 3,
+      "definitionOf10": "Each shared entity has one source of truth; copies are reconciled automatically with zero unexplained differences; identities map by stable ids, never by names.",
+      "checks": [
+        {
+          "id": "D06.1",
+          "title": "Source of truth defined for shared entities",
+          "acceptance": "Source-of-truth matrix lists the owner for every entity the app shares.",
+          "method": "review",
+          "cadence": "monthly",
+          "references": [
+            "NIST CSF 2.0 ID.AM"
+          ]
+        },
+        {
+          "id": "D06.2",
+          "title": "Automated reconciliation with zero unexplained differences",
+          "acceptance": "Reconciliation job compares owner and copy; latest run shows 0 unexplained differences.",
+          "method": "read-only-query",
+          "cadence": "weekly",
+          "references": []
+        },
+        {
+          "id": "D06.3",
+          "title": "Records linked by stable ids",
+          "acceptance": "Cross-app references use ids/external keys; name-based matching = 0 in code review.",
+          "method": "review",
+          "cadence": "per-release",
+          "references": []
+        }
+      ]
+    },
+    {
+      "id": "D07",
+      "n": 7,
+      "domain": "SEC",
+      "name": "Identity and authentication",
+      "weight": 4,
+      "definitionOf10": "All non-public access requires strong authentication (SSO or MFA for humans, scoped tokens for services); sessions expire and are revocable; brute force is limited; verified by negative tests on production.",
+      "checks": [
+        {
+          "id": "D07.1",
+          "title": "Every non-public route requires authentication",
+          "acceptance": "Unauthenticated request to every non-public route returns 401/403 (route inventory test).",
+          "method": "test-run",
+          "cadence": "per-release",
+          "references": [
+            "OWASP ASVS 5.0 Authentication",
+            "OWASP API Security Top 10 2023 API2"
+          ]
+        },
+        {
+          "id": "D07.2",
+          "title": "Strong authentication for humans",
+          "acceptance": "Human sign-in uses SSO or MFA; shared passwords = 0.",
+          "method": "review",
+          "cadence": "monthly",
+          "references": [
+            "NIST CSF 2.0 PR.AA"
+          ]
+        },
+        {
+          "id": "D07.3",
+          "title": "Sessions expire and failed logins are limited",
+          "acceptance": "Session lifetime and lockout/rate-limit verified by test.",
+          "method": "test-run",
+          "cadence": "per-release",
+          "references": [
+            "OWASP ASVS 5.0 Session Management"
+          ]
+        },
+        {
+          "id": "D07.4",
+          "title": "Service-to-service calls use scoped credentials",
+          "acceptance": "Each integration uses its own token/signature with least scope; reuse of one secret for two purposes = 0.",
+          "method": "review",
+          "cadence": "monthly",
+          "references": [
+            "NIST CSF 2.0 PR.AA"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D08",
+      "n": 8,
+      "domain": "SEC",
+      "name": "Authorization and data isolation",
+      "weight": 5,
+      "definitionOf10": "Every object and function access is authorized server-side; users and clients see only their own data; database roles are least-privilege; verified by negative tests and production role inspection.",
+      "checks": [
+        {
+          "id": "D08.1",
+          "title": "Object-level authorization tested",
+          "acceptance": "For each object route, a request for another owner's id is refused (negative test suite).",
+          "method": "test-run",
+          "cadence": "per-release",
+          "references": [
+            "OWASP API Security Top 10 2023 API1",
+            "OWASP ASVS 5.0 Authorization"
+          ]
+        },
+        {
+          "id": "D08.2",
+          "title": "Function-level authorization tested",
+          "acceptance": "Admin/privileged functions refuse ordinary users (negative tests).",
+          "method": "test-run",
+          "cadence": "per-release",
+          "references": [
+            "OWASP API Security Top 10 2023 API5"
+          ]
+        },
+        {
+          "id": "D08.3",
+          "title": "Database roles are least-privilege",
+          "acceptance": "Production role inspection: app roles have no SUPERUSER, CREATEROLE or BYPASSRLS; read-only roles cannot write.",
+          "method": "read-only-query",
+          "cadence": "monthly",
+          "references": [
+            "NIST CSF 2.0 PR.AA"
+          ],
+          "critical": "security"
+        },
+        {
+          "id": "D08.4",
+          "title": "No cross-client data exposure",
+          "acceptance": "Data isolation test with two clients shows no leakage across screens, exports and APIs.",
+          "method": "test-run",
+          "cadence": "per-release",
+          "references": [
+            "NIST CSF 2.0 PR.DS"
+          ],
+          "critical": "security"
+        }
+      ]
+    },
+    {
+      "id": "D09",
+      "n": 9,
+      "domain": "SEC",
+      "name": "Secrets, encryption and key management",
+      "weight": 4,
+      "definitionOf10": "No secret in code or logs; secrets live in a secret store with rotation and owners; data is encrypted in transit and at rest; keys are separated by purpose.",
+      "checks": [
+        {
+          "id": "D09.1",
+          "title": "No secrets in the repository",
+          "acceptance": "Secret scan of the full repository and history finds 0 live secrets.",
+          "method": "automated",
+          "cadence": "per-release",
+          "references": [
+            "SSDF PS.1",
+            "NIST CSF 2.0 PR.DS"
+          ],
+          "collector": "secret-scan",
+          "critical": "security"
+        },
+        {
+          "id": "D09.2",
+          "title": "No secret files committed",
+          "acceptance": "No .env or key files tracked in git; an example env file documents names only.",
+          "method": "automated",
+          "cadence": "per-release",
+          "references": [
+            "SSDF PS.1"
+          ],
+          "collector": "env-files"
+        },
+        {
+          "id": "D09.3",
+          "title": "Encryption in transit and at rest",
+          "acceptance": "All endpoints serve HTTPS with HSTS; database storage encryption confirmed by provider settings.",
+          "method": "read-only-query",
+          "cadence": "monthly",
+          "references": [
+            "OWASP ASVS 5.0 Secure Communication",
+            "NIST CSF 2.0 PR.DS"
+          ]
+        },
+        {
+          "id": "D09.4",
+          "title": "Secrets have owners and rotation dates",
+          "acceptance": "Secret register lists owner, purpose and last rotation for every production secret; none older than policy.",
+          "method": "review",
+          "cadence": "monthly",
+          "references": [
+            "NIST CSF 2.0 PR.AA"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D10",
+      "n": 10,
+      "domain": "SEC",
+      "name": "Application, API and infrastructure security",
+      "weight": 5,
+      "definitionOf10": "No known exploitable vulnerability; security headers, input handling and rate limits are verified; infrastructure is hardened; passive and authorized active scans are clean and repeated.",
+      "checks": [
+        {
+          "id": "D10.1",
+          "title": "Passive security scan clean",
+          "acceptance": "Latest Secval passive scan of the production host shows 0 high findings.",
+          "method": "automated",
+          "cadence": "weekly",
+          "references": [
+            "NIST CSF 2.0 DE.CM",
+            "OWASP ASVS 5.0 Configuration"
+          ],
+          "secvalSignal": "passive-scan"
+        },
+        {
+          "id": "D10.2",
+          "title": "Security headers and TLS configured",
+          "acceptance": "Response headers include CSP, HSTS, X-Content-Type-Options, frame protection; TLS grade checked.",
+          "method": "automated",
+          "cadence": "weekly",
+          "references": [
+            "OWASP ASVS 5.0 Configuration",
+            "OWASP API Security Top 10 2023 API8"
+          ]
+        },
+        {
+          "id": "D10.3",
+          "title": "Rate limits on public and API endpoints",
+          "acceptance": "Burst test in a non-production environment receives 429 after the documented limit.",
+          "method": "test-run",
+          "cadence": "per-release",
+          "references": [
+            "OWASP API Security Top 10 2023 API4"
+          ]
+        },
+        {
+          "id": "D10.4",
+          "title": "No server-side request forgery or injection paths",
+          "acceptance": "Static review and tests for SSRF/SQL injection on all routes that take URLs or query input.",
+          "method": "test-run",
+          "cadence": "per-release",
+          "references": [
+            "OWASP API Security Top 10 2023 API7",
+            "OWASP ASVS 5.0 Encoding and Sanitization"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D11",
+      "n": 11,
+      "domain": "SEC",
+      "name": "Privacy and data lifecycle",
+      "weight": 3,
+      "definitionOf10": "Personal data is inventoried, minimized, retained only as long as documented and deleted on schedule; personal data never appears in code, logs or test fixtures.",
+      "checks": [
+        {
+          "id": "D11.1",
+          "title": "Personal data inventory",
+          "acceptance": "Register lists every table/field holding personal data with purpose and legal basis.",
+          "method": "review",
+          "cadence": "monthly",
+          "references": [
+            "NIST CSF 2.0 ID.AM"
+          ]
+        },
+        {
+          "id": "D11.2",
+          "title": "Retention and deletion enforced",
+          "acceptance": "Retention job exists; query shows no personal data older than the retention period.",
+          "method": "read-only-query",
+          "cadence": "monthly",
+          "references": [
+            "NIST CSF 2.0 PR.DS"
+          ]
+        },
+        {
+          "id": "D11.3",
+          "title": "No personal data in code, logs or fixtures",
+          "acceptance": "Scan of repository and sampled logs finds 0 real personal records.",
+          "method": "automated",
+          "cadence": "per-release",
+          "references": [
+            "OWASP LLM Top 10 2025 LLM02"
+          ],
+          "collector": "personal-data-scan"
+        }
+      ]
+    },
+    {
+      "id": "D12",
+      "n": 12,
+      "domain": "SEC",
+      "name": "Audit trails, approvals and governance",
+      "weight": 3,
+      "definitionOf10": "Every consequential action is logged append-only with who/what/when; production changes need recorded approval for the exact SHA; logs are tamper-evident and reviewed.",
+      "checks": [
+        {
+          "id": "D12.1",
+          "title": "Append-only audit trail for consequential actions",
+          "acceptance": "Audit table cannot be updated/deleted by the app role; write test confirms.",
+          "method": "test-run",
+          "cadence": "per-release",
+          "references": [
+            "NIST CSF 2.0 DE.CM",
+            "OWASP ASVS 5.0 Security Logging and Error Handling"
+          ]
+        },
+        {
+          "id": "D12.2",
+          "title": "Exact-SHA approval before every production deploy",
+          "acceptance": "Every production deploy in the period maps to a recorded approval of that exact SHA; unapproved deploys = 0.",
+          "method": "read-only-query",
+          "cadence": "weekly",
+          "references": [
+            "NIST CSF 2.0 GV.RR",
+            "SSDF PO.1"
+          ],
+          "critical": "governance"
+        },
+        {
+          "id": "D12.3",
+          "title": "Owner-approved overrides are logged",
+          "acceptance": "Business overrides (e.g. below-cost price) record approver, reason and time.",
+          "method": "test-run",
+          "cadence": "per-release",
+          "references": [
+            "NIST CSF 2.0 GV"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D13",
+      "n": 13,
+      "domain": "BIZ",
+      "name": "Functional completeness and correctness",
+      "weight": 4,
+      "definitionOf10": "Every documented requirement has an acceptance test that passes against production-like data; core user journeys are verified end to end on production.",
+      "checks": [
+        {
+          "id": "D13.1",
+          "title": "Requirements register with acceptance tests",
+          "acceptance": "Each user requirement has an id and at least one acceptance test; uncovered requirements = 0.",
+          "method": "review",
+          "cadence": "monthly",
+          "references": [
+            "SSDF PW.8"
+          ]
+        },
+        {
+          "id": "D13.2",
+          "title": "Core journeys pass end to end",
+          "acceptance": "Browser end-to-end run of every core journey on a production-like copy passes.",
+          "method": "browser",
+          "cadence": "per-release",
+          "references": [
+            "SSDF PW.8"
+          ]
+        },
+        {
+          "id": "D13.3",
+          "title": "Core journeys verified on production",
+          "acceptance": "Read-only production smoke of core journeys after each release passes.",
+          "method": "browser",
+          "cadence": "per-release",
+          "references": []
+        }
+      ]
+    },
+    {
+      "id": "D14",
+      "n": 14,
+      "domain": "BIZ",
+      "name": "Business processes and workflow orchestration",
+      "weight": 4,
+      "definitionOf10": "Every multi-step business process runs to completion or fails visibly; hand-offs between people, apps and jobs are tracked; no silent stalls.",
+      "checks": [
+        {
+          "id": "D14.1",
+          "title": "Process steps tracked with state",
+          "acceptance": "Each workflow instance has a recorded state and owner; stalled instances older than SLA = 0.",
+          "method": "read-only-query",
+          "cadence": "weekly",
+          "references": []
+        },
+        {
+          "id": "D14.2",
+          "title": "Failure of a step is visible",
+          "acceptance": "Forced failure in a test run surfaces to the owner (alert or task).",
+          "method": "drill",
+          "cadence": "monthly",
+          "references": [
+            "NIST CSF 2.0 DE.AE"
+          ]
+        },
+        {
+          "id": "D14.3",
+          "title": "End-to-end process test",
+          "acceptance": "Integration test executes the whole process with realistic data.",
+          "method": "test-run",
+          "cadence": "per-release",
+          "references": [
+            "SSDF PW.8"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D15",
+      "n": 15,
+      "domain": "BIZ",
+      "name": "Protocols, rules and state transitions",
+      "weight": 4,
+      "definitionOf10": "Every entity's allowed states and transitions are defined and enforced server-side; illegal transitions are rejected; rule changes are versioned.",
+      "checks": [
+        {
+          "id": "D15.1",
+          "title": "State machine defined",
+          "acceptance": "Allowed states and transitions documented for each stateful entity.",
+          "method": "review",
+          "cadence": "monthly",
+          "references": []
+        },
+        {
+          "id": "D15.2",
+          "title": "Illegal transitions rejected server-side",
+          "acceptance": "Negative tests for illegal transitions return errors and change nothing.",
+          "method": "test-run",
+          "cadence": "per-release",
+          "references": [
+            "OWASP ASVS 5.0 Validation and Business Logic"
+          ]
+        },
+        {
+          "id": "D15.3",
+          "title": "Production data respects the rules",
+          "acceptance": "Read-only query finds 0 records in impossible states.",
+          "method": "read-only-query",
+          "cadence": "weekly",
+          "references": []
+        }
+      ]
+    },
+    {
+      "id": "D16",
+      "n": 16,
+      "domain": "BIZ",
+      "name": "Financial and domain-specific correctness",
+      "weight": 4,
+      "definitionOf10": "Every financial and domain figure reconciles to its source of record within tolerance on production; currencies are never mixed; formulas are tested against independent calculations.",
+      "checks": [
+        {
+          "id": "D16.1",
+          "title": "Figures reconcile to the source of record",
+          "acceptance": "Reconciliation of key figures (revenue, receivables, prices, positions) to source on production: unexplained difference = 0.",
+          "method": "read-only-query",
+          "cadence": "weekly",
+          "references": [],
+          "critical": "financial"
+        },
+        {
+          "id": "D16.2",
+          "title": "Currencies never mixed",
+          "acceptance": "Every sum is per currency or converted with a dated rate; query/tests show no mixed-currency totals.",
+          "method": "test-run",
+          "cadence": "per-release",
+          "references": [],
+          "critical": "financial"
+        },
+        {
+          "id": "D16.3",
+          "title": "Formulas verified by independent calculation",
+          "acceptance": "Golden-case tests computed independently (spreadsheet or second implementation) match the app.",
+          "method": "test-run",
+          "cadence": "per-release",
+          "references": [
+            "SSDF PW.8"
+          ]
+        },
+        {
+          "id": "D16.4",
+          "title": "Domain invariants hold in production",
+          "acceptance": "Read-only invariant queries (e.g. price >= cost floor unless approved) return 0 violations.",
+          "method": "read-only-query",
+          "cadence": "daily",
+          "references": [],
+          "critical": "financial"
+        }
+      ]
+    },
+    {
+      "id": "D17",
+      "n": 17,
+      "domain": "BIZ",
+      "name": "AI quality, grounding and agent safety",
+      "weight": 3,
+      "definitionOf10": "AI answers are grounded in authorized sources with provenance, measured against an independent benchmark, refuse when unsure, cannot take unapproved actions and resist prompt injection.",
+      "checks": [
+        {
+          "id": "D17.1",
+          "title": "Factual accuracy on an independent benchmark",
+          "acceptance": "Blind question set with independent answers; accuracy measured and >= agreed target.",
+          "method": "test-run",
+          "cadence": "monthly",
+          "references": [
+            "NIST AI RMF MEASURE",
+            "OWASP LLM Top 10 2025 LLM09"
+          ]
+        },
+        {
+          "id": "D17.2",
+          "title": "Answers cite authorized sources",
+          "acceptance": "Sampled answers include provenance; retrieval respects the user's permissions.",
+          "method": "test-run",
+          "cadence": "monthly",
+          "references": [
+            "OWASP LLM Top 10 2025 LLM08",
+            "NIST AI RMF MAP"
+          ]
+        },
+        {
+          "id": "D17.3",
+          "title": "Prompt-injection and excessive-agency tests",
+          "acceptance": "Injection test set cannot trigger writes, data exfiltration or prompt leakage.",
+          "method": "test-run",
+          "cadence": "per-release",
+          "references": [
+            "OWASP LLM Top 10 2025 LLM01",
+            "OWASP LLM Top 10 2025 LLM06",
+            "OWASP LLM Top 10 2025 LLM07"
+          ]
+        },
+        {
+          "id": "D17.4",
+          "title": "Safe fallback when AI is unavailable",
+          "acceptance": "With the model unavailable or out of quota, the app degrades to a clear message, never a fabricated answer.",
+          "method": "test-run",
+          "cadence": "per-release",
+          "references": [
+            "OWASP LLM Top 10 2025 LLM10"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D18",
+      "n": 18,
+      "domain": "BIZ",
+      "name": "UX, accessibility and usability",
+      "weight": 3,
+      "definitionOf10": "Core screens pass WCAG 2.2 AA automated and manual checks on desktop and mobile, show loading/error states, and have no misleading indicators.",
+      "checks": [
+        {
+          "id": "D18.1",
+          "title": "Automated accessibility check passes",
+          "acceptance": "axe-core (WCAG 2.x A/AA rules) on every core screen, light and dark: 0 violations.",
+          "method": "browser",
+          "cadence": "per-release",
+          "references": [
+            "WCAG 2.2 AA"
+          ]
+        },
+        {
+          "id": "D18.2",
+          "title": "Mobile and desktop layouts work",
+          "acceptance": "Core screens at 1440/390/360 px: no sideways scroll, controls reachable.",
+          "method": "browser",
+          "cadence": "per-release",
+          "references": [
+            "WCAG 2.2 AA"
+          ]
+        },
+        {
+          "id": "D18.3",
+          "title": "Loading, empty and error states shown",
+          "acceptance": "Browser test forces slow/empty/failed responses; each screen shows a clear state.",
+          "method": "browser",
+          "cadence": "per-release",
+          "references": []
+        }
+      ]
+    },
+    {
+      "id": "D19",
+      "n": 19,
+      "domain": "OPS",
+      "name": "Availability and service-level objectives",
+      "weight": 4,
+      "definitionOf10": "Availability SLIs are measured externally, SLOs and error budgets are defined, and production meets them over a sustained window.",
+      "checks": [
+        {
+          "id": "D19.1",
+          "title": "External uptime measured",
+          "acceptance": "Independent monitor (Secval uptime) checks the production health endpoint at least every 30 minutes.",
+          "method": "telemetry",
+          "cadence": "daily",
+          "references": [
+            "Google SRE SLI/SLO",
+            "OpenTelemetry metrics"
+          ],
+          "secvalSignal": "uptime"
+        },
+        {
+          "id": "D19.2",
+          "title": "SLO defined and met over 30 days",
+          "acceptance": "Documented availability SLO; measured 30-day availability >= SLO.",
+          "method": "telemetry",
+          "cadence": "monthly",
+          "references": [
+            "Google SRE SLI/SLO"
+          ]
+        },
+        {
+          "id": "D19.3",
+          "title": "Production version is verifiable",
+          "acceptance": "A version endpoint returns the exact deployed commit SHA.",
+          "method": "automated",
+          "cadence": "daily",
+          "references": [
+            "DORA"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D20",
+      "n": 20,
+      "domain": "OPS",
+      "name": "Performance, scalability and capacity",
+      "weight": 3,
+      "definitionOf10": "Latency and throughput SLOs are defined and measured on production; capacity limits (DB, storage, quotas) are forecast with alerts before exhaustion.",
+      "checks": [
+        {
+          "id": "D20.1",
+          "title": "Latency measured against an SLO",
+          "acceptance": "p95 latency of core endpoints measured on production within its SLO.",
+          "method": "telemetry",
+          "cadence": "weekly",
+          "references": [
+            "Google SRE SLI/SLO"
+          ]
+        },
+        {
+          "id": "D20.2",
+          "title": "Capacity forecast with alerts",
+          "acceptance": "Storage, database and quota usage forecast; alert before 80%.",
+          "method": "telemetry",
+          "cadence": "weekly",
+          "references": [
+            "NIST CSF 2.0 ID.AM"
+          ]
+        },
+        {
+          "id": "D20.3",
+          "title": "Load behaviour tested off production",
+          "acceptance": "Load test on a non-production copy at expected peak x2 passes (no live load tests without authorization).",
+          "method": "test-run",
+          "cadence": "per-release",
+          "references": []
+        }
+      ]
+    },
+    {
+      "id": "D21",
+      "n": 21,
+      "domain": "OPS",
+      "name": "Resilience and graceful degradation",
+      "weight": 3,
+      "definitionOf10": "Dependency failures (database, external APIs, AI) degrade gracefully with timeouts, retries and clear messages; the app restarts cleanly and never crashes on one bad request.",
+      "checks": [
+        {
+          "id": "D21.1",
+          "title": "Timeouts and retries on every external call",
+          "acceptance": "Code review/tests: every outbound call has a timeout and bounded retry.",
+          "method": "test-run",
+          "cadence": "per-release",
+          "references": [
+            "OWASP API Security Top 10 2023 API10"
+          ]
+        },
+        {
+          "id": "D21.2",
+          "title": "Dependency outage drill",
+          "acceptance": "Simulated database/API outage in a test environment: app stays up and shows a clear message.",
+          "method": "drill",
+          "cadence": "monthly",
+          "references": [
+            "NIST CSF 2.0 RC.RP"
+          ]
+        },
+        {
+          "id": "D21.3",
+          "title": "One bad request cannot crash the server",
+          "acceptance": "Malformed input tests return 4xx/500 JSON without process exit.",
+          "method": "test-run",
+          "cadence": "per-release",
+          "references": [
+            "OWASP ASVS 5.0 Security Logging and Error Handling"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D22",
+      "n": 22,
+      "domain": "OPS",
+      "name": "Observability, monitoring and alerts",
+      "weight": 3,
+      "definitionOf10": "Structured logs, metrics and traces cover every critical path; alerts reach an owner with runbooks; alert noise is controlled.",
+      "checks": [
+        {
+          "id": "D22.1",
+          "title": "Structured logs for critical paths",
+          "acceptance": "Logs include request id, outcome and no secrets/personal data.",
+          "method": "review",
+          "cadence": "monthly",
+          "references": [
+            "OpenTelemetry logs",
+            "OWASP ASVS 5.0 Security Logging and Error Handling"
+          ]
+        },
+        {
+          "id": "D22.2",
+          "title": "Error rate monitored with alert",
+          "acceptance": "Production error rate measured; alert configured and tested.",
+          "method": "telemetry",
+          "cadence": "weekly",
+          "references": [
+            "OpenTelemetry metrics",
+            "NIST CSF 2.0 DE.CM"
+          ]
+        },
+        {
+          "id": "D22.3",
+          "title": "Alerts reach an owner with a runbook",
+          "acceptance": "Each alert has an owner and runbook; test alert delivered.",
+          "method": "drill",
+          "cadence": "monthly",
+          "references": [
+            "NIST CSF 2.0 RS.MA"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D23",
+      "n": 23,
+      "domain": "OPS",
+      "name": "Backups, disaster recovery and recoverability",
+      "weight": 5,
+      "definitionOf10": "Backups of every critical store run on schedule, are kept off-site, and are restored and verified regularly within the documented RPO/RTO; recovery has been proven on production-equivalent data.",
+      "checks": [
+        {
+          "id": "D23.1",
+          "title": "Backup freshness inside RPO",
+          "acceptance": "Latest backup of every critical store is younger than its RPO (measured).",
+          "method": "telemetry",
+          "cadence": "daily",
+          "references": [
+            "NIST CSF 2.0 RC.RP",
+            "NIST CSF 2.0 PR.DS"
+          ],
+          "secvalSignal": "backup",
+          "critical": "recovery"
+        },
+        {
+          "id": "D23.2",
+          "title": "Off-site copy exists",
+          "acceptance": "Backup exists in a second provider/account; listing verified.",
+          "method": "read-only-query",
+          "cadence": "weekly",
+          "references": [
+            "NIST CSF 2.0 PR.DS"
+          ]
+        },
+        {
+          "id": "D23.3",
+          "title": "Restore drill passes",
+          "acceptance": "Restore of the latest backup into an isolated database; row counts and checksums match; RTO measured.",
+          "method": "drill",
+          "cadence": "monthly",
+          "references": [
+            "NIST CSF 2.0 RC.RP"
+          ],
+          "critical": "recovery"
+        },
+        {
+          "id": "D23.4",
+          "title": "Point-in-time recovery window documented",
+          "acceptance": "Provider PITR window and snapshot schedule documented and checked.",
+          "method": "read-only-query",
+          "cadence": "monthly",
+          "references": []
+        }
+      ]
+    },
+    {
+      "id": "D24",
+      "n": 24,
+      "domain": "OPS",
+      "name": "Background jobs and operational automation",
+      "weight": 2,
+      "definitionOf10": "Every scheduled job has an owner, a recorded last success, alerting on failure and idempotent re-runs; no job silently stops.",
+      "checks": [
+        {
+          "id": "D24.1",
+          "title": "Job register with last success",
+          "acceptance": "Every scheduled job lists owner, schedule and last success; measured last success inside schedule.",
+          "method": "telemetry",
+          "cadence": "daily",
+          "references": []
+        },
+        {
+          "id": "D24.2",
+          "title": "Failed jobs alert",
+          "acceptance": "Forced job failure raises an alert.",
+          "method": "drill",
+          "cadence": "monthly",
+          "references": [
+            "NIST CSF 2.0 DE.AE"
+          ]
+        },
+        {
+          "id": "D24.3",
+          "title": "Re-runs are idempotent",
+          "acceptance": "Test runs each job twice; no duplicate effect.",
+          "method": "test-run",
+          "cadence": "per-release",
+          "references": []
+        }
+      ]
+    },
+    {
+      "id": "D25",
+      "n": 25,
+      "domain": "ENG",
+      "name": "Architecture, code quality and maintainability",
+      "weight": 2,
+      "definitionOf10": "Code passes type checks and lint with zero warnings; modules have clear boundaries; duplicated logic is shared; complexity hot spots are tracked.",
+      "checks": [
+        {
+          "id": "D25.1",
+          "title": "Type check passes",
+          "acceptance": "Type checker (e.g. tsc --noEmit) exits 0 on the released commit.",
+          "method": "automated",
+          "cadence": "per-release",
+          "references": [
+            "SSDF PW.5"
+          ],
+          "collector": "typecheck-script"
+        },
+        {
+          "id": "D25.2",
+          "title": "Lint passes with zero warnings",
+          "acceptance": "Linter exits 0 with zero warnings.",
+          "method": "automated",
+          "cadence": "per-release",
+          "references": [
+            "SSDF PW.5"
+          ],
+          "collector": "lint-script"
+        },
+        {
+          "id": "D25.3",
+          "title": "No duplicated business logic",
+          "acceptance": "Review finds shared formulas in one module (e.g. one FX/currency module).",
+          "method": "review",
+          "cadence": "monthly",
+          "references": []
+        }
+      ]
+    },
+    {
+      "id": "D26",
+      "n": 26,
+      "domain": "ENG",
+      "name": "Automated testing and independent QA",
+      "weight": 3,
+      "definitionOf10": "Automated unit, integration and browser tests cover every critical path and run on every change; an independent reviewer verifies each release; no test is skipped to get green.",
+      "checks": [
+        {
+          "id": "D26.1",
+          "title": "Test suite present and green",
+          "acceptance": "Test command exists and passes on the released commit (CI run link).",
+          "method": "automated",
+          "cadence": "per-release",
+          "references": [
+            "SSDF PW.8"
+          ],
+          "collector": "tests-present"
+        },
+        {
+          "id": "D26.2",
+          "title": "No skipped or quarantined tests",
+          "acceptance": "Count of skipped/only/quarantined tests = 0 or each documented.",
+          "method": "automated",
+          "cadence": "per-release",
+          "references": [
+            "SSDF PW.8"
+          ],
+          "collector": "skipped-tests"
+        },
+        {
+          "id": "D26.3",
+          "title": "Independent QA per release",
+          "acceptance": "A reviewer other than the implementing agent records a verdict on the exact release SHA.",
+          "method": "review",
+          "cadence": "per-release",
+          "references": [
+            "SSDF PW.7"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D27",
+      "n": 27,
+      "domain": "ENG",
+      "name": "CI/CD, deployment and release safety",
+      "weight": 3,
+      "definitionOf10": "Every change is built and tested in CI before deploy; deploys happen only from approved, gated commits; rollback is scripted and tested; DORA metrics are measured.",
+      "checks": [
+        {
+          "id": "D27.1",
+          "title": "CI runs tests on pull requests",
+          "acceptance": "A CI workflow runs on pull_request and executes the test command.",
+          "method": "automated",
+          "cadence": "per-release",
+          "references": [
+            "SSDF PW.8",
+            "DORA"
+          ],
+          "collector": "ci-workflow"
+        },
+        {
+          "id": "D27.2",
+          "title": "CI cancels superseded runs",
+          "acceptance": "Every workflow has a concurrency group with cancel-in-progress (cost and correctness).",
+          "method": "automated",
+          "cadence": "per-release",
+          "references": [],
+          "collector": "ci-concurrency"
+        },
+        {
+          "id": "D27.3",
+          "title": "Main branch CI is green",
+          "acceptance": "Latest finished run on the deploy branch succeeded.",
+          "method": "telemetry",
+          "cadence": "daily",
+          "references": [
+            "DORA change failure rate"
+          ],
+          "secvalSignal": "ci"
+        },
+        {
+          "id": "D27.4",
+          "title": "Rollback tested",
+          "acceptance": "Rollback to the previous release performed in a test environment and timed.",
+          "method": "drill",
+          "cadence": "per-release",
+          "references": [
+            "DORA failed deployment recovery time",
+            "NIST CSF 2.0 RC.RP"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D28",
+      "n": 28,
+      "domain": "ENG",
+      "name": "Configuration and environment consistency",
+      "weight": 2,
+      "definitionOf10": "Configuration is declared in code (infrastructure as code), environments match, required settings are validated at start-up, and drift is detected.",
+      "checks": [
+        {
+          "id": "D28.1",
+          "title": "Deployment configuration in the repository",
+          "acceptance": "Infrastructure/deploy file (render.yaml, fly.toml, Dockerfile) is versioned.",
+          "method": "automated",
+          "cadence": "per-release",
+          "references": [
+            "NIST CSF 2.0 PR.PS"
+          ],
+          "collector": "deploy-config"
+        },
+        {
+          "id": "D28.2",
+          "title": "Required settings validated at start-up",
+          "acceptance": "Missing required setting makes start-up fail or a health flag turn red (test).",
+          "method": "test-run",
+          "cadence": "per-release",
+          "references": []
+        },
+        {
+          "id": "D28.3",
+          "title": "Production settings match the declared configuration",
+          "acceptance": "Read-only comparison of provider settings with the repository file: differences = 0.",
+          "method": "read-only-query",
+          "cadence": "monthly",
+          "references": []
+        }
+      ]
+    },
+    {
+      "id": "D29",
+      "n": 29,
+      "domain": "ENG",
+      "name": "Dependencies and software supply chain",
+      "weight": 2,
+      "definitionOf10": "Dependencies are pinned by lockfile, scanned for known vulnerabilities, updated on a schedule, and CI actions are pinned.",
+      "checks": [
+        {
+          "id": "D29.1",
+          "title": "Lockfile committed",
+          "acceptance": "Package lockfile tracked in git.",
+          "method": "automated",
+          "cadence": "per-release",
+          "references": [
+            "SSDF PS.2",
+            "NIST CSF 2.0 GV.SC"
+          ],
+          "collector": "lockfile"
+        },
+        {
+          "id": "D29.2",
+          "title": "No known high/critical vulnerabilities",
+          "acceptance": "Dependency audit (npm audit / pip-audit) reports 0 high or critical.",
+          "method": "automated",
+          "cadence": "weekly",
+          "references": [
+            "SSDF RV.1",
+            "OWASP LLM Top 10 2025 LLM03"
+          ],
+          "collector": "dependency-audit"
+        },
+        {
+          "id": "D29.3",
+          "title": "Automated dependency updates",
+          "acceptance": "Dependabot/Renovate (or documented schedule) configured.",
+          "method": "automated",
+          "cadence": "monthly",
+          "references": [
+            "SSDF RV.1"
+          ],
+          "collector": "dependency-updates"
+        }
+      ]
+    },
+    {
+      "id": "D30",
+      "n": 30,
+      "domain": "ENG",
+      "name": "Documentation, ownership and operational readiness",
+      "weight": 1,
+      "definitionOf10": "README, ownership, runbooks and release/rollback procedures exist and are current; a new engineer can operate the app from the docs alone.",
+      "checks": [
+        {
+          "id": "D30.1",
+          "title": "README and ownership documented",
+          "acceptance": "README plus an ownership/rules file (CLAUDE.md, CODEOWNERS or AGENTS.md) exist.",
+          "method": "automated",
+          "cadence": "monthly",
+          "references": [
+            "SSDF PO.2"
+          ],
+          "collector": "docs-ownership"
+        },
+        {
+          "id": "D30.2",
+          "title": "Runbooks for incidents and rollback",
+          "acceptance": "Runbook covers deploy, rollback, restore and on-call steps; last reviewed within 90 days.",
+          "method": "review",
+          "cadence": "monthly",
+          "references": [
+            "NIST CSF 2.0 RS.MA"
+          ]
+        },
+        {
+          "id": "D30.3",
+          "title": "Engineering register current",
+          "acceptance": "Backlog/status/handoff (e.g. .engineering/) updated within the last 7 days.",
+          "method": "automated",
+          "cadence": "weekly",
+          "references": [],
+          "collector": "engineering-register"
+        }
+      ]
+    }
+  ],
+  "evidenceLevels": [
+    {
+      "id": "synthetic",
+      "ceiling": 6,
+      "meaning": "Synthetic tests or repository inspection only"
+    },
+    {
+      "id": "prodlike",
+      "ceiling": 8,
+      "meaning": "Production-like end-to-end tests without production verification"
+    },
+    {
+      "id": "production",
+      "ceiling": 9,
+      "meaning": "Verified on production with measurements"
+    },
+    {
+      "id": "independent-sustained",
+      "ceiling": 10,
+      "meaning": "Independently verified, sustained over time and operationally proven"
+    }
+  ],
+  "scoreBands": [
+    {
+      "min": 0,
+      "max": 0,
+      "meaning": "No implementation or no reliable evidence"
+    },
+    {
+      "min": 1,
+      "max": 2,
+      "meaning": "Critical failure or severe incompleteness"
+    },
+    {
+      "min": 3,
+      "max": 4,
+      "meaning": "Partial implementation with major gaps"
+    },
+    {
+      "min": 5,
+      "max": 6,
+      "meaning": "Development functionality verified mainly through synthetic tests"
+    },
+    {
+      "min": 7,
+      "max": 8,
+      "meaning": "Realistic end-to-end validation, negative testing and documented risks"
+    },
+    {
+      "min": 9,
+      "max": 9,
+      "meaning": "Verified production functionality with measurements"
+    },
+    {
+      "min": 10,
+      "max": 10,
+      "meaning": "Independently verified, sustained, fully controlled and operationally proven"
+    }
+  ],
+  "hardGates": [
+    {
+      "id": "G1",
+      "cap": 3.0,
+      "blocksRelease": true,
+      "trigger": "presence",
+      "text": "Confirmed exploitable critical security flaw, unauthorized client-data access or active exposed credential"
+    },
+    {
+      "id": "G2",
+      "cap": 5.9,
+      "blocksRelease": true,
+      "trigger": "presence",
+      "text": "Critical data corruption, incorrect financial posting or failed recovery of critical data"
+    },
+    {
+      "id": "G3",
+      "cap": 7.9,
+      "blocksRelease": false,
+      "trigger": "presence",
+      "text": "Unresolved material P1 issues"
+    },
+    {
+      "id": "G4",
+      "cap": 7.9,
+      "blocksRelease": false,
+      "trigger": "absence",
+      "text": "No complete production-like end-to-end validation"
+    },
+    {
+      "id": "G5",
+      "cap": 8.0,
+      "blocksRelease": false,
+      "trigger": "absence",
+      "text": "No independent production verification"
+    },
+    {
+      "id": "G6",
+      "cap": 8.9,
+      "blocksRelease": false,
+      "trigger": "absence",
+      "text": "No sustained production monitoring or independent final QA"
+    }
+  ],
+  "releaseGates": [
+    {
+      "id": "security",
+      "text": "Mandatory security gate"
+    },
+    {
+      "id": "database",
+      "text": "Mandatory database gate"
+    },
+    {
+      "id": "migration",
+      "text": "Mandatory migration gate"
+    },
+    {
+      "id": "approval",
+      "text": "Exact-SHA approval gate"
+    },
+    {
+      "id": "recovery",
+      "text": "Mandatory recovery gate"
+    }
+  ],
+  "cadences": {
+    "daily": 2,
+    "weekly": 9,
+    "monthly": 35,
+    "per-release": 90
+  },
+  "tiers": [
+    {
+      "id": "critical",
+      "esiiWeight": 3,
+      "meaning": "Financial or sensitive client/personal data; strongest proof required"
+    },
+    {
+      "id": "standard",
+      "esiiWeight": 2,
+      "meaning": "Internal tooling and infrastructure"
+    },
+    {
+      "id": "public",
+      "esiiWeight": 1,
+      "meaning": "Public content pages"
+    }
+  ]
+}

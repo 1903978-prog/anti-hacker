@@ -48,6 +48,8 @@ export interface AppOptions {
   aeosFile?: string;
   /** Relationship register (defaults to reports/db-relationships.json); tests hand in their own. */
   relationshipsFile?: string;
+  /** EEES folder (defaults to eees/ in the repository); tests hand in their own. */
+  eeesDir?: string;
 }
 import { DEFAULT_WEEKLY, getLastRun, runWeeklySweep } from "./schedule/weekly.js";
 import { backupMode, backupStatus, runRestoreDrill } from "./backup/drill.js";
@@ -55,6 +57,7 @@ import { dropboxStatus } from "./backup/dropbox.js";
 import { lastIntegrity, refreshIntegrity } from "./integrity.js";
 import { bigBodyBypass, qualityRoutes } from "./quality/routes.js";
 import { listDeploys, rollbackTo, type RenderFetcher } from "./deploy/rollback.js";
+import { eeesView } from "./eees/registry.js";
 
 // Until a real auth layer exists, the actor is a fixed operator identity.
 // Every governance action is still attributed in the audit trail.
@@ -377,6 +380,18 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
     options.relationshipsFile ?? join(dirname(fileURLToPath(import.meta.url)), "..", "reports", "db-relationships.json");
   app.get("/api/db-relationships", (_req, res) => {
     res.json(loadRelationships(relationshipsFile, db));
+  });
+
+  // --- EEES v1.0 quality standard (12 Nov 2026): 30 dimensions, gates, ESII ----
+  // Read-only: scores the evidence files in eees/ plus Secval's own monitors.
+  app.get("/api/eees", (_req, res) => {
+    try {
+      res.json(eeesView(db, options.eeesDir));
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("secval: EEES files could not be read:", err instanceof Error ? err.message : "unknown error");
+      res.status(500).json({ error: "The EEES standard files could not be read." });
+    }
   });
 
   // What tomorrow's daily e-mail would say, and whether e-mail is configured.

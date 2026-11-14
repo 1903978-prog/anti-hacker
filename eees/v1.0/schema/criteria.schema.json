@@ -1,0 +1,307 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "standard": {
+      "type": "string",
+      "const": "EEES"
+    },
+    "version": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "adopted": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}(T[\\d:.]+Z?)?$"
+    },
+    "approvedBy": {
+      "type": "string"
+    },
+    "domains": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "weight": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "weight"
+        ]
+      }
+    },
+    "dimensions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^D\\d{2}$"
+          },
+          "n": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "domain": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "weight": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "definitionOf10": {
+            "type": "string",
+            "minLength": 1
+          },
+          "checks": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^D\\d{2}\\.\\d+$"
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "acceptance": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "method": {
+                  "type": "string",
+                  "enum": [
+                    "automated",
+                    "read-only-query",
+                    "test-run",
+                    "browser",
+                    "drill",
+                    "review",
+                    "telemetry"
+                  ]
+                },
+                "cadence": {
+                  "type": "string",
+                  "enum": [
+                    "daily",
+                    "weekly",
+                    "monthly",
+                    "per-release"
+                  ]
+                },
+                "references": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "collector": {
+                  "type": "string"
+                },
+                "secvalSignal": {
+                  "type": "string"
+                },
+                "flowDerived": {
+                  "type": "boolean"
+                },
+                "critical": {
+                  "type": "string",
+                  "enum": [
+                    "security",
+                    "financial",
+                    "recovery",
+                    "governance"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "acceptance",
+                "method",
+                "cadence",
+                "references"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "n",
+          "domain",
+          "name",
+          "weight",
+          "definitionOf10",
+          "checks"
+        ]
+      }
+    },
+    "evidenceLevels": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "synthetic",
+              "prodlike",
+              "production",
+              "independent-sustained"
+            ]
+          },
+          "ceiling": {
+            "type": "number"
+          },
+          "meaning": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ceiling",
+          "meaning"
+        ]
+      }
+    },
+    "scoreBands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "min": {
+            "type": "number"
+          },
+          "max": {
+            "type": "number"
+          },
+          "meaning": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "min",
+          "max",
+          "meaning"
+        ]
+      }
+    },
+    "hardGates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "cap": {
+            "type": "number"
+          },
+          "blocksRelease": {
+            "type": "boolean"
+          },
+          "trigger": {
+            "type": "string",
+            "enum": [
+              "presence",
+              "absence"
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "cap",
+          "blocksRelease",
+          "trigger",
+          "text"
+        ]
+      }
+    },
+    "releaseGates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ]
+      }
+    },
+    "cadences": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "number"
+      }
+    },
+    "tiers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "esiiWeight": {
+            "type": "number"
+          },
+          "meaning": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "esiiWeight",
+          "meaning"
+        ]
+      }
+    }
+  },
+  "required": [
+    "standard",
+    "version",
+    "title",
+    "adopted",
+    "approvedBy",
+    "domains",
+    "dimensions",
+    "evidenceLevels",
+    "scoreBands",
+    "hardGates",
+    "releaseGates",
+    "cadences",
+    "tiers"
+  ]
+}

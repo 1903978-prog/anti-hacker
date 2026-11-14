@@ -1,0 +1,114 @@
+{
+  "standardVersion": "1.0.0",
+  "updated": "2026-11-12",
+  "note": "Application inventory for EEES v1.0. kind=application or infrastructure counts in the ESII portfolio index; kind=subsystem is scored on its own but NOT counted again in ESII (its defects belong to the parent), so the same defect is never counted twice. Repository and ownership facts marked UNVERIFIED were not checked by Secval.",
+  "apps": [
+    {
+      "id": "atena",
+      "name": "ATENA core application",
+      "kind": "application",
+      "tier": "critical",
+      "owner": "ATENA (compplan) thread and ATENA audit thread",
+      "repo": "1903978-prog/compplan",
+      "hosts": ["compplan.onrender.com"],
+      "deploy": "Render",
+      "evidence": "evidence/atena.json"
+    },
+    {
+      "id": "atena-pitch",
+      "name": "ATENA Pitch Architect",
+      "kind": "subsystem",
+      "parent": "atena",
+      "tier": "critical",
+      "owner": "ATENA (compplan) thread",
+      "repo": "1903978-prog/compplan (UNVERIFIED: assumed part of the ATENA code base)",
+      "hosts": [],
+      "evidence": "evidence/atena-pitch.json"
+    },
+    {
+      "id": "atena-nego",
+      "name": "ATENA Negotiation Intelligence",
+      "kind": "subsystem",
+      "parent": "atena",
+      "tier": "critical",
+      "owner": "ATENA (compplan) thread",
+      "repo": "1903978-prog/compplan (UNVERIFIED: assumed part of the ATENA code base)",
+      "hosts": [],
+      "evidence": "evidence/atena-nego.json"
+    },
+    {
+      "id": "nexus",
+      "name": "Nexus / Project Guard",
+      "kind": "application",
+      "tier": "critical",
+      "owner": "Nexus thread",
+      "repo": "1903978-prog/nexus-eendigo",
+      "hosts": ["nexus-eendigo.fly.dev"],
+      "deploy": "Fly.io",
+      "evidence": "evidence/nexus.json"
+    },
+    {
+      "id": "lm-op-model",
+      "name": "LM OpModel",
+      "kind": "application",
+      "tier": "critical",
+      "owner": "LM thread (sole LM code owner)",
+      "repo": "1903978-prog/lm-op-model",
+      "hosts": ["lm-op-model.fly.dev"],
+      "deploy": "Fly.io",
+      "evidence": "evidence/lm-op-model.json"
+    },
+    {
+      "id": "10bonds",
+      "name": "10bonds",
+      "kind": "application",
+      "tier": "critical",
+      "owner": "10bonds thread",
+      "repo": "1903978-prog/10bonds",
+      "hosts": ["10bonds.com", "10bonds.fly.dev"],
+      "deploy": "Fly.io",
+      "evidence": "evidence/10bonds.json"
+    },
+    {
+      "id": "secval",
+      "name": "Secval",
+      "kind": "application",
+      "tier": "standard",
+      "owner": "Secval (HACKERS) thread",
+      "repo": "1903978-prog/anti-hacker",
+      "hosts": ["secval.onrender.com"],
+      "deploy": "Render",
+      "evidence": "evidence/secval.json"
+    },
+    {
+      "id": "diagnostic",
+      "name": "Diagnostic Platform",
+      "kind": "application",
+      "tier": "standard",
+      "owner": "UNKNOWN (no repository or thread found in this project)",
+      "repo": null,
+      "hosts": [],
+      "evidence": "evidence/diagnostic.json"
+    },
+    {
+      "id": "lenovo",
+      "name": "Lenovo / Ollama infrastructure",
+      "kind": "infrastructure",
+      "tier": "standard",
+      "owner": "Secval thread (monitoring only); machine owned by Livio",
+      "repo": null,
+      "hosts": [],
+      "evidence": "evidence/lenovo.json"
+    },
+    {
+      "id": "eendigo-com",
+      "name": "Eendigo.com",
+      "kind": "application",
+      "tier": "public",
+      "owner": "UNKNOWN (no repository connected to this project)",
+      "repo": null,
+      "hosts": ["eendigo.com"],
+      "evidence": "evidence/eendigo-com.json"
+    }
+  ]
+}

@@ -1,0 +1,337 @@
+{
+  "standard": "EEES",
+  "standardVersion": "1.0.0",
+  "app": "atena",
+  "assessedAt": "2026-11-12",
+  "assessor": "Secval auditor thread (Claude agent), 12 Nov 2026. Every entry cites a reproducible file or measurement; none has had a human independent review yet.",
+  "productionVersion": {
+    "sha": "2a38430c",
+    "source": "/mnt/project-files/atena-audit-2026-11-11/DEFECT-REGISTER.md (Render deploy list read 00:35 UTC 12 Nov by the ATENA audit thread; not re-read by Secval)",
+    "checkedAt": "2026-11-12"
+  },
+  "lastIndependentVerification": null,
+  "checks": {
+    "D16.1": {
+      "status": "failed",
+      "evidence": [
+        {
+          "link": "/mnt/project-files/atena-audit-2026-11-11/reconciliation/RECONCILIATION-2026-11-12.md",
+          "kind": "measurement",
+          "date": "2026-11-12",
+          "environment": "production"
+        }
+      ],
+      "note": "Board revenue YTD and Client Ledger receivables differ materially from the source invoices (ATN-003, ATN-004; amounts only in the private register)"
+    },
+    "D16.2": {
+      "status": "failed",
+      "evidence": [
+        {
+          "link": "/mnt/project-files/atena-audit-2026-11-11/DEFECT-REGISTER.md ATN-005",
+          "kind": "measurement",
+          "date": "2026-11-12",
+          "environment": "production"
+        }
+      ],
+      "note": "Board won column adds two currencies into one total (ATN-005)"
+    },
+    "D16.4": {
+      "status": "failed",
+      "evidence": [
+        {
+          "link": "/mnt/project-files/atena-audit-2026-11-11/DEFECT-REGISTER.md ATN-001",
+          "kind": "measurement",
+          "date": "2026-11-12",
+          "environment": "production"
+        }
+      ],
+      "note": "A won case is priced below its cost floor without a logged owner override (ATN-001)"
+    },
+    "D12.2": {
+      "status": "failed",
+      "evidence": [
+        {
+          "link": "/mnt/project-files/atena-audit-2026-11-11/DEFECT-REGISTER.md ATN-008",
+          "kind": "measurement",
+          "date": "2026-11-12",
+          "environment": "production"
+        }
+      ],
+      "note": "Release gate NOT APPROVED on 14 master merges; the live version has no approval record (ATN-008)"
+    },
+    "D06.3": {
+      "status": "failed",
+      "evidence": [
+        {
+          "link": "/mnt/project-files/atena-audit-2026-11-11/DEFECT-REGISTER.md ATN-002",
+          "kind": "measurement",
+          "date": "2026-11-12",
+          "environment": "production"
+        }
+      ],
+      "note": "Proposals link to pricing cases by name, not by id (ATN-002, ATN-010)"
+    },
+    "D03.4": {
+      "status": "failed",
+      "evidence": [
+        {
+          "link": "/mnt/project-files/architecture-audit-2026-11-11/AUDIT-REPORT.md section 3",
+          "kind": "measurement",
+          "date": "2026-11-11",
+          "environment": "production"
+        }
+      ],
+      "note": "Duplicate live contacts and duplicate project codes found (counts in the private audit file)"
+    },
+    "D03.3": {
+      "status": "failed",
+      "evidence": [
+        {
+          "link": "/mnt/project-files/architecture-audit-2026-11-11/source-of-truth-matrix.csv",
+          "kind": "measurement",
+          "date": "2026-11-11",
+          "environment": "production"
+        }
+      ],
+      "note": "A test fixture table is present in production"
+    },
+    "D17.1": {
+      "status": "failed",
+      "evidence": [
+        {
+          "link": "/mnt/project-files/architecture-audit-2026-11-11/AUDIT-REPORT.md section 5",
+          "kind": "test-run",
+          "date": "2026-11-11",
+          "environment": "production"
+        }
+      ],
+      "note": "Hermes (ATENA chat) answered 9 of 15 real test questions correctly"
+    },
+    "D23.1": {
+      "status": "verified",
+      "evidence": [
+        {
+          "link": "/mnt/project-files/architecture-audit-2026-11-11/data-flows.csv F8/F10",
+          "kind": "measurement",
+          "date": "2026-11-11",
+          "environment": "production"
+        }
+      ],
+      "note": "Central daily backup (LM workflow, flow F8) healthy and restore-validated 11 Nov; ATENA's own in-app backup (F10) failing since 10 Nov",
+      "level": "production"
+    },
+    "D23.2": {
+      "status": "verified",
+      "evidence": [
+        {
+          "link": "/mnt/project-files/architecture-audit-2026-11-11/data-flows.csv F8",
+          "kind": "measurement",
+          "date": "2026-11-11",
+          "environment": "production"
+        }
+      ],
+      "note": "Off-site copy in Dropbox /App backups (flow F8)",
+      "level": "production"
+    },
+    "D02.1": {
+      "status": "unknown",
+      "evidence": [],
+      "note": "FK phases 1 (143) and 2 (63) and orphan repair were approved and released 11 Nov; production coverage after release not yet re-measured by Secval"
+    }
+  },
+  "dimensionsNA": {},
+  "gates": {
+    "G4": {
+      "status": "unknown",
+      "note": "Production-like boot simulation exists for draft PR #831 only (REAUDIT.md), not for the live version",
+      "evidence": []
+    }
+  },
+  "releaseGates": {
+    "approval": {
+      "status": "fail",
+      "note": "live 2a38430c deployed without a recorded exact-SHA approval (ATN-008)",
+      "evidence": [
+        {
+          "link": "/mnt/project-files/atena-audit-2026-11-11/DEFECT-REGISTER.md ATN-008",
+          "kind": "measurement",
+          "date": "2026-11-12",
+          "environment": "production"
+        }
+      ]
+    }
+  },
+  "defects": [
+    {
+      "id": "ATN-001",
+      "title": "Final price can go below the cost floor after a manual adjustment",
+      "severity": "P0",
+      "category": "financial",
+      "status": "open",
+      "dimensions": [
+        "D16"
+      ],
+      "link": "/mnt/project-files/atena-audit-2026-11-11/DEFECT-REGISTER.md ATN-001",
+      "owner": "ATENA audit thread (#831)",
+      "impact": "Below-cost work quoted and billed"
+    },
+    {
+      "id": "ATN-002",
+      "title": "Proposal weekly price / total fee differ from the priced case on all 5 final cases",
+      "severity": "P0",
+      "category": "financial",
+      "status": "open",
+      "dimensions": [
+        "D16",
+        "D06"
+      ],
+      "link": "/mnt/project-files/atena-audit-2026-11-11/DEFECT-REGISTER.md ATN-002",
+      "owner": "ATENA audit thread (#831)",
+      "impact": "Proposal totals and dashboards disagree with pricing"
+    },
+    {
+      "id": "ATN-003",
+      "title": "Revenue dated by invoice creation, not issue date: board revenue halved",
+      "severity": "P0",
+      "category": "financial",
+      "status": "open",
+      "dimensions": [
+        "D16"
+      ],
+      "link": "/mnt/project-files/atena-audit-2026-11-11/DEFECT-REGISTER.md ATN-003",
+      "owner": "ATENA audit thread (#831)",
+      "impact": "CEO sees revenue halved and trend reversed"
+    },
+    {
+      "id": "ATN-004",
+      "title": "Client Ledger receivables overstated",
+      "severity": "P0",
+      "category": "financial",
+      "status": "open",
+      "dimensions": [
+        "D16"
+      ],
+      "link": "/mnt/project-files/atena-audit-2026-11-11/DEFECT-REGISTER.md ATN-004",
+      "owner": "ATENA audit thread (#831)",
+      "impact": "Overstated receivables for cash planning"
+    },
+    {
+      "id": "ATN-005",
+      "title": "Board sums EUR and USD together",
+      "severity": "P0",
+      "category": "financial",
+      "status": "open",
+      "dimensions": [
+        "D16"
+      ],
+      "link": "/mnt/project-files/atena-audit-2026-11-11/DEFECT-REGISTER.md ATN-005",
+      "owner": "ATENA audit thread (#831)",
+      "impact": "Wrong won value shown to CEO"
+    },
+    {
+      "id": "ATN-007",
+      "title": "Mail-arrival webhook not active in production; webhook signing key design weakness (details in the private register)",
+      "severity": "P0",
+      "category": "security",
+      "status": "open",
+      "dimensions": [
+        "D07",
+        "D09",
+        "D14"
+      ],
+      "link": "/mnt/project-files/atena-audit-2026-11-11/DEFECT-REGISTER.md ATN-007",
+      "owner": "ATENA audit thread (#831)",
+      "impact": "Core Catia requirement not met; credential reuse",
+      "exploitable": false
+    },
+    {
+      "id": "ATN-008",
+      "title": "Unapproved commits deployed to production (release gate bypassed)",
+      "severity": "P0",
+      "category": "governance",
+      "status": "open",
+      "dimensions": [
+        "D12",
+        "D27"
+      ],
+      "link": "/mnt/project-files/atena-audit-2026-11-11/DEFECT-REGISTER.md ATN-008",
+      "owner": "ATENA audit thread (#831)",
+      "impact": "Unapproved code in production"
+    },
+    {
+      "id": "ATN-009",
+      "title": "Saving one record can change or remove a different record (5 cases under test)",
+      "severity": "P0",
+      "category": "data",
+      "status": "open",
+      "dimensions": [
+        "D02"
+      ],
+      "link": "/mnt/project-files/atena-audit-2026-11-11/DEFECT-REGISTER.md ATN-009",
+      "owner": "ATENA audit thread (#831)",
+      "impact": "Data loss/corruption across records"
+    },
+    {
+      "id": "ATN-010",
+      "title": "Saving a pricing case trashed another client's proposal",
+      "severity": "P0",
+      "category": "data",
+      "status": "fixed-unreleased",
+      "dimensions": [
+        "D02",
+        "D06"
+      ],
+      "link": "/mnt/project-files/atena-audit-2026-11-11/DEFECT-REGISTER.md ATN-010",
+      "owner": "ATENA audit thread (#831)",
+      "impact": "Data loss (recoverable 30 days)"
+    },
+    {
+      "id": "ATN-011",
+      "title": "HR writes accept invalid people, pay and dates",
+      "severity": "P0",
+      "category": "data",
+      "status": "fixed-unreleased",
+      "dimensions": [
+        "D02",
+        "D05"
+      ],
+      "link": "/mnt/project-files/atena-audit-2026-11-11/DEFECT-REGISTER.md ATN-011",
+      "owner": "ATENA audit thread (#831)",
+      "impact": "Bad pay rows become current pay"
+    },
+    {
+      "id": "ATN-P1-OPEN",
+      "title": "36 P1 defects not fixed in production (15 open, 1 in progress, 19 fixed only on draft PR #831, 1 approved exception)",
+      "severity": "P1",
+      "category": "functional",
+      "status": "open",
+      "dimensions": [
+        "D13"
+      ],
+      "link": "/mnt/project-files/atena-audit-2026-11-11/DEFECT-REGISTER.md",
+      "owner": "ATENA audit thread"
+    }
+  ],
+  "history": [
+    {
+      "date": "2026-11-12",
+      "assured": 0.2,
+      "raw": 0.25,
+      "coverage": 11.8,
+      "standardVersion": "1.0.0"
+    }
+  ],
+  "notes": [
+    "Hermes AI (D17) belongs to ATENA: same database and app.",
+    "Pitch Architect and Negotiation Intelligence are scored as subsystems; their defects are not double-counted here."
+  ],
+  "defectRegister": {
+    "link": "/mnt/project-files/atena-audit-2026-11-11/DEFECT-REGISTER.md",
+    "counts": {
+      "P0": 25,
+      "P1": 38,
+      "P2": 28
+    },
+    "note": "Counted from the register at 02:07 UTC 12 Nov. No P0 is fixed in production (10 fixed only on draft PR #831). 2 P1 verified, 1 approved exception."
+  }
+}
