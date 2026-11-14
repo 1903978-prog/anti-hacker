@@ -621,7 +621,7 @@ function renderApp(a) {
   return `<div class="app">
     <div class="apphead">
       <code>${esc(a.host)}</code>
-      ${a.overall !== null ? `<span class="overall ${tone(a.overall)}">${a.overall}</span><span class="muted">overall</span>` : ""}
+      ${a.overall !== null ? `<span class="overall ${tone(a.overall)}">${a.overall}</span><span class="muted">overall, from ${a.coverage.measured} of ${a.coverage.rated} areas measured${a.coverage.estimateOnly ? ` (${a.coverage.estimateOnly} only estimated, not counted)` : ""}</span>` : ""}
       ${a.proven ? "" : '<span class="badge">unproven: no measured checks</span>'}
       <span class="muted">${a.reports} report(s) pasted</span>
     </div>

@@ -41,6 +41,8 @@ export interface AppHealth {
   host: string;
   proven: boolean;
   overall: number | null;
+  /** What the overall is built from: measured areas, areas with only a written estimate, and areas rated for this app. */
+  coverage: { measured: number; estimateOnly: number; rated: number };
   areas: AreaScores[];
   infra: InfraFact[];
   /** Pasted areas that do not fit the ten fixed ones. */
@@ -321,6 +323,11 @@ export function dashboard(db: DB, now: Date = new Date(), ci: (host: string) => 
     return {
       host: e.domain,
       proven: e.ownershipProven,
+      coverage: (() => {
+        const scored = areas.filter((a) => a.applies && !OUTSIDE_OVERALL.has(a.key));
+        const measuredN = scored.filter((a) => a.measured).length;
+        return { measured: measuredN, estimateOnly: scored.filter((a) => !a.measured && a.estimate).length, rated: scored.length };
+      })(),
       overall: best.length ? Math.round(best.reduce((a, b) => a + b, 0) / best.length) : null,
       areas,
       infra: infraFacts(db, e.domain, checks7d),
