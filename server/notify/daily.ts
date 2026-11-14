@@ -1,4 +1,5 @@
 import type { DB } from "../db.js";
+import { formatDateTimeUtc } from "../util/dates.js";
 import { appendAudit } from "../audit/log.js";
 import { alertConfigFromEnv, resendSender, type AlertConfig, type Sender } from "./alerts.js";
 import { dashboardHosts } from "../health/report.js";
@@ -34,13 +35,13 @@ export function buildDigest(db: DB, input: DigestInput): Digest {
   for (const { host } of dashboardHosts(db)) {
     const checks = listUptime(db, host, since);
     const last = checks[checks.length - 1];
-    const up = !last ? "not measured" : last.ok ? `UP (status ${last.status}, ${last.ms} ms, ${last.ts.slice(0, 16).replace("T", " ")} UTC)` : `DOWN (${last.status ?? last.error ?? "no answer"})`;
+    const up = !last ? "not measured" : last.ok ? `UP (status ${last.status}, ${last.ms} ms, ${formatDateTimeUtc(last.ts)})` : `DOWN (${last.status ?? last.error ?? "no answer"})`;
     if (last && !last.ok) attention.push(`${host} is DOWN`);
     const ci = input.ci(host);
     let build = CI_REPOS[host] ? "not measured (GitHub gave no answer; private repo?)" : "not measured (no repo linked)";
     if (ci) {
       build = ci.latest
-        ? `newest run ${ci.latest.name}: ${ci.latest.conclusion} (${ci.latest.at.slice(0, 16).replace("T", " ")} UTC)`
+        ? `newest run ${ci.latest.name}: ${ci.latest.conclusion} (${formatDateTimeUtc(ci.latest.at)})`
         : "no finished runs";
       for (const f of ci.failing) attention.push(`${host}: ${f.name} is failing, ${f.url}`);
     }
