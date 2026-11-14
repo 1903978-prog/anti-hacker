@@ -41,6 +41,9 @@ Only `qwen3:8b`. Never request, load or warm up `qwen3.5:2b` or any other model.
 ## 3. Dates
 Every date people see is "03 Nov 2026" (with time "03 Nov 2026, 14:05"). Use `public/dates.js` (browser) or `server/util/dates.ts` (server). Never `toLocaleString()` or raw ISO in the UI. Stored data and API values stay ISO.
 
+## 3a. Release authority (EEN-REL-001, Livio, 14 Nov 2026, permanent)
+Livio is the only human release approver. Never require or ask for a second human, second GitHub account, collaborator or approving review. Independent review = an AI reviewer. Full text: `docs/policies/EEN-REL-001.md` (checked by `test/releasePolicy.test.ts`).
+
 ## 4. Work and release
 1. **One branch:** all work merges into `integration`. No other long-lived branches.
 2. **No ship without the word:** no PR, push to a remote or deploy unless Livio writes **"ship it"**. Until then, commit locally to `integration` only.
