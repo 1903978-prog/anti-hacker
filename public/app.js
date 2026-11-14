@@ -836,16 +836,16 @@ el("usageRefresh").onclick = async () => {
   try { await refreshUsage(true); } finally { el("usageRefresh").disabled = false; }
 };
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const APP_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 // Dates shown to people are written like "03 Nov 2026" (CLAUDE.md); with a time: "03 Nov 2026, 14:05" (local time).
 function niceDate(iso, withTime) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return String(iso);
-  const day = `${String(d.getDate()).padStart(2, "0")} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+  const day = `${String(d.getDate()).padStart(2, "0")} ${APP_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
   return withTime ? `${day}, ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}` : day;
 }
 // "2026-11-05 12:31 UTC" (as written in HANDOFF.md) -> "05 Nov 2026, 12:31 UTC"
-const niceCheckpoint = (t) => String(t).replace(/(\d{4})-(\d{2})-(\d{2})/, (_m, y, mo, dd) => `${dd} ${MONTHS[Number(mo) - 1]} ${y},`);
+const niceCheckpoint = (t) => String(t).replace(/(\d{4})-(\d{2})-(\d{2})/, (_m, y, mo, dd) => `${dd} ${APP_MONTHS[Number(mo) - 1]} ${y},`);
 
 // --- AEOS compliance ----------------------------------------------------------
 // Read-only view of data that scripts/aeos/collect.py wrote after running each app's own

@@ -70,6 +70,7 @@ async function main(): Promise<void> {
       for (const width of WIDTHS) {
         const ctx = await browser.newContext({ viewport: { width, height: 900 }, colorScheme: scheme, bypassCSP: true });
         const page = await ctx.newPage();
+        page.on("pageerror", (e) => problems.push(`${width}px ${scheme}: script error: ${e.message}`));
         await page.goto(`${base}/#health`);
         await page.locator("#tokenInput").waitFor({ state: "visible" });
         await page.fill("#tokenInput", TOKEN);

@@ -220,7 +220,7 @@ document.addEventListener("click", (e) => {
 el("dbQuick").onclick = () => dbRefresh("quick");
 el("dbDeep").onclick = () => dbRefresh("deep");
 el("dbFilterApp").onchange = el("dbFilterSev").onchange = () => { if (dbView) el("dbFindings").innerHTML = dbFindings(); };
-el("dbAttestBtn").onclick = async () => {
+el("dbAttBtn").onclick = async () => {
   const value = el("dbAttValue").value === "" ? null : Number(el("dbAttValue").value);
   const { ok, body } = await api("/api/dbarch/attest", { method: "POST", body: JSON.stringify({
     app: el("dbAttApp").value, key: el("dbAttKey").value, value, detail: el("dbAttDetail").value || undefined,
