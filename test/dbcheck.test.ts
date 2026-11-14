@@ -201,10 +201,10 @@ describe("secval's own database", () => {
     expect(r.checkConstraints).toBeGreaterThan(0);
     // No backup running in tests: backup and restore are not reported, never guessed.
     expect(r.lastBackupAt).toBeNull();
-    // Secval's register (08 Nov 2026): 4 required links, all enforced since migration 7;
-    // 7 of 15 tables take part in a foreign key (diagnostic only; the two Lenovo monitor tables are D).
-    expect(r).toMatchObject({ requiredLinks: 4, requiredLinksValidated: 4, linkCandidatesOpen: 0, tablesClassified: 15 });
-    expect(r.tablesInLinks).toBe(7);
+    // Secval's register: 6 required links (migration 9 adds the two scorecard links);
+    // 10 of 19 tables take part in a foreign key (diagnostic only; the two Lenovo monitor tables are D).
+    expect(r).toMatchObject({ requiredLinks: 6, requiredLinksValidated: 6, linkCandidatesOpen: 0, tablesClassified: 19 });
+    expect(r.tablesInLinks).toBe(10);
     // Backup and restore not reported in tests: 80.
     expect(scoreDbReport(r, NOW).score).toBe(80);
   });
