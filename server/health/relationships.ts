@@ -43,6 +43,8 @@ export const SECVAL_REQUIRED_LINKS: RequiredLink[] = [
   { child: "health_scores", columns: "report_id", parent: "health_reports", parentColumns: "id", purpose: "a score comes from one pasted report", onDelete: "NO ACTION" },
   { child: "health_infra", columns: "report_id", parent: "health_reports", parentColumns: "id", purpose: "an infrastructure fact comes from one pasted report", onDelete: "NO ACTION" },
   { child: "quality_snapshots", columns: "job_id", parent: "quality_runs", parentColumns: "job_id", purpose: "a trusted snapshot comes from one recorded run (same transaction, runs are append-only)", onDelete: "NO ACTION (runs cannot be deleted)" },
+  { child: "dbarch_latest", columns: "scan_id", parent: "dbarch_scans", parentColumns: "id", purpose: "the latest database-scorecard result points at the scan that produced it", onDelete: "NO ACTION (scans are append-only)" },
+  { child: "dbarch_alerts", columns: "scan_id", parent: "dbarch_scans", parentColumns: "id", purpose: "a scorecard alert comes from one scan (empty when not tied to a scan)", onDelete: "NO ACTION (scans are append-only)" },
 ];
 
 /** Relationships that are deliberately not foreign keys (category D links). */
@@ -51,6 +53,7 @@ export const SECVAL_EXCEPTIONS: Array<{ link: string; reason: string }> = [
   { link: "audit_log.target -> (any)", reason: "Append-only audit trail; target is free text (domain, URL or setting) and must never change or disappear." },
   { link: "uptime_checks / db_checks / health_reports / health_scores / health_infra .host -> app catalogue", reason: "The parent is the app catalogue in code (server/health/seed.ts), not a table; history must survive an app leaving the catalogue." },
   { link: "lenovo_samples / lenovo_alerts .app -> Lenovo monitor rows", reason: "The parent is the list of monitored apps in code (server/lenovo/monitor.ts MONITOR_ROWS), not a table; readings and alerts must survive an app leaving the list." },
+  { link: "dbarch_scans / dbarch_latest / dbarch_alerts / dbarch_attestations .app -> app catalogue", reason: "The parent is the app catalogue in code, not a table; scorecard history must survive an app leaving the catalogue." },
   { link: "quality_runs.dataset -> dataset registry", reason: "The parent is the dataset registry in code (server/quality/datasets/), not a table; runs are append-only history." },
 ];
 
@@ -71,6 +74,10 @@ export const SECVAL_TABLES: Record<string, { category: Category; reason: string 
   schema_migrations: { category: "C", reason: "migration bookkeeping" },
   lenovo_samples: { category: "D", reason: "Lenovo monitor readings keyed by an app name from the code list" },
   lenovo_alerts: { category: "D", reason: "append-only Lenovo alert history keyed by an app name from the code list" },
+  dbarch_scans: { category: "A", reason: "parent of dbarch_latest and dbarch_alerts" },
+  dbarch_latest: { category: "A", reason: "child of dbarch_scans" },
+  dbarch_alerts: { category: "A", reason: "child of dbarch_scans" },
+  dbarch_attestations: { category: "D", reason: "append-only manual attestations keyed by an app name from the code catalogue" },
 };
 
 export interface LinkResult extends RequiredLink {

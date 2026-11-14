@@ -221,7 +221,7 @@ export const MIGRATIONS: Migration[] = [
       BEGIN SELECT RAISE(ABORT, 'dbarch_scans is append-only'); END;
     CREATE TABLE IF NOT EXISTS dbarch_latest (
       app         TEXT PRIMARY KEY,
-      scan_id     INTEGER NOT NULL,
+      scan_id     INTEGER NOT NULL REFERENCES dbarch_scans(id),
       updated_at  TEXT NOT NULL,
       deep_at     TEXT,
       result_json TEXT NOT NULL
@@ -229,13 +229,15 @@ export const MIGRATIONS: Migration[] = [
     CREATE TABLE IF NOT EXISTS dbarch_alerts (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       app        TEXT NOT NULL,
-      scan_id    INTEGER,
+      scan_id    INTEGER REFERENCES dbarch_scans(id),
       kind       TEXT NOT NULL,
       severity   TEXT NOT NULL,
       message    TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS dbarch_alerts_app_id ON dbarch_alerts (app, id);
+    CREATE INDEX IF NOT EXISTS dbarch_alerts_scan_id ON dbarch_alerts (scan_id);
+    CREATE INDEX IF NOT EXISTS dbarch_latest_scan_id ON dbarch_latest (scan_id);
     CREATE TRIGGER IF NOT EXISTS dbarch_alerts_no_update BEFORE UPDATE ON dbarch_alerts
       BEGIN SELECT RAISE(ABORT, 'dbarch_alerts is append-only'); END;
     CREATE TRIGGER IF NOT EXISTS dbarch_alerts_no_delete BEFORE DELETE ON dbarch_alerts

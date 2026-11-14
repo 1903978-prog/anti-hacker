@@ -75,13 +75,13 @@ describe("relationship metrics A-E", () => {
 });
 
 describe("Secval's own register", () => {
-  it("classifies every table and finds all four required links enforced", () => {
+  it("classifies every table and finds all six required links enforced", () => {
     const s = measureSelf(freshDb());
-    expect(s.tables).toBe(15);
+    expect(s.tables).toBe(19);
     expect(s.unclassifiedTables).toEqual([]);
-    expect(s.categories).toEqual({ A: 7, B: 0, C: 3, D: 5, E: 0 });
-    expect(s.required).toBe(4);
-    expect(s.valid).toBe(4);
+    expect(s.categories).toEqual({ A: 10, B: 0, C: 3, D: 6, E: 0 });
+    expect(s.required).toBe(6);
+    expect(s.valid).toBe(6);
     expect(s.links.every((l) => l.indexed || l.child === "findings" || l.child.startsWith("health_"))).toBe(true);
   });
   it("a missing foreign key turns both tables into B and the app Incomplete", () => {
@@ -92,13 +92,13 @@ describe("Secval's own register", () => {
       INSERT INTO quality_snapshots VALUES ('d', 'no-such-job', 'now', 0, '[]');
       PRAGMA foreign_keys = ON;`);
     const s = measureSelf(db);
-    expect(s.valid).toBe(3);
+    expect(s.valid).toBe(5);
     expect(s.categories.B).toBe(2);
     const link = s.links.find((l) => l.child === "quality_snapshots")!;
     expect(link).toMatchObject({ status: "missing", orphans: 1 });
     const x = appMetrics(selfRegister(db));
     expect(x.status).toBe("Incomplete");
-    expect(x.fkCoverage.text).toBe("3 / 4 = 75%");
+    expect(x.fkCoverage.text).toBe("5 / 6 = 83.3%");
     expect(x.orphanIssues[0]).toMatchObject({ rows: 1 });
   });
   it("a new table nobody classified counts as E", () => {
@@ -106,12 +106,12 @@ describe("Secval's own register", () => {
     db.exec(`CREATE TABLE mystery (id INTEGER PRIMARY KEY)`);
     const s = measureSelf(db);
     expect(s.unclassifiedTables).toEqual(["mystery"]);
-    expect(appMetrics(selfRegister(db)).classification.text).toBe("15 / 16 = 93.7%");
+    expect(appMetrics(selfRegister(db)).classification.text).toBe("19 / 20 = 95%");
   });
   it("stays unverified until someone else reviews it", () => {
     const x = appMetrics(selfRegister(freshDb()));
     expect(x.status).toBe("Unverified");
-    expect(x.fkCoverage).toMatchObject({ text: "4 / 4 = 100%", basis: "provisional" });
+    expect(x.fkCoverage).toMatchObject({ text: "6 / 6 = 100%", basis: "provisional" });
   });
 });
 
