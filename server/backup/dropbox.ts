@@ -88,7 +88,7 @@ export interface DropboxResponse {
 /** Minimal fetch shape so tests can hand in canned Dropbox answers. */
 export type DropboxFetcher = (
   url: string,
-  init: { method: "POST"; headers: Record<string, string>; body: string },
+  init: { method: "POST"; headers: Record<string, string>; body?: string },
 ) => Promise<DropboxResponse>;
 
 type Env = Record<string, string | undefined>;
@@ -250,8 +250,9 @@ export function judge(
   };
 }
 
-async function post(f: DropboxFetcher, url: string, headers: Record<string, string>, body: string): Promise<unknown> {
-  const res = await f(url, { method: "POST", headers, body });
+async function post(f: DropboxFetcher, url: string, headers: Record<string, string>, body?: string): Promise<unknown> {
+  // No body at all for content downloads: a string body makes fetch send text/plain, which Dropbox refuses (400).
+  const res = await f(url, body === undefined ? { method: "POST", headers } : { method: "POST", headers, body });
   if (res.status < 200 || res.status >= 300) throw new HttpError(res.status);
   return res.json();
 }
@@ -336,7 +337,7 @@ export async function checkDropbox(
     if (statusFile) {
       try {
         const body = await post(f, "https://content.dropboxapi.com/2/files/download",
-          { authorization: headers.authorization, "Dropbox-API-Arg": JSON.stringify({ path: statusFile.path }) }, "");
+          { authorization: headers.authorization, "Dropbox-API-Arg": JSON.stringify({ path: statusFile.path }) });
         const c = centralProblems(body, now);
         central = c.byApp;
         centralNote = c.note;

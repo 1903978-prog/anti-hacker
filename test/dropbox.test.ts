@@ -112,7 +112,7 @@ describe("dropbox backup check", () => {
   it("looks only in the one folder Livio chose", async () => {
     const paths: string[] = [];
     const f: DropboxFetcher = async (url, init) => {
-      if (url.endsWith("/list_folder")) { paths.push(JSON.parse(init.body).path); return { status: 200, async json() { return { entries: [] }; } }; }
+      if (url.endsWith("/list_folder")) { paths.push(JSON.parse(init.body ?? "{}").path); return { status: 200, async json() { return { entries: [] }; } }; }
       return { status: 200, async json() { return { access_token: "t" }; } };
     };
     const r = await checkDropbox({ env: { DROPBOX_ACCESS_TOKEN: "t" }, fetcher: f, now: NOW });
@@ -141,9 +141,13 @@ describe("dropbox backup check", () => {
       seen.push(url);
       if (url.endsWith("/oauth2/token")) return { status: 200, async json() { return { access_token: "t" }; } };
       expect(init.headers.authorization).toBe("Bearer t");
-      if (url.endsWith("/download")) return { status: 200, async json() { return { runAt: "2026-11-14T06:00:00Z", apps: {} }; } };
+      if (url.endsWith("/download")) {
+        // Dropbox refuses a text/plain body on content endpoints, so the download must carry none.
+        expect(init.body).toBeUndefined();
+        return { status: 200, async json() { return { runAt: "2026-11-14T06:00:00Z", apps: {} }; } };
+      }
       if (url.endsWith("/list_folder")) {
-        const path = JSON.parse(init.body).path;
+        const path = JSON.parse(init.body ?? "{}").path;
         if (path === "/old") return { status: 409, async json() { return {}; } };
         return { status: 200, async json() {
           return { entries: [{ ".tag": "file", name: "status.json", path_display: "/backups nov26/status.json", size: 5 }, ...all.slice(0, 4).map((name) => ({ ".tag": "file", name, size: 9 }))], has_more: true, cursor: "c" };
