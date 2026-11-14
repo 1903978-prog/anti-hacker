@@ -1,4 +1,6 @@
 import type { DB } from "../db.js";
+import { isEngaged } from "../governance/killswitch.js";
+import { appendAudit } from "../audit/log.js";
 import { APPS, CALC_VERSION, HISTORICAL_BASELINE, TARGETS } from "./apps.js";
 import { collectCatalog, schemaFingerprint } from "./catalog.js";
 import { ConnectError, type Connector, type Session } from "./connect.js";
@@ -94,6 +96,11 @@ export async function runScan(db: DB, app: AppKey, tier: "quick" | "deep", deps:
   const cfg = APPS[app];
   const conn = deps.env[cfg.envVar]?.trim();
   if (!conn) return { app, status: "unconfigured", message: `Read-only connection not configured (${cfg.envVar} is not set). All values are N/V.` };
+  // Governance: the kill switch stops this scan too. Fail closed, recorded in the audit trail.
+  if (isEngaged(db)) {
+    appendAudit(db, { actor: "dbarch", action: "dbarch.scan", target: app, decision: "deny", reason: "kill switch engaged" });
+    return { app, status: "skipped", message: "Kill switch is on: database scan not run (not measured)." };
+  }
   if (running.has(app)) return { app, status: "skipped", message: "A scan of this app is already running." };
 
   const startedAt = deps.now();

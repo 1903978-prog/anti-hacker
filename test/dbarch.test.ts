@@ -5,6 +5,7 @@ import { freshDb } from "./helpers.js";
 import { FakePg, sampleTables, type FakeTable } from "./dbarch-fake.js";
 import { runAll, runScan, checkStaleness, deriveAlerts, type Deps, type AppResult } from "../server/dbarch/engine.js";
 import { ConnectError } from "../server/dbarch/connect.js";
+import { engage } from "../server/governance/killswitch.js";
 import { assertReadOnlySql, ReadOnlyViolation } from "../server/dbarch/readonly.js";
 import { CLASSIFIED } from "../server/dbarch/registry.js";
 import { fkDraft, lintDraftSql } from "../server/dbarch/recommendations.js";
@@ -539,5 +540,18 @@ describe("dbarch: TLS and connectivity stages (no network)", () => {
     expect(res.status).toBe(200);
     expect(JSON.stringify(res.body)).not.toContain("SECRETPW");
     expect(res.body.reports[0].ok).toBe(true);
+  });
+  it("the kill switch stops database scans and connection tests", async () => {
+    const db = freshDb();
+    engage(db, "test");
+    const r = rig();
+    const out = await runScan(db, "atlas", "deep", r.deps);
+    expect(out.status).toBe("skipped");
+    expect(r.dbs.size).toBe(0);
+    let connected = 0;
+    const app = createApp(db, { apiToken: "t", dbarch: { env: { SECVAL_DBARCH_URL_ATLAS: "postgresql://u:p@localhost/db" }, now: () => T0, connect: async () => { connected++; return new FakePg(sampleTables()); }, net: { resolve: async () => undefined, tcp: async () => undefined } } });
+    const res = await request(app).post("/api/dbarch/connectivity").set({ Authorization: "Bearer t" }).send({ app: "atlas" });
+    expect(res.status).toBe(423);
+    expect(connected).toBe(0);
   });
 });

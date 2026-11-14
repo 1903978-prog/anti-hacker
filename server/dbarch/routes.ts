@@ -6,6 +6,7 @@ import { pgConnector } from "./connect.js";
 import { checkStaleness, runAll, runScan, type Deps } from "./engine.js";
 import { activeAttestations, addAttestation, getLatest, listAlerts, validAttestationKey } from "./store.js";
 import { buildView } from "./view.js";
+import { isEngaged } from "../governance/killswitch.js";
 import { testConnectivity } from "./connectivity.js";
 import { grantsSql } from "./grants.js";
 import { appendAudit } from "../audit/log.js";
@@ -37,6 +38,11 @@ export function dbarchRoutes(app: Express, db: DB, deps: Deps = defaultDeps()): 
     const b = z.object({ app: appKey.optional() }).safeParse(req.body ?? {});
     if (!b.success) { res.status(400).json({ error: "unknown app" }); return; }
     const keys = b.data.app ? [b.data.app] : (Object.keys(APPS) as AppKey[]);
+    if (isEngaged(db)) {
+      appendAudit(db, { actor: "operator", action: "dbarch.connectivity", decision: "deny", reason: "kill switch engaged" });
+      res.status(423).json({ error: "Kill switch is on: connection test not run." });
+      return;
+    }
     const reports = [];
     for (const k of keys) reports.push(await testConnectivity(k, deps.env, deps.connect, deps.net, deps.now()));
     appendAudit(db, { actor: "operator", action: "dbarch.connectivity", decision: "info", reason: reports.map((x) => `${x.app}:${x.ok ? "ok" : "fail"}`).join(" ") });
