@@ -178,7 +178,9 @@ export async function run() {
     const issues = await pages(`/repos/${repo}/issues?state=open`);
     issueInventory.set(repo, issues);
     const count = (label) => issues.filter((i) => i.labels.some((x) => x.name === label)).length;
-    globalThis.console.log(`Issue inventory ${repo}: open=${issues.filter((i) => !i.pull_request).length} ready=${count(LABEL.ready)} active=${count(LABEL.active)} blocked=${count(LABEL.blocked)} failed=${count(LABEL.failed)} completed=${count(LABEL.completed)} release_decision=${count(LABEL.release)}`);
+    const terminal = new Set([LABEL.active, LABEL.blocked, LABEL.failed, LABEL.completed, LABEL.review, LABEL.release]);
+    const eligible = issues.filter((i) => !i.pull_request && !(i.assignees || []).length && i.labels.some((x) => x.name === LABEL.ready) && !i.labels.some((x) => terminal.has(x.name))).length;
+    globalThis.console.log(`Issue inventory ${repo}: open=${issues.filter((i) => !i.pull_request).length} ready=${count(LABEL.ready)} eligible=${eligible} active=${count(LABEL.active)} blocked=${count(LABEL.blocked)} failed=${count(LABEL.failed)} completed=${count(LABEL.completed)} release_decision=${count(LABEL.release)}`);
   }
   await auditOpenPullRequests();
   // Fail closed: if the agent-task API is unavailable or its response is malformed, do not dispatch another task.
