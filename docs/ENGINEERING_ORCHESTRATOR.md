@@ -14,7 +14,7 @@ Only open issues labelled `orchestrator:ready` are eligible. The controller sele
 
 ## Task state and audit trail
 
-The labels `orchestrator:ready`, `active`, `blocked`, `failed`, `completed`, `review-ready`, and `release-decision` record queue state on the issue. Copilot task state, each open PR's exact 40-character head SHA, and check-run/status results are written to the GitHub Actions log. State changes and terminal PR check results receive a deduplicated issue comment. Unknown task states, an unavailable agent-task API, missing credentials, or malformed API responses stop dispatch safely.
+The controller inventories every open issue in each repository and logs counts by queue state. The labels `orchestrator:ready`, `active`, `blocked`, `failed`, `completed`, `review-ready`, and `release-decision` record queue state on the issue. Copilot task state, each open PR's exact 40-character head SHA, and check-run/status results are written to the GitHub Actions log. State changes and terminal PR check results receive a deduplicated issue comment. Unknown task states, an unavailable agent-task API, missing credentials, or malformed API responses stop dispatch safely.
 
 The queue is global and serialized by an Actions concurrency group. A 15-minute schedule resumes the next eligible task after the prior Copilot task completes, fails, or is cancelled. `workflow_dispatch` supports an authorized manual audit. CI checks are read from each open PR; a Copilot PR with failed checks is marked blocked, while a Copilot PR with all reported checks passing is marked review-ready. An absent check remains pending.
 
