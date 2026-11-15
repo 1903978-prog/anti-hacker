@@ -39,6 +39,8 @@ jobs:
         run: npm run typecheck
       - name: Lint
         run: npm run lint
+      - name: Engineering orchestrator queue tests
+        run: node --test .github/scripts/engineering-orchestrator.node-test.mjs
       - name: Tests
         run: npm test
       - name: Install Chromium for the page check
