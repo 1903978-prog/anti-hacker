@@ -24,3 +24,15 @@ Tested PR head SHA: `<full commit SHA>`
 - [ ] Repository deployment, migration, backup, rollback, and live-verification gates are satisfied
 
 PR creation, CI success, and ChatGPT's release recommendation do not themselves authorize merge or deployment.
+
+## Backup evidence required before release
+
+| Backup type | Copy 1 ID / timestamp / validation evidence | Copy 2 ID / timestamp / validation evidence |
+|---|---|---|
+| Database (independently validated restore) | | |
+| Code (independently validated archive) | | |
+
+- [ ] Both database copies are distinct, retained, and restore-validated.
+- [ ] Both code copies are distinct, retained, and archive/checksum-validated.
+
+Record evidence for this application and release candidate. Do not mark this gate complete from filenames or upload success alone.
