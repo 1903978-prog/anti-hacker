@@ -20,6 +20,10 @@ describe("dropbox backup check", () => {
     expect(parseCopyName("compplan-history-20261026-0700Z.bundle")).toBeNull();
     expect(parseCopyName("status.json")).toBeNull();
     expect(parseCopyName("261399-nexus-db.zip")).toBeNull();
+    expect(parseCopyName("261131-nexus-db.zip")).toBeNull();
+    expect(parseCopyName("compplan-db-20260230-0700Z.dump")).toBeNull();
+    expect(parseCopyName("compplan-db-20261114-2460Z.dump")).toBeNull();
+    expect(parseCopyName("compplan-db-20261114-2360Z.dump")).toBeNull();
   });
 
   it("writes dates the Livio way", () => {
@@ -48,6 +52,20 @@ describe("dropbox backup check", () => {
   it("two files on the same day count as one copy", () => {
     const r = judge([...copies(["261114"]), ...copies(["261114"]).map((n) => n.replace(".enc", ""))], NOW);
     expect(r.status).toBe("red");
+  });
+
+  it("rejects future-dated copies instead of counting them as recent", () => {
+    const r = judge(copies(["261115", "261116"]), NOW);
+    expect(r.status).toBe("red");
+    expect(r.apps[0]!.recentCode).toBe(0);
+    expect(r.apps[0]!.problems).toContain("newest code copy is future-dated (16 Nov 2026)");
+  });
+
+  it("uses Paris calendar dates at the UTC day boundary", () => {
+    const boundary = new Date("2026-11-13T23:30:00Z"); // 14 Nov in Paris
+    const r = judge(copies(["261112", "261113"]), boundary);
+    expect(r.status).toBe("ok");
+    expect(r.apps[0]!.recentCode).toBe(2);
   });
 
   it("is red when the newest copy is stale", () => {
@@ -84,6 +102,16 @@ describe("dropbox backup check", () => {
   it("flags a central backup that stopped running", () => {
     const c = centralProblems({ runAt: "2026-11-09T14:00:00Z", apps: {} }, NOW);
     expect(c.byApp.get("nexus")).toEqual(["the central backup has not run since 09 Nov 2026"]);
+  });
+
+  it("fails closed for future, invalid and missing central run times", () => {
+    const future = centralProblems({ runAt: "2026-11-15T14:00:00Z", apps: {} }, NOW);
+    expect(future.byApp.get("compplan")).toEqual(["the central backup run time is in the future"]);
+    expect(future.note).toContain("future-dated");
+    const invalid = centralProblems({ runAt: "not-a-date", apps: {} }, NOW);
+    expect(invalid.byApp.get("nexus")).toEqual(["the central backup status has an invalid run time"]);
+    const missing = centralProblems({ apps: {} }, NOW);
+    expect(missing.byApp.get("10bonds")).toEqual(["the central backup status has no valid run time"]);
   });
 
   it("reproduces 14 Nov 2026: red for every app", () => {
