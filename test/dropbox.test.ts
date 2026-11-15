@@ -61,6 +61,13 @@ describe("dropbox backup check", () => {
     expect(r.apps[0]!.problems).toContain("newest code copy is future-dated (16 Nov 2026)");
   });
 
+  it("does not let a future copy count beside a valid recent copy", () => {
+    const r = judge(copies(["261114", "261116"]), NOW);
+    expect(r.status).toBe("red");
+    expect(r.apps[0]!.recentCode).toBe(1);
+    expect(r.apps[0]!.problems).toContain("newest code copy is future-dated (16 Nov 2026)");
+  });
+
   it("uses Paris calendar dates at the UTC day boundary", () => {
     const boundary = new Date("2026-11-13T23:30:00Z"); // 14 Nov in Paris
     const r = judge(copies(["261112", "261113"]), boundary);
