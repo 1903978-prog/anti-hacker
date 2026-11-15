@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: Check out controller
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Test queue rules
+        run: node --test .github/scripts/engineering-orchestrator.node-test.mjs
       - name: Audit tasks, PRs and CI; assign one eligible task
         env:
           COPILOT_ASSIGNMENT_TOKEN: ${{ secrets.COPILOT_ASSIGNMENT_TOKEN }}
