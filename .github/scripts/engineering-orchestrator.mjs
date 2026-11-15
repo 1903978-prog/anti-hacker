@@ -35,7 +35,8 @@ export function chooseNext(issues) {
 
 export function taskState(task) {
   const state = String(task?.state || "unknown").toLowerCase();
-  if (["queued", "in_progress", "idle", "waiting_for_user"].includes(state)) return "active";
+  if (["queued", "in_progress", "idle"].includes(state)) return "active";
+  if (state === "waiting_for_user") return "blocked";
   if (state === "completed") return "completed";
   if (["failed", "timed_out", "cancelled"].includes(state)) return "failed";
   return "unknown";
@@ -144,9 +145,16 @@ async function syncTasks(tasks) {
     const ref = taskIssue(task);
     globalThis.console.log(`Agent task id=${task.id || task.task_id || "unknown"} state=${task.state || "unknown"} category=${category} issue=${ref ? `${ref.repo}#${ref.number}` : "unmapped"}`);
     if (!ref || !TARGETS.some((x) => x.repo === ref.repo)) continue;
-    if (category === "completed") await setIssueLabels(ref.repo, ref.number, [LABEL.completed], [LABEL.active, LABEL.ready, LABEL.blocked, LABEL.failed]);
-    else if (category === "failed") await setIssueLabels(ref.repo, ref.number, [LABEL.failed], [LABEL.active, LABEL.ready]);
-    else if (category === "active") await setIssueLabels(ref.repo, ref.number, [LABEL.active], [LABEL.ready, LABEL.blocked, LABEL.failed]);
+    if (category === "completed") {
+      await setIssueLabels(ref.repo, ref.number, [LABEL.completed], [LABEL.active, LABEL.ready, LABEL.blocked, LABEL.failed]);
+      await noteOnce(ref.repo, ref.number, `orchestrator-task-${task.id || task.task_id || ref.number}-completed`, `Copilot completed the implementation task. Review its PR and exact-SHA checks; release still requires the stated backup evidence and Livio's explicit approval.`);
+    } else if (category === "failed") {
+      await setIssueLabels(ref.repo, ref.number, [LABEL.failed], [LABEL.active, LABEL.ready]);
+      await noteOnce(ref.repo, ref.number, `orchestrator-task-${task.id || task.task_id || ref.number}-failed`, `Copilot task ended in \`${task.state}\`. This is marked failed for triage. No merge or deployment was performed.`);
+    } else if (category === "blocked") {
+      await setIssueLabels(ref.repo, ref.number, [LABEL.blocked], [LABEL.active, LABEL.ready]);
+      await noteOnce(ref.repo, ref.number, `orchestrator-task-${task.id || task.task_id || ref.number}-blocked`, `Copilot is waiting for user input on this task. It is marked blocked; the global queue may continue with the next eligible issue. No merge or deployment was performed.`);
+    } else if (category === "active") await setIssueLabels(ref.repo, ref.number, [LABEL.active], [LABEL.ready, LABEL.blocked, LABEL.failed]);
   }
 }
 
