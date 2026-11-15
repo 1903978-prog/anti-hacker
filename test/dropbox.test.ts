@@ -108,6 +108,8 @@ describe("dropbox backup check", () => {
     const future = centralProblems({ runAt: "2026-11-15T14:00:00Z", apps: {} }, NOW);
     expect(future.byApp.get("compplan")).toEqual(["the central backup run time is in the future"]);
     expect(future.note).toContain("future-dated");
+    const laterToday = centralProblems({ runAt: "2026-11-14T11:00:00Z", apps: {} }, NOW);
+    expect(laterToday.byApp.get("nexus")).toEqual(["the central backup run time is in the future"]);
     const invalid = centralProblems({ runAt: "not-a-date", apps: {} }, NOW);
     expect(invalid.byApp.get("nexus")).toEqual(["the central backup status has an invalid run time"]);
     const missing = centralProblems({ apps: {} }, NOW);
