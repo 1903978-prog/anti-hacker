@@ -14,6 +14,10 @@ test("does not select blocked, active, review, release, or completed issues", ()
   for (const state of blocked) assert.equal(chooseNext([issue(2, [LABEL.ready, state])]), null);
 });
 
+test("does not duplicate work already assigned to a person or agent", () => {
+  assert.equal(chooseNext([{ ...issue(3, [LABEL.ready]), assignees: [{ login: "livio" }] }]), null);
+});
+
 test("agent task states fail closed for unknown values", () => {
   assert.equal(taskState({ state: "in_progress" }), "active");
   assert.equal(taskState({ state: "waiting_for_user" }), "blocked");
