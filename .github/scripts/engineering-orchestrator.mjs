@@ -1,3 +1,5 @@
+import process from "node:process";
+
 export const TARGETS = [
   { repo: "1903978-prog/lm-op-model", base: "master" },
   { repo: "1903978-prog/compplan", base: "master" },
@@ -54,10 +56,11 @@ export function linkedIssueNumber(body = "") {
 
 const API = "https://api.github.com";
 const token = process.env.COPILOT_ASSIGNMENT_TOKEN;
+const request = globalThis.fetch.bind(globalThis);
 const headers = { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
 async function api(path, options = {}) {
-  const response = await fetch(`${API}${path}`, { ...options, headers: { ...headers, ...options.headers } });
+  const response = await request(`${API}${path}`, { ...options, headers: { ...headers, ...options.headers } });
   const raw = await response.text();
   let data;
   try { data = raw ? JSON.parse(raw) : null; } catch { data = raw; }
@@ -118,7 +121,7 @@ async function auditOpenPullRequests() {
         api(`/repos/${repo}/commits/${sha}/status`),
       ]);
       const result = summarizeChecks(checks.check_runs || [], status.statuses || []);
-      console.log(`PR ${repo}#${pr.number} head=${sha} checks=${result} check_runs=${(checks.check_runs || []).length} statuses=${(status.statuses || []).length}`);
+      globalThis.console.log(`PR ${repo}#${pr.number} head=${sha} checks=${result} check_runs=${(checks.check_runs || []).length} statuses=${(status.statuses || []).length}`);
       const actor = pr.user?.login || "";
       const agentPr = actor.includes("copilot") || String(pr.head.ref).toLowerCase().includes("copilot");
       const issue = linkedIssueNumber(pr.body || "");
@@ -139,7 +142,7 @@ async function syncTasks(tasks) {
   for (const task of tasks) {
     const category = taskState(task);
     const ref = taskIssue(task);
-    console.log(`Agent task id=${task.id || task.task_id || "unknown"} state=${task.state || "unknown"} category=${category} issue=${ref ? `${ref.repo}#${ref.number}` : "unmapped"}`);
+    globalThis.console.log(`Agent task id=${task.id || task.task_id || "unknown"} state=${task.state || "unknown"} category=${category} issue=${ref ? `${ref.repo}#${ref.number}` : "unmapped"}`);
     if (!ref || !TARGETS.some((x) => x.repo === ref.repo)) continue;
     if (category === "completed") await setIssueLabels(ref.repo, ref.number, [LABEL.completed], [LABEL.active, LABEL.ready, LABEL.blocked, LABEL.failed]);
     else if (category === "failed") await setIssueLabels(ref.repo, ref.number, [LABEL.failed], [LABEL.active, LABEL.ready]);
@@ -171,7 +174,7 @@ export async function run() {
   const unknown = tasks.filter((t) => taskState(t) === "unknown");
   if (unknown.length) throw new Error(`Found ${unknown.length} agent task(s) with unknown state; refusing to dispatch.`);
   if (active.length) {
-    console.log(`Queue held: ${active.length} active agent task(s); no new assignment.`);
+    globalThis.console.log(`Queue held: ${active.length} active agent task(s); no new assignment.`);
     return;
   }
   const candidates = [];
@@ -193,7 +196,7 @@ export async function run() {
     return p(a) - p(b) || Date.parse(a.issue.created_at) - Date.parse(b.issue.created_at) || a.issue.number - b.issue.number;
   });
   const next = candidates[0];
-  if (!next) { console.log("Queue empty: no open issue carries orchestrator:ready."); return; }
+  if (!next) { globalThis.console.log("Queue empty: no open issue carries orchestrator:ready."); return; }
   const { repo, base, issue } = next;
   const assignment = {
     assignees: ["copilot-swe-agent[bot]"],
@@ -206,10 +209,11 @@ export async function run() {
   await api(`/repos/${repo}/issues/${issue.number}/assignees`, { method: "POST", body: JSON.stringify(assignment) });
   await setIssueLabels(repo, issue.number, [LABEL.active], [LABEL.ready]);
   await noteOnce(repo, issue.number, `orchestrator-assigned-${issue.number}`, `Assigned to GitHub Copilot by the global engineering queue. Repository: \`${repo}\`; base: \`${base}\`. Task state and CI are audited by scheduled runs. No merge or deployment is authorized.`);
-  console.log(`Assigned next task: ${repo}#${issue.number} (${issue.title})`);
+  globalThis.console.log(`Assigned next task: ${repo}#${issue.number} (${issue.title})`);
 }
 
 if (import.meta.url === `file://${process.argv[1]?.replaceAll("\\", "/")}`) {
-  run().catch((error) => { console.error(`Orchestrator stopped safely: ${error.message}`); process.exitCode = 1; });
+  run().catch((error) => { globalThis.console.error(`Orchestrator stopped safely: ${error.message}`); process.exitCode = 1; });
 }
+
 
