@@ -16,7 +16,7 @@ test("does not select blocked, active, review, release, or completed issues", ()
 
 test("agent task states fail closed for unknown values", () => {
   assert.equal(taskState({ state: "in_progress" }), "active");
-  assert.equal(taskState({ state: "waiting_for_user" }), "active");
+  assert.equal(taskState({ state: "waiting_for_user" }), "blocked");
   assert.equal(taskState({ state: "completed" }), "completed");
   assert.equal(taskState({ state: "timed_out" }), "failed");
   assert.equal(taskState({ state: "new-state" }), "unknown");
