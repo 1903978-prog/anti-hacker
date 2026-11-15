@@ -1,4 +1,5 @@
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 
 export const TARGETS = [
   { repo: "1903978-prog/lm-op-model", base: "master" },
@@ -220,7 +221,7 @@ export async function run() {
   globalThis.console.log(`Assigned next task: ${repo}#${issue.number} (${issue.title})`);
 }
 
-if (import.meta.url === `file://${process.argv[1]?.replaceAll("\\", "/")}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   run().catch((error) => { globalThis.console.error(`Orchestrator stopped safely: ${error.message}`); process.exitCode = 1; });
 }
 
