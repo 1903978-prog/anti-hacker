@@ -195,7 +195,7 @@ export function centralProblems(status: unknown, now: Date): { byApp: Map<string
     return flagAllApps("the central backup status has an invalid run time", "The central backup's status file has an invalid run time.");
   const runDay = parisDate(new Date(runTime));
   const age = daysBetween(runDay, parisDate(now));
-  if (age < 0)
+  if (runTime > now.getTime())
     return flagAllApps("the central backup run time is in the future", `The central backup's status file is future-dated (${showDate(runDay)}).`);
   const notes = [`Central backup last ran on ${showDate(runDay)}.`];
   for (const [app, raw] of Object.entries(obj(s.apps))) {
