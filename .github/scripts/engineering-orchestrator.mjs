@@ -173,6 +173,13 @@ async function copilotEnabled(repo) {
 export async function run() {
   if (!token) throw new Error("Missing COPILOT_ASSIGNMENT_TOKEN; refusing to assign work.");
   for (const { repo } of TARGETS) await ensureLabels(repo);
+  const issueInventory = new Map();
+  for (const { repo } of TARGETS) {
+    const issues = await pages(`/repos/${repo}/issues?state=open`);
+    issueInventory.set(repo, issues);
+    const count = (label) => issues.filter((i) => i.labels.some((x) => x.name === label)).length;
+    globalThis.console.log(`Issue inventory ${repo}: open=${issues.filter((i) => !i.pull_request).length} ready=${count(LABEL.ready)} active=${count(LABEL.active)} blocked=${count(LABEL.blocked)} failed=${count(LABEL.failed)} completed=${count(LABEL.completed)} release_decision=${count(LABEL.release)}`);
+  }
   await auditOpenPullRequests();
   // Fail closed: if the agent-task API is unavailable or its response is malformed, do not dispatch another task.
   const data = await api("/agents/tasks");
@@ -189,9 +196,11 @@ export async function run() {
   const candidates = [];
   const enabled = new Map();
   for (const { repo, base } of TARGETS) {
+    const issues = issueInventory.get(repo) || [];
+    const eligible = issues.filter((issue) => !issue.pull_request && issue.labels.some((x) => x.name === LABEL.ready));
+    if (!eligible.length) continue;
     enabled.set(repo, await copilotEnabled(repo));
-    const issues = await pages(`/repos/${repo}/issues?state=open&labels=${encodeURIComponent(LABEL.ready)}`);
-    for (const issue of issues) {
+    for (const issue of eligible) {
       if (issue.pull_request || (issue.assignees || []).length || issue.labels.some((x) => [LABEL.active, LABEL.blocked, LABEL.failed, LABEL.completed, LABEL.review, LABEL.release].includes(x.name))) continue;
       if (enabled.get(repo)) candidates.push({ repo, base, issue });
       else {
