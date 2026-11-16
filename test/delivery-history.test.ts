@@ -15,7 +15,8 @@ const R = "https://api.github.com/repos/1903978-prog/compplan";
 function ledger(open: number, done = 1): string {
   const atom = (i: number, d: boolean) => {
     const v = d ? "yes" : "no";
-    return { id: `task_x_${i}A`, implemented: v, tested: v, merged: v, deployed: v, live_checked: v };
+    // Tests count only when proven on the current head SHA (progress rules, PR #61).
+    return { id: `task_x_${i}A`, implemented: v, tested: v, merged: v, deployed: v, live_checked: v, tested_sha: "abc1234", head_sha: "abc1234" };
   };
   return JSON.stringify({ atoms: [...Array.from({ length: open }, (_, i) => atom(i, false)), ...Array.from({ length: done }, (_, i) => atom(100 + i, true))] });
 }
@@ -151,7 +152,16 @@ describe("copy table and Claude Code prompt", () => {
     const t = tableText!(app);
     expect(t).toContain("Delivery ledger: compplan (compplan), branch integration");
     for (const a of app.atoms) expect(t).toContain(`| ${a.id} |`);
-    expect(t).toContain("| task_compplan_003A | 2026-11-16 14:20 | make the button square and yellow | button is square | ✅ | ✅ | ✅ | ❌ | ❌ | deploy |");
+    expect(t).toMatch(/\| task_compplan_003A \| 2026-11-16 14:20 \| make the button square and yellow \| button is square \| \d+%[^|]* \| ✅ \| ✅ \| ✅ \| ❌ \| ❌ \| deploy \|/);
+  });
+
+  it("shows each atom's progress and does not count tests that ran on an old SHA as done", () => {
+    expect(tableText!(app)).toContain("| 70% ");
+    const stale = { ...app, atoms: app.atoms.map((a) => (a.id === "task_compplan_003A" ? { ...a, tested_stale: true, percent: 40 } : a)) };
+    const p = promptText!(stale);
+    expect(p).toContain("Progress: 40%");
+    expect(p).toContain("Done: Implemented, Merged");
+    expect(p).toContain("Tested (marked done, but not proven on the current head SHA)");
   });
 
   it("lists only open atoms in the prompt, from the ledger only, and forbids merge or deploy without exact-SHA approval", () => {

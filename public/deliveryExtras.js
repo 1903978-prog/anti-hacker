@@ -78,9 +78,15 @@
   const cell = (s) => String(s ?? "").replace(/\s+/g, " ").replace(/\|/g, "/").trim();
   const asked = (a) => `${a.asked_at || "unknown"}${a.asked_time && a.asked_time !== "unknown" ? " " + a.asked_time : ""}`;
 
+  // Progress (0-100%) comes from the server's progress rules; older payloads without it show "unknown".
+  const pct = (a) => (typeof a.percent === "number" ? `${a.percent}%${a.stage_label ? ` ${a.stage_label}` : ""}` : "unknown");
+  // "Tested" marked yes but not proven on the current head SHA does not count as done.
+  const stageDone = (a, k) => a[k] === "yes" && !(k === "tested" && a.tested_stale);
+  const stageWord = (a, k) => (k === "tested" && a.tested === "yes" && a.tested_stale ? "marked done, but not proven on the current head SHA" : WORD[a[k]] || "unknown");
+
   function tableText(app) {
-    const head = ["Atom ID", "Asked", "Original ask", "This atom", ...STAGES.map(([, l]) => l), "Next step"];
-    const rows = app.atoms.map((a) => [a.id, asked(a), a.original_ask, a.atom, ...STAGES.map(([k]) => ICON[a[k]] || "❓"), a.next_step].map(cell));
+    const head = ["Atom ID", "Asked", "Original ask", "This atom", "Progress", ...STAGES.map(([, l]) => l), "Next step"];
+    const rows = app.atoms.map((a) => [a.id, asked(a), a.original_ask, a.atom, pct(a), ...STAGES.map(([k]) => ICON[a[k]] || "❓"), a.next_step].map(cell));
     return [
       `Delivery ledger: ${app.project} (${app.repo})${app.branch ? `, branch ${app.branch}` : ""}${app.lastSynced ? `, last synced ${app.lastSynced}` : ""}`,
       `Atoms: ${app.counts.total} · open ${app.counts.open} · ${STAGES.map(([k, l]) => `${l.toLowerCase()} ${app.counts[k]}`).join(" · ")} · done ${app.counts.done}`,
@@ -95,11 +101,12 @@
   function promptText(app) {
     const open = app.atoms.filter((a) => !a.done);
     const lines = open.map((a) => {
-      const done = STAGES.filter(([k]) => a[k] === "yes").map(([, l]) => l);
-      const notDone = STAGES.filter(([k]) => a[k] !== "yes").map(([k, l]) => `${l} (${WORD[a[k]] || "unknown"})`);
+      const done = STAGES.filter(([k]) => stageDone(a, k)).map(([, l]) => l);
+      const notDone = STAGES.filter(([k]) => !stageDone(a, k)).map(([k, l]) => `${l} (${stageWord(a, k)})`);
       return [
         `- ${cell(a.id)}: ${cell(a.atom)}`,
         `  Original ask: "${cell(a.original_ask)}"`,
+        `  Progress: ${pct(a)}`,
         `  Done: ${done.length ? done.join(", ") : "nothing yet"}`,
         `  Not done: ${notDone.join(", ")}`,
         `  Next step (from the ledger): ${cell(a.next_step) || "not stated"}`,
