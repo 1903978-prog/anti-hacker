@@ -1,7 +1,7 @@
 {
  "project": "Secval",
  "repo": "anti-hacker",
- "last_synced": "2026-11-16T14:20:00Z",
+ "last_synced": "2026-11-16T14:40:00Z",
  "atoms": [
   {
    "id": "task_secval_001A",
@@ -317,6 +317,27 @@
    "pr": "#63",
    "head_sha": "f2c9b459009f240204039f68413127a75adfb6a0",
    "updated_at": "2026-11-16T14:10:00Z"
+  },
+  {
+   "id": "task_secval_008A",
+   "parent": "task_secval_008",
+   "asked_at": "2026-11-16",
+   "asked_time": "12:34",
+   "original_ask": "move the red part to its menu page then",
+   "atom": "Red backup alarm only on the Backup page; red dot on the Backup tab elsewhere",
+   "implemented": "yes",
+   "tested": "yes",
+   "merged": "yes",
+   "deployed": "yes",
+   "live_checked": "yes",
+   "next_step": "none",
+   "evidence": "PR #65 head a8d74a38 (CI #175 passed), merged as bfbdb947 (CI #177 passed on bfbdb947; Livio: ship it a8d74a38). Live: /health commit 2eea085921ad (includes bfbdb947) and served page has #backupAlarm inside the Backup section plus #backupTabDot, checked by Claude 14:36 UTC.",
+   "owner": "Claude",
+   "branch": "integration",
+   "pr": "#65",
+   "head_sha": "bfbdb947d00db40cf768d521a414b4aa9fe6bcf9",
+   "tested_sha": "bfbdb947d00db40cf768d521a414b4aa9fe6bcf9",
+   "updated_at": "2026-11-16T14:40:00Z"
   }
  ]
 }
