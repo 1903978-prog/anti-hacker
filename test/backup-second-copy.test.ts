@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
@@ -8,7 +9,7 @@ import { freshDb } from "./helpers.js";
 import { listAudit } from "../server/audit/log.js";
 import { appsChecked, judge } from "../server/backup/dropbox.js";
 import {
-  KEEP, backupKey, copyName, decrypt, dueNow, encrypt, makeZip, readZip, runSecondCopy, secondCopyStatus,
+  CODE_REQUIRED, KEEP, backupKey, collectCode, copyName, decrypt, dueNow, encrypt, makeZip, readZip, refuseReason, runSecondCopy, secondCopyStatus,
   type BinFetcher, type BinResponse,
 } from "../server/backup/secondCopy.js";
 
@@ -16,6 +17,7 @@ const ENV = {
   SECVAL_SECOND_COPY: "on",
   DROPBOX_REFRESH_TOKEN: "r", DROPBOX_APP_KEY: "k", DROPBOX_APP_SECRET: "s",
   LITESTREAM_SECRET_ACCESS_KEY: "test-backblaze-secret",
+  SECVAL_BACKUP_KEY: "test-independent-backup-key-0123456789abcdef",
   RENDER_GIT_COMMIT: "abc123",
 };
 const NOW = new Date("2026-11-16T09:30:00Z");
@@ -70,6 +72,9 @@ function codeDir(): string {
   mkdirSync(join(d, "server"));
   mkdirSync(join(d, "node_modules"));
   writeFileSync(join(d, "package.json"), '{"name":"secval"}');
+  writeFileSync(join(d, "package-lock.json"), "{}");
+  writeFileSync(join(d, "tsconfig.json"), "{}");
+  writeFileSync(join(d, "render.yaml"), "services: []");
   writeFileSync(join(d, "server", "index.ts"), "console.log('hi')");
   writeFileSync(join(d, "node_modules", "big.js"), "x".repeat(1000));
   return d;
@@ -98,7 +103,7 @@ describe("secval second copy", () => {
   it("refuses without an encryption key and never uploads", async () => {
     const db = freshDb();
     const dbx = fakeDropbox();
-    const r = await runSecondCopy(db, { env: { ...ENV, LITESTREAM_SECRET_ACCESS_KEY: undefined }, fetcher: dbx.f, now: NOW });
+    const r = await runSecondCopy(db, { env: { ...ENV, SECVAL_BACKUP_KEY: undefined }, fetcher: dbx.f, now: NOW });
     expect(r.ok).toBe(false);
     expect(r.detail).toMatch(/No encryption key/);
     expect(dbx.calls).toEqual([]);
@@ -210,5 +215,116 @@ describe("secval second copy", () => {
     expect(dueNow(failed, new Date(NOW.getTime() + 60 * 60_000))).toBe(false);
     expect(dueNow(failed, new Date(NOW.getTime() + 4 * 60 * 60_000))).toBe(true);
     expect(dueNow(null, NOW)).toBe(true);
+  });
+});
+
+describe("secval second copy: review #5917832972 hardening", () => {
+  it("the code archive takes only allowlisted files and refuses secrets, dotfiles and symlinks", () => {
+    const d = codeDir();
+    mkdirSync(join(d, "server", "keys"));
+    mkdirSync(join(d, "server", ".hidden"));
+    mkdirSync(join(d, ".git"));
+    writeFileSync(join(d, ".env"), "SECRET=1");
+    writeFileSync(join(d, ".env.local"), "SECRET=1");
+    writeFileSync(join(d, "server", ".env"), "SECRET=1");
+    writeFileSync(join(d, "server", "keys", "x.pem"), "-----BEGIN PRIVATE KEY-----");
+    writeFileSync(join(d, "server", "id_rsa"), "key");
+    writeFileSync(join(d, "server", "credentials.json"), "{}");
+    writeFileSync(join(d, "server", ".hidden", "a.ts"), "x");
+    writeFileSync(join(d, "server", "data.sqlite"), "x");
+    writeFileSync(join(d, ".git", "config"), "x");
+    writeFileSync(join(d, "notes.txt"), "not on the allowlist");
+    symlinkSync("/etc/hostname", join(d, "server", "link.ts"));
+    const c = collectCode(d, "abc123");
+    const names = c.files.map((f) => f.name).sort();
+    expect(names).toEqual(["SECVAL_COMMIT.txt", "package-lock.json", "package.json", "render.yaml", "server/index.ts", "tsconfig.json"]);
+    const refused = c.refused.map((r) => r.name);
+    for (const n of ["server/keys/x.pem", "server/id_rsa", "server/credentials.json", "server/link.ts", "server/.env", "server/.hidden"])
+      expect(refused.some((r) => r === n || n.startsWith(r))).toBe(true);
+    expect(c.refused.find((r) => r.name === "server/link.ts")?.reason).toMatch(/symlink/);
+    for (const n of [".env", ".env.local", "x.pem", "id_rsa", "credentials.json", "a/b.key", "c.sqlite", "d.dump", ".npmrc"])
+      expect(refuseReason(n)).not.toBeNull();
+    expect(refuseReason("server/index.ts")).toBeNull();
+  });
+
+  it("a file over the size cap is refused, not archived", () => {
+    const d = codeDir();
+    writeFileSync(join(d, "server", "huge.ts"), Buffer.alloc(2 * 1024 * 1024 + 1, 97));
+    const c = collectCode(d, "abc123");
+    expect(c.files.some((f) => f.name === "server/huge.ts")).toBe(false);
+    expect(c.refused.find((r) => r.name === "server/huge.ts")?.reason).toMatch(/large|size|over/i);
+  });
+
+  it("the key is independent: the Backblaze secret alone never makes a copy", () => {
+    expect(backupKey({ LITESTREAM_SECRET_ACCESS_KEY: "x".repeat(60) })).toBeNull();
+    expect(backupKey({ SECVAL_BACKUP_KEY: "short" })).toBeNull();
+    const k = backupKey({ SECVAL_BACKUP_KEY: "y".repeat(40) })!;
+    expect(k.source).toBe("SECVAL_BACKUP_KEY");
+    expect(backupKey({ SECVAL_BACKUP_KEY: "y".repeat(40), LITESTREAM_SECRET_ACCESS_KEY: "other" })!.keyId).toBe(k.keyId);
+  });
+
+  it("readZip refuses unsafe names and zip bombs", () => {
+    for (const name of ["../x.ts", "/etc/passwd", "a\\b.ts"])
+      expect(() => readZip(makeZip([{ name, data: Buffer.from("x") }]))).toThrow();
+    const bomb = makeZip([{ name: "a.ts", data: Buffer.alloc(3 * 1024 * 1024, 0) }]);
+    expect(bomb.length).toBeLessThan(100_000);
+    expect(() => readZip(bomb)).toThrow();
+  });
+
+  it("isolated restore: the database and the code come back from Dropbox using only the key", async () => {
+    const db = freshDb();
+    db.prepare(`INSERT INTO allowlist (domain, added_at) VALUES ('a.example', '2026-11-01'), ('b.example', '2026-11-02')`).run();
+    const dir = codeDir();
+    const dbx = fakeDropbox();
+    const r = await runSecondCopy(db, { env: ENV, fetcher: dbx.f, now: NOW, codeDir: dir });
+    expect(r.ok).toBe(true);
+    // A fresh reader holds only the downloaded files and SECVAL_BACKUP_KEY.
+    const key = backupKey({ SECVAL_BACKUP_KEY: ENV.SECVAL_BACKUP_KEY })!.key;
+    const store = join(mkdtempSync(join(tmpdir(), "isolated-")), "restored.sqlite");
+    writeFileSync(store, gunzipSync(decrypt(dbx.files.get("/backups nov26/secval/DB/261116-secval-db.dump.enc")!, key)));
+    const rdb = new Database(store, { readonly: true });
+    expect((rdb.prepare(`PRAGMA integrity_check`).get() as { integrity_check: string }).integrity_check).toBe("ok");
+    const tables = rdb.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`).all() as { name: string }[];
+    for (const { name } of tables) {
+      const a = (db.prepare(`SELECT COUNT(*) AS n FROM "${name}"`).get() as { n: number }).n;
+      const b = (rdb.prepare(`SELECT COUNT(*) AS n FROM "${name}"`).get() as { n: number }).n;
+      // The run records itself (audit row, run state) after the snapshot.
+      if (name === "audit_log" || name === "app_state") expect(a - b, name).toBeLessThanOrEqual(1);
+      else expect(b, name).toBe(a);
+    }
+    rdb.close();
+    const zip = readZip(decrypt(dbx.files.get("/backups nov26/secval/CODE/261116-secval-code.zip.enc")!, key));
+    for (const n of CODE_REQUIRED) expect(zip.has(n), n).toBe(true);
+    const src = collectCode(dir, "abc123");
+    for (const f of src.files) expect(zip.get(f.name)?.equals(f.data), f.name).toBe(true);
+    const m = JSON.parse(dbx.files.get("/backups nov26/secval/CODE/261116-secval-code.manifest.json")!.toString());
+    expect(m.format).toMatch(/source-only/);
+    expect(m.contents.length).toBe(src.files.length);
+  });
+
+  it("the Dropbox check counts a SecVal copy only with its same-day manifest", () => {
+    const copies = ["261116-secval-db.dump.enc", "261115-secval-db.dump.enc", "261116-secval-code.zip.enc", "261115-secval-code.zip.enc"];
+    const manifests = copies.map((n) => n.replace(/\.(zip|dump)\.enc$/, ".manifest.json"));
+    const withAll = judge([...copies, ...manifests], NOW, new Map(), appsChecked(ENV)).apps.find((a) => a.app === "secval")!;
+    expect(withAll.status).toBe("ok");
+    const noManifest = judge([...copies, ...manifests.slice(1)], NOW, new Map(), appsChecked(ENV)).apps.find((a) => a.app === "secval")!;
+    expect(noManifest.status).toBe("red");
+    expect(noManifest.recentDb).toBe(1);
+  });
+
+  it("every git-tracked file in an allowlisted place is in the real archive", () => {
+    const root = join(__dirname, "..");
+    let tracked: string[];
+    try { tracked = execFileSync("git", ["ls-files"], { cwd: root, encoding: "utf8" }).split("\n").filter(Boolean); }
+    catch { return; } // not a git checkout (e.g. an extracted archive)
+    const c = collectCode(root, "abc123");
+    const have = new Set(c.files.map((f) => f.name));
+    expect(c.refused).toEqual([]);
+    const dirs = ["server/", "public/", "scripts/", "test/"];
+    const root1 = ["package.json", "package-lock.json", "tsconfig.json", "render.yaml", "server/index.ts"];
+    for (const n of root1) expect(have.has(n), n).toBe(true);
+    const missing = tracked.filter((t) => dirs.some((d) => t.startsWith(d)) && !have.has(t) && refuseReason(t) === null
+      && /\.(ts|html|js|css|svg|png|ico|mjs|sh|py)$/.test(t));
+    expect(missing).toEqual([]);
   });
 });

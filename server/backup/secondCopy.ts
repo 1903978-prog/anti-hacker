@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes } from "node:crypto";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative, sep } from "node:path";
+import { join } from "node:path";
 import { deflateRawSync, gunzipSync, gzipSync, inflateRawSync } from "node:zlib";
 import type { DB } from "../db.js";
 import { appendAudit } from "../audit/log.js";
@@ -67,19 +67,17 @@ export function secondCopyMode(env: Env = process.env): "on" | "off" {
 
 // --- encryption ----------------------------------------------------------------
 
+/**
+ * The key is SECVAL_BACKUP_KEY only: its own secret, kept by Livio apart from every other credential, so
+ * rotating the Backblaze or Dropbox keys can never make these copies unreadable, and one leaked provider key
+ * never opens both copies. No key (or one under 32 characters) means nothing is copied: never unencrypted,
+ * never a key derived from another service's secret.
+ */
 export function backupKey(env: Env): { key: Buffer; keyId: string; source: string } | null {
   const own = env.SECVAL_BACKUP_KEY;
-  let key: Buffer | null = null;
-  let source = "";
-  if (own && own.length >= 32) {
-    key = Buffer.from(hkdfSync("sha256", own, "secval-second-copy", "own-key-v1", 32));
-    source = "SECVAL_BACKUP_KEY";
-  } else if (env.LITESTREAM_SECRET_ACCESS_KEY) {
-    key = Buffer.from(hkdfSync("sha256", env.LITESTREAM_SECRET_ACCESS_KEY, "secval-second-copy", "derived-v1", 32));
-    source = "derived from the Backblaze secret (LITESTREAM_SECRET_ACCESS_KEY)";
-  }
-  if (!key) return null;
-  return { key, keyId: createHash("sha256").update(key).digest("hex").slice(0, 12), source };
+  if (!own || own.length < 32) return null;
+  const key = Buffer.from(hkdfSync("sha256", own, "secval-second-copy", "own-key-v1", 32));
+  return { key, keyId: createHash("sha256").update(key).digest("hex").slice(0, 12), source: "SECVAL_BACKUP_KEY" };
 }
 
 export function encrypt(plain: Buffer, key: Buffer): Buffer {
@@ -166,6 +164,8 @@ export function readZip(zip: Buffer): Map<string, Buffer> {
   const endAt = zip.length - 22;
   if (endAt < 0 || zip.readUInt32LE(endAt) !== 0x06054b50) throw new Error("zip end record missing");
   const count = zip.readUInt16LE(endAt + 10);
+  if (count > MAX_FILES + 1) throw new Error("zip has too many entries");
+  let total = 0;
   let p = zip.readUInt32LE(endAt + 16);
   const out = new Map<string, Buffer>();
   for (let i = 0; i < count; i++) {
@@ -177,7 +177,12 @@ export function readZip(zip: Buffer): Map<string, Buffer> {
     const name = zip.subarray(p + 46, p + 46 + nlen).toString("utf8");
     const lnlen = zip.readUInt16LE(local + 26);
     const start = local + 30 + lnlen;
-    const data = inflateRawSync(zip.subarray(start, start + csize));
+    const usize = zip.readUInt32LE(p + 24);
+    if (name.includes("..") || name.startsWith("/") || name.includes("\\")) throw new Error(`zip entry has an unsafe name: ${name}`);
+    total += usize;
+    if (usize > MAX_FILE || total > MAX_TOTAL) throw new Error("zip is over its size cap");
+    const data = inflateRawSync(zip.subarray(start, start + csize), { maxOutputLength: MAX_FILE });
+    if (data.length !== usize) throw new Error(`zip entry has the wrong size: ${name}`);
     if (crc32(data) !== crc) throw new Error(`zip entry damaged: ${name}`);
     out.set(name, data);
     p += 46 + nlen;
@@ -185,25 +190,82 @@ export function readZip(zip: Buffer): Map<string, Buffer> {
   return out;
 }
 
-const SKIP_DIRS = new Set(["node_modules", ".git", "data", "bin", "dist", "coverage", ".engineering-tmp"]);
+/**
+ * Code archive: an explicit, audited ALLOWLIST of the release's source files, never "everything in the folder".
+ * Only these root files and these folders (with these file types) are read. Anything hidden (a path part
+ * starting with "."), anything that looks like a secret or credential, database files, symlinks and oversized
+ * files are refused by design, whatever folder they sit in. It is a SOURCE archive: rebuilding needs
+ * `npm ci` (dependencies are not in it) and the server's secrets (never in it).
+ */
+export const CODE_ROOT_FILES = ["package.json", "package-lock.json", "tsconfig.json", "render.yaml", "litestream.yml", "eslint.config.js", "README.md"];
+export const CODE_DIRS: Record<string, string[]> = {
+  server: [".ts"],
+  public: [".html", ".js", ".css", ".svg", ".png", ".ico"],
+  scripts: [".ts", ".mjs", ".js", ".sh", ".py"],
+  test: [".ts"],
+};
+/** Files a restore needs; a code copy missing any of them fails its check. */
+export const CODE_REQUIRED = ["package.json", "package-lock.json", "tsconfig.json", "render.yaml", "server/index.ts", "SECVAL_COMMIT.txt"];
+const SECRET_NAME = /(^|[._-])(env|secrets?|credentials?|passwords?|tokens?|private|id_rsa|id_ed25519|id_ecdsa|htpasswd|netrc|npmrc|pgpass)([._-]|$)|\.(pem|key|p12|pfx|crt|cer|der|jks|keystore|kdbx|gpg|asc|sqlite3?|sqlite-wal|sqlite-shm|db|dump|bak|log)$/i;
 const MAX_FILE = 2 * 1024 * 1024;
+const MAX_TOTAL = 32 * 1024 * 1024;
+const MAX_FILES = 2000;
 
-/** The deployed source tree (no dependencies, no data, no build tools), plus the commit. */
-export function collectCode(dir: string, commit: string): { name: string; data: Buffer }[] {
+/** Why a path is refused, or null when it may go in the archive. Exported for the tests. */
+export function refuseReason(rel: string): string | null {
+  const parts = rel.split("/");
+  if (parts.some((p) => p.startsWith("."))) return "hidden file or folder";
+  if (parts.some((p) => SECRET_NAME.test(p))) return "name looks like a secret, credential or data file";
+  return null;
+}
+
+export interface CodeCollection {
+  files: { name: string; data: Buffer }[];
+  refused: { name: string; reason: string }[];
+  bytes: number;
+}
+
+/** Collects the allowlisted source files of the release, plus the commit. Throws when a cap is exceeded. */
+export function collectCode(dir: string, commit: string): CodeCollection {
   const files: { name: string; data: Buffer }[] = [];
-  const walk = (d: string) => {
-    for (const e of readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-      const full = join(d, e.name);
-      if (e.isDirectory()) {
-        if (!SKIP_DIRS.has(e.name)) walk(full);
-      } else if (e.isFile() && !e.name.endsWith(".sqlite") && statSync(full).size <= MAX_FILE) {
-        files.push({ name: relative(dir, full).split(sep).join("/"), data: readFileSync(full) });
-      }
+  const refused: { name: string; reason: string }[] = [];
+  let bytes = 0;
+  const take = (rel: string) => {
+    const why = refuseReason(rel);
+    if (why) return void refused.push({ name: rel, reason: why });
+    const full = join(dir, ...rel.split("/"));
+    const st = lstatSync(full);
+    if (st.isSymbolicLink()) return void refused.push({ name: rel, reason: "symlink" });
+    if (!st.isFile()) return void refused.push({ name: rel, reason: "not a regular file" });
+    if (st.size > MAX_FILE) return void refused.push({ name: rel, reason: "larger than 2 MiB" });
+    bytes += st.size;
+    if (files.length + 1 > MAX_FILES || bytes > MAX_TOTAL) throw new Error("code archive is over its size cap (2000 files or 32 MiB)");
+    files.push({ name: rel, data: readFileSync(full) });
+  };
+  for (const f of CODE_ROOT_FILES) {
+    let st;
+    try { st = lstatSync(join(dir, f)); } catch { continue; }
+    if (st) take(f);
+  }
+  const walk = (rel: string, exts: string[]) => {
+    const full = join(dir, ...rel.split("/"));
+    let st;
+    try { st = lstatSync(full); } catch { return; }
+    if (st.isSymbolicLink()) return void refused.push({ name: rel, reason: "symlink" });
+    if (!st.isDirectory()) return;
+    for (const e of readdirSync(full, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const child = `${rel}/${e.name}`;
+      const why = refuseReason(child);
+      if (why) { refused.push({ name: child, reason: why }); continue; }
+      if (e.isSymbolicLink()) { refused.push({ name: child, reason: "symlink" }); continue; }
+      if (e.isDirectory()) { walk(child, exts); continue; }
+      if (!exts.some((x) => e.name.endsWith(x))) continue; // not a source type of this folder: simply not part of the release
+      take(child);
     }
   };
-  walk(dir);
+  for (const [d, exts] of Object.entries(CODE_DIRS)) walk(d, exts);
   files.push({ name: "SECVAL_COMMIT.txt", data: Buffer.from(`${commit}\n`) });
-  return files;
+  return { files, refused, bytes };
 }
 
 // --- Dropbox calls (binary) ---------------------------------------------------------
@@ -295,7 +357,7 @@ export async function runSecondCopy(db: DB, opts: RunOptions = {}): Promise<Seco
   };
 
   const k = backupKey(env);
-  if (!k) return finish({ ...base, ok: false, detail: "No encryption key: neither SECVAL_BACKUP_KEY nor the Backblaze secret is set, so nothing was copied (never uploaded unencrypted)." });
+  if (!k) return finish({ ...base, ok: false, detail: "No encryption key: SECVAL_BACKUP_KEY is not set (or is under 32 characters), so nothing was copied (never uploaded unencrypted)." });
 
   let token: string | null;
   try {
@@ -312,13 +374,15 @@ export async function runSecondCopy(db: DB, opts: RunOptions = {}): Promise<Seco
   try {
     for (const kind of ["db", "code"] as const) {
       let plain: Buffer;
+      let code: CodeCollection | null = null;
       try {
         if (kind === "db") {
           const snap = join(work, "snapshot.sqlite");
           db.prepare("VACUUM INTO ?").run(snap);
           plain = gzipSync(readFileSync(snap));
         } else {
-          plain = makeZip(collectCode(opts.codeDir ?? process.cwd(), commit));
+          code = collectCode(opts.codeDir ?? process.cwd(), commit);
+          plain = makeZip(code.files);
         }
       } catch (err) {
         copies.push({ kind, ok: false, detail: `Could not make the ${kind === "db" ? "database snapshot" : "code archive"}: ${(err as Error).message.slice(0, 120)}` });
@@ -349,14 +413,18 @@ export async function runSecondCopy(db: DB, opts: RunOptions = {}): Promise<Seco
           checked = `restored and intact (${c.allowlistRows} allowlist rows)`;
         } else {
           const entries = readZip(opened);
-          for (const must of ["package.json", "server/index.ts", "SECVAL_COMMIT.txt"])
+          for (const must of CODE_REQUIRED)
             if (!entries.has(must)) throw new Error(`code copy is missing ${must}`);
-          checked = `opened, ${entries.size} files, every checksum right`;
+          for (const name of entries.keys())
+            if (name !== "SECVAL_COMMIT.txt" && refuseReason(name)) throw new Error(`code copy holds a refused file: ${name}`);
+          if (entries.get("SECVAL_COMMIT.txt")!.toString().trim() !== commit) throw new Error("code copy names a different commit");
+          checked = `opened, ${entries.size} files, every checksum right, no secret-looking file`;
         }
         const manifest = {
           backupId, app: "secval", kind, createdAt: now.toISOString(), sourceCommit: commit,
           file: path, bytes: blob.length, sha256: hash, plainSha256: sha256(plain),
-          format: kind === "db" ? "AES-256-GCM(gzip(SQLite VACUUM INTO))" : "AES-256-GCM(zip of the deployed source)",
+          format: kind === "db" ? "AES-256-GCM(gzip(SQLite VACUUM INTO))" : "AES-256-GCM(zip of the allowlisted release source; source-only, rebuild needs npm ci and the server secrets)",
+          ...(code ? { contents: code.files.map((x) => ({ name: x.name, sha256: sha256(x.data) })), refusedCount: code.refused.length } : {}),
           keyId: k.keyId, keySource: k.source, restoreCheck: checked,
           otherCopies: kind === "db" ? "Litestream replica in Backblaze B2 (bucket path secval)" : "GitHub 1903978-prog/anti-hacker",
         };

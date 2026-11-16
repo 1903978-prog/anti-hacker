@@ -209,9 +209,13 @@ export function judge(
   checked: { app: string; needsDb: boolean }[] = BACKUP_APPS,
 ): Pick<DropboxCheck, "status" | "apps" | "message"> {
   const today = parisDate(now);
-  const found = files
+  const entries = files
     .map((f) => (typeof f === "string" ? { name: f } : f))
-    .filter((f) => f.size === undefined || f.size > 0)
+    .filter((f) => f.size === undefined || f.size > 0);
+  // SecVal's own copies count only with their same-day manifest (the attestation): fail closed.
+  const manifests = new Set(entries.map((f) => f.name).filter((n) => /^\d{6}-secval-(?:code|db)\.manifest\.json$/.test(n)));
+  const found = entries
+    .filter((f) => !/^\d{6}-secval-(code|db)\./.test(f.name) || manifests.has(f.name.replace(/\.(?:zip|dump)(?:\.enc)?$/, ".manifest.json")))
     .map((f) => parseCopyName(f.name))
     .filter((x): x is NonNullable<typeof x> => x !== null);
   const apps = checked.map(({ app, needsDb }): AppCopies => {
