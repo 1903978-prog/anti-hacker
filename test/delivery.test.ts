@@ -12,6 +12,9 @@ import {
   parseLedger,
   atomProgress,
   labelFor,
+  enrichFromGithub,
+  housekeepingFrom,
+  prNumber,
   type GhFetcher,
 } from "../server/delivery/ledger.js";
 
@@ -102,7 +105,7 @@ describe("delivery ledger", () => {
     expect(byCode.task_compplan_003!.atoms_done).toBe(0);
     expect(byCode.task_compplan_003!.next).toMatchObject({ id: "task_compplan_003B", next_step: "add test" });
     expect(byCode.task_compplan_003!.owner).toBe("Claude");
-    expect(byCode.task_compplan_003!.pr).toBe("#931");
+    expect(byCode.task_compplan_003!.pr).toBe("#4242");
     expect(byCode.task_compplan_002!).toMatchObject({ percent: 100, done: true, next: null, stage_label: "Verified live" });
     expect(byCode.task_compplan_001!.percent).toBe(0);
     expect(a.atoms.find((x) => x.id === "task_compplan_003B")!.stage_label).toBe("Built on a branch");
@@ -210,4 +213,72 @@ describe("delivery ledger", () => {
     expect(r.body.apps[0].repo).toBe("compplan");
     expect(r.body.tokenSet).toBe(false);
   });
+});
+
+describe("delivery ledger: GitHub evidence", () => {
+  const HEAD930 = "04e754cb2bc9eb077c7c4e3bb7d10a4a17f4bbce";
+  const now = Date.parse("2026-11-16T06:00:00Z");
+  const pr930 = {
+    html_url: "https://github.com/1903978-prog/compplan/pull/930",
+    state: "open",
+    draft: true,
+    merged_at: null,
+    head: { ref: "claude/company-research", sha: HEAD930 },
+    updated_at: "2026-11-16T04:00:00Z",
+  };
+  const gh: GhFetcher = async (url, init) => {
+    expect(init.method).toBe("GET");
+    if (url.endsWith("/compplan/pulls/930")) return { status: 200, text: async () => JSON.stringify(pr930) };
+    return { status: 404, text: async () => "{}" };
+  };
+  const ledger = (rows: object[]) => parseLedger("compplan", JSON.stringify({ atoms: rows }));
+
+  it("reads PR numbers in the usual spellings", () => {
+    expect(["#930", "930", "PR 930", "https://github.com/o/r/pull/930"].map(prNumber)).toEqual([930, 930, 930, 930]);
+    expect(["", "none", "unknown"].map(prNumber)).toEqual([null, null, null]);
+  });
+
+  it("fills branch, exact head SHA and PR status from GitHub and keeps #930 at 40%", async () => {
+    const app = await enrichFromGithub(
+      ledger([{ id: "task_athena_059A", parent: "task_athena_059", atom: "runs saved", implemented: "yes", tested: "yes", merged: "no", deployed: "no", live_checked: "no", pr: "#930" }]),
+      undefined,
+      gh,
+      now,
+    );
+    const a = app.atoms[0]!;
+    expect(a.head_sha).toBe(HEAD930);
+    expect(a.branch).toBe("claude/company-research");
+    expect(a.sources).toMatchObject({ branch: "github", head_sha: "github", pr_housekeeping: "github" });
+    expect(a.pr_housekeeping).toBe("PR open (draft), active in the last 3 days");
+    // "Tested: yes" without the SHA it ran on does not count once the PR head is known.
+    expect(a.percent).toBe(40);
+    expect(a.notes.join(" ")).toContain("on which SHA");
+    expect(app.actions[0]).toMatchObject({ percent: 40, pr_url: pr930.html_url, from_github: true, head_sha: HEAD930 });
+  });
+
+  it("counts tests only on the PR's current head, and never changes a stage from GitHub", async () => {
+    const row = { id: "x_1A", parent: "x_1", implemented: "yes", tested: "yes", merged: "no", deployed: "no", live_checked: "no", pr: "#930" };
+    const ok = await enrichFromGithub(ledger([{ ...row, tested_sha: HEAD930.slice(0, 8) }]), undefined, gh, now);
+    expect(ok.atoms[0]!.percent).toBe(55);
+    const old = await enrichFromGithub(ledger([{ ...row, tested_sha: "deadbeef", head_sha: "deadbeef" }]), undefined, gh, now);
+    expect(old.atoms[0]!.percent).toBe(40);
+    expect(old.atoms[0]!.notes.join(" ")).toContain("not the PR's current head");
+    const merged = await enrichFromGithub(ledger([{ ...row, merged: "yes", tested_sha: HEAD930 }]), undefined, gh, now);
+    expect(merged.atoms[0]!.merged).toBe("yes");
+    expect(merged.atoms[0]!.notes.join(" ")).toContain("GitHub shows this PR not merged");
+  });
+
+  it("keeps the ledger's own values when a PR cannot be read", async () => {
+    const app = await enrichFromGithub(ledger([{ id: "y_1A", implemented: "yes", pr: "#12", branch: "b", owner: "Claude" }]), undefined, gh, now);
+    expect(app.atoms[0]).toMatchObject({ branch: "b", owner: "Claude", head_sha: "", github: null });
+    expect(app.atoms[0]!.notes[0]).toContain("could not be read");
+  });
+
+  it("names a stale PR from its own last activity", () => {
+    const pr = { number: 1, url: "", state: "open" as const, draft: false, merged: false, head_ref: "", head_sha: "", updated_at: "2026-11-11T06:00:00Z" };
+    expect(housekeepingFrom(pr, now)).toBe("PR open, stale: no activity for 5 days");
+    expect(housekeepingFrom({ ...pr, merged: true, state: "closed" }, now)).toBe("PR merged");
+    expect(housekeepingFrom({ ...pr, state: "closed" }, now)).toBe("PR closed without merging");
+  });
+
 });

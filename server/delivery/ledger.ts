@@ -54,9 +54,26 @@ export interface Atom {
   deliverable_confirmed: Stage;
   /** Tests were recorded on a different SHA than the current head, so they do not count. */
   tested_stale: boolean;
+  /** Live pull-request facts read from GitHub (GET only); null when no PR is named or it could not be read. */
+  github: GithubPr | null;
+  /** Where branch / head SHA / PR housekeeping came from. */
+  sources: { branch: "ledger" | "github" | ""; head_sha: "ledger" | "github" | ""; pr_housekeeping: "ledger" | "github" | "" };
+  /** Plain-language differences between the ledger and GitHub (never used to change a stage). */
+  notes: string[];
   /** 0, 20, 40, 55, 70, 85 or 100, computed from the stages (never typed in). */
   percent: number;
   stage_label: string;
+}
+
+export interface GithubPr {
+  number: number;
+  url: string;
+  state: "open" | "closed";
+  draft: boolean;
+  merged: boolean;
+  head_ref: string;
+  head_sha: string;
+  updated_at: string;
 }
 
 /** One requested action (a parent) with its atoms' average progress. */
@@ -70,6 +87,10 @@ export interface Action {
   pr: string;
   head_sha: string;
   pr_housekeeping: string;
+  /** Link to the PR on GitHub when it was read there. */
+  pr_url: string;
+  /** Branch / head SHA were read from GitHub, not typed into the ledger. */
+  from_github: boolean;
   atom_ids: string[];
   atoms_done: number;
   percent: number;
@@ -209,16 +230,21 @@ export function shaDiffers(a: string, b: string): boolean {
   return !(x.startsWith(y) || y.startsWith(x));
 }
 
-type ProgressIn = Pick<Atom, StageKey | "kind" | "in_progress" | "deliverable_confirmed" | "head_sha" | "tested_sha">;
+type ProgressIn = Pick<Atom, StageKey | "kind" | "in_progress" | "deliverable_confirmed" | "head_sha" | "tested_sha"> & {
+  github?: GithubPr | null;
+};
 
 /**
  * One atom's progress. Stages count only in order and only when "yes": a later
  * stage marked done does not lift the bar past an earlier stage that is not
  * done or unknown (each stage still shows on its own in the table). Tests count
- * only when they ran on the current head SHA (or no SHA was recorded for either).
+ * only when they ran on the current head SHA. When GitHub gives the PR's current
+ * head, the ledger must name the tested SHA; otherwise (no PR) the ledger's word stands.
  */
 export function atomProgress(a: ProgressIn): { percent: number; tested_stale: boolean } {
-  const tested_stale = a.tested === "yes" && shaDiffers(a.tested_sha, a.head_sha);
+  // When GitHub tells us the PR's current head, "tested" must name that exact SHA.
+  const unproven = Boolean(a.github) && !a.tested_sha.trim();
+  const tested_stale = a.tested === "yes" && (shaDiffers(a.tested_sha, a.head_sha) || unproven);
   const start = a.in_progress === "yes" ? 20 : 0;
   if (a.kind === "non-code") return { percent: a.deliverable_confirmed === "yes" ? 100 : start, tested_stale: false };
   const chain: [boolean, number][] = [
@@ -265,6 +291,8 @@ export function buildActions(atoms: Atom[]): Action[] {
       pr: join("pr"),
       head_sha: join("head_sha"),
       pr_housekeeping: join("pr_housekeeping"),
+      pr_url: list.find((a) => a.github)?.github?.url ?? "",
+      from_github: list.some((a) => a.sources?.head_sha === "github"),
       atom_ids: list.map((a) => a.id),
       atoms_done: list.filter((a) => a.percent === 100).length,
       percent,
@@ -328,17 +356,18 @@ export function parseLedger(repo: string, raw: string): AppLedger {
       done: prog.percent === 100,
       ...extra,
       tested_stale: prog.tested_stale,
+      github: null,
+      sources: {
+        branch: extra.branch ? "ledger" : "",
+        head_sha: extra.head_sha ? "ledger" : "",
+        pr_housekeeping: extra.pr_housekeeping ? "ledger" : "",
+      },
+      notes: [],
       percent: prog.percent,
       stage_label: labelFor(prog.percent, kind),
     });
   }
-  const counts = emptyCounts();
-  for (const a of atoms) {
-    counts.total++;
-    if (a.done) counts.done++;
-    for (const k of STAGES) if (a[k] === "yes") counts[k]++;
-  }
-  counts.open = counts.total - counts.done;
+  const counts = countAtoms(atoms);
   return {
     ...base,
     project: parsed.data.project || repo,
@@ -349,6 +378,109 @@ export function parseLedger(repo: string, raw: string): AppLedger {
     counts,
     ...(skipped ? { message: `${skipped} row(s) without an atom ID were skipped.` } : {}),
   };
+}
+
+function countAtoms(atoms: Atom[]): AppLedger["counts"] {
+  const counts = emptyCounts();
+  for (const a of atoms) {
+    counts.total++;
+    if (a.done) counts.done++;
+    for (const k of STAGES) if (a[k] === "yes") counts[k]++;
+  }
+  counts.open = counts.total - counts.done;
+  return counts;
+}
+
+/** Recomputes every atom's percent, label and done flag, then the counts and actions. */
+export function recalc(app: AppLedger): AppLedger {
+  for (const a of app.atoms) {
+    const prog = atomProgress(a);
+    a.percent = prog.percent;
+    a.tested_stale = prog.tested_stale;
+    a.stage_label = labelFor(prog.percent, a.kind);
+    a.done = prog.percent === 100;
+  }
+  app.counts = countAtoms(app.atoms);
+  app.actions = buildActions(app.atoms);
+  return app;
+}
+
+/** "#930", "930", "PR 930", or a pull URL → 930; anything else → null. */
+export function prNumber(v: string): number | null {
+  const m = /(?:pull\/|#|^\s*(?:pr\s*)?)(\d{1,6})\b/i.exec(v ?? "");
+  return m ? Number(m[1]) : null;
+}
+
+const DAY = 86_400_000;
+export const STALE_PR_MS = 72 * 3_600_000;
+
+/** PR housekeeping words from GitHub's own state (never from the ledger's stages). */
+export function housekeepingFrom(pr: GithubPr, now: number): string {
+  if (pr.merged) return "PR merged";
+  if (pr.state === "closed") return "PR closed without merging";
+  const t = Date.parse(pr.updated_at);
+  const age = Number.isFinite(t) ? now - t : NaN;
+  const base = `PR open${pr.draft ? " (draft)" : ""}`;
+  if (!Number.isFinite(age)) return base;
+  const days = Math.floor(age / DAY);
+  return age > STALE_PR_MS ? `${base}, stale: no activity for ${days} days` : `${base}, active in the last 3 days`;
+}
+
+/** Fills branch, head SHA and PR housekeeping from GitHub where the ledger names a PR (GET only, at most 40 PRs per app). */
+export async function enrichFromGithub(app: AppLedger, token: string | undefined, f: GhFetcher, now: number): Promise<AppLedger> {
+  if (app.status !== "ok") return app;
+  const nums = [...new Set(app.atoms.map((a) => prNumber(a.pr)).filter((n): n is number => n != null))].slice(0, 40);
+  const prs = new Map<number, GithubPr>();
+  await Promise.all(
+    nums.map(async (n) => {
+      try {
+        const res = await f(`https://api.github.com/repos/${OWNER}/${encodeURIComponent(app.repo)}/pulls/${n}`, { method: "GET", headers: headers(token, false) });
+        if (res.status !== 200) return;
+        const b = JSON.parse(await res.text()) as Record<string, unknown> & { head?: { ref?: unknown; sha?: unknown } };
+        const sha = String(b.head?.sha ?? "");
+        if (!/^[0-9a-f]{40}$/i.test(sha)) return;
+        prs.set(n, {
+          number: n,
+          url: String(b.html_url ?? `https://github.com/${OWNER}/${app.repo}/pull/${n}`),
+          state: b.state === "closed" ? "closed" : "open",
+          draft: b.draft === true,
+          merged: Boolean(b.merged_at) || b.merged === true,
+          head_ref: String(b.head?.ref ?? ""),
+          head_sha: sha,
+          updated_at: String(b.updated_at ?? ""),
+        });
+      } catch {
+        /* unreadable PR: keep the ledger's own values */
+      }
+    }),
+  );
+  for (const a of app.atoms) {
+    const n = prNumber(a.pr);
+    const pr = n == null ? undefined : prs.get(n);
+    if (!pr) {
+      if (n != null) a.notes.push(`PR #${n} could not be read from GitHub; showing the ledger's values.`);
+      continue;
+    }
+    a.github = pr;
+    if (!a.branch) {
+      a.branch = pr.head_ref;
+      a.sources.branch = "github";
+    }
+    if (a.head_sha && shaDiffers(a.head_sha, pr.head_sha)) {
+      a.notes.push(`Ledger head ${a.head_sha.slice(0, 8)} is not the PR's current head ${pr.head_sha.slice(0, 8)}; using GitHub's.`);
+    }
+    // The PR's current head on GitHub is the version tests must have run on.
+    a.head_sha = pr.head_sha;
+    a.sources.head_sha = "github";
+    if (!a.pr_housekeeping) {
+      a.pr_housekeeping = housekeepingFrom(pr, now);
+      a.sources.pr_housekeeping = "github";
+    }
+    if (a.tested === "yes" && !a.tested_sha) a.notes.push("Tests are marked passed but the ledger does not say on which SHA, so they do not count.");
+    if (pr.merged && a.merged !== "yes") a.notes.push("GitHub shows this PR merged; the ledger has not recorded it yet.");
+    if (!pr.merged && a.merged === "yes") a.notes.push("The ledger says merged, but GitHub shows this PR not merged.");
+  }
+  return recalc(app);
 }
 
 function baseApp(repo: string): AppLedger {
@@ -501,6 +633,9 @@ export async function loadDelivery(deps: DeliveryDeps = {}): Promise<DeliveryVie
     const snap = loadSnapshot(a.repo, deps.snapshotDir);
     if (snap) a.snapshot = snap;
   }
+  // Branch, head SHA and PR status from GitHub for every PR a ledger row names.
+  const now = deps.now ? deps.now() : Date.now();
+  for (const a of [...known, ...extra]) await enrichFromGithub(a, token, f, now);
   return {
     checkedAt: new Date(deps.now ? deps.now() : Date.now()).toISOString(),
     tokenSet: Boolean(token),
