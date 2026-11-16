@@ -64,7 +64,8 @@ import { dbarchRoutes, defaultDeps as dbarchDefaultDeps } from "./dbarch/routes.
 import { runAll as dbarchRunAll, type Deps as DbarchDeps } from "./dbarch/engine.js";
 import { listDeploys, rollbackTo, type RenderFetcher } from "./deploy/rollback.js";
 import { eeesView } from "./eees/registry.js";
-import { getDelivery, type DeliveryDeps } from "./delivery/ledger.js";
+import { getDelivery, tokenFrom, type DeliveryDeps } from "./delivery/ledger.js";
+import { getHistory } from "./delivery/history.js";
 
 // Until a real auth layer exists, the actor is a fixed operator identity.
 // Every governance action is still attributed in the audit trail.
@@ -409,6 +410,15 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
   // --- Delivery ledger (16 Nov 2026): each app's docs/delivery-ledger.json, read-only from GitHub ----
   app.get("/api/delivery", async (req, res) => {
     res.json(await getDelivery(req.query.refresh === "1", options.delivery));
+  });
+  // Open atoms over the last 72 hours, rebuilt from the ledger file's commits (read-only).
+  app.get("/api/delivery/history", async (req, res) => {
+    const repo = String(req.query.repo ?? "");
+    const view = await getDelivery(false, options.delivery);
+    const app_ = view.apps.find((a) => a.repo === repo);
+    if (!app_) return badRequest(res, "Unknown app.");
+    const deps = options.delivery ?? {};
+    res.json(await getHistory(repo, app_.branch, tokenFrom(deps.env ?? process.env), deps.fetcher, deps.now ? deps.now() : Date.now()));
   });
 
   // What tomorrow's daily e-mail would say, and whether e-mail is configured.

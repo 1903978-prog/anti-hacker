@@ -63,6 +63,13 @@ async function main(): Promise<void> {
         ? { status: 200, text: async () => JSON.stringify({ default_branch: "master" }) }
         : url.includes("/compplan/contents/docs/delivery-ledger.json?ref=integration")
         ? { status: 200, text: async () => ledger }
+        : url.includes("/compplan/commits?") && url.includes("&since=")
+        ? { status: 200, text: async () => JSON.stringify([
+            { sha: "aaa111", commit: { committer: { date: new Date(Date.now() - 5 * 3_600_000).toISOString() } } },
+            { sha: "bbb222", commit: { committer: { date: new Date(Date.now() - 40 * 3_600_000).toISOString() } } },
+          ]) }
+        : url.includes("/compplan/contents/docs/delivery-ledger.json?ref=")
+        ? { status: 200, text: async () => ledger }
         : url.includes("/search/issues")
           ? { status: 200, text: async () => JSON.stringify({ total_count: 27 }) }
           : { status: 404, text: async () => "{}" },
