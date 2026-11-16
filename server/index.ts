@@ -7,6 +7,7 @@ import { loadReportFiles } from "./health/seed.js";
 import { startCiWatch } from "./health/ci.js";
 import { startRestoreDrill } from "./backup/drill.js";
 import { startDropboxWatch } from "./backup/dropbox.js";
+import { startSecondCopy } from "./backup/secondCopy.js";
 import { startIntegrityWatch } from "./integrity.js";
 import { startDbarchScheduler } from "./dbarch/schedule.js";
 import { defaultDeps as dbarchDeps } from "./dbarch/routes.js";
@@ -38,6 +39,7 @@ startDbChecker(db);
 startRestoreDrill(db);
 // Dropbox: check daily that the PC backup left its Monday copies.
 startDropboxWatch();
+startSecondCopy(db);
 // GitHub build/deploy results cap Reliability and Deploy while a run is red.
 startCiWatch();
 // Lenovo monitor: NO timer (Livio, 12 Nov 2026). Checks run only when the Refresh
