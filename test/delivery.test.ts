@@ -10,6 +10,8 @@ import {
   loadSnapshot,
   normStage,
   parseLedger,
+  atomProgress,
+  labelFor,
   type GhFetcher,
 } from "../server/delivery/ledger.js";
 
@@ -66,6 +68,64 @@ describe("delivery ledger", () => {
     expect(a.atoms.filter((x) => x.done).map((x) => x.id)).toEqual(["task_compplan_002A"]);
     expect(a.atoms[3]!.implemented).toBe("unknown");
     expect(a.lastSynced).toBe("2026-11-16T14:20:00Z");
+  });
+
+  it("scores each atom by its furthest stage reached in order (0/20/40/55/70/85/100)", () => {
+    const base = { implemented: "no", tested: "no", merged: "no", deployed: "no", live_checked: "no", kind: "code", in_progress: "unknown", deliverable_confirmed: "unknown", head_sha: "", tested_sha: "" } as const;
+    const p = (o: Partial<Parameters<typeof atomProgress>[0]>) => atomProgress({ ...base, ...o }).percent;
+    expect(p({})).toBe(0);
+    expect(p({ in_progress: "yes" })).toBe(20);
+    expect(p({ implemented: "yes" })).toBe(40);
+    expect(p({ implemented: "yes", tested: "yes" })).toBe(55);
+    expect(p({ implemented: "yes", tested: "yes", merged: "yes" })).toBe(70);
+    expect(p({ implemented: "yes", tested: "yes", merged: "yes", deployed: "yes" })).toBe(85);
+    expect(p({ implemented: "yes", tested: "yes", merged: "yes", deployed: "yes", live_checked: "yes" })).toBe(100);
+    // A later stage never lifts the bar past an earlier one that is not done or unknown.
+    expect(p({ implemented: "yes", tested: "unknown", merged: "yes", deployed: "yes" })).toBe(40);
+    // Tests on an older SHA do not count; a matching short SHA does.
+    const stale = atomProgress({ ...base, implemented: "yes", tested: "yes", head_sha: "aaaa1111bbbb", tested_sha: "cccc2222" });
+    expect(stale).toEqual({ percent: 40, tested_stale: true });
+    expect(p({ implemented: "yes", tested: "yes", head_sha: "aaaa1111bbbb", tested_sha: "aaaa1111" })).toBe(55);
+    // Non-code: 100% only when the deliverable is confirmed.
+    expect(p({ kind: "non-code", live_checked: "yes" })).toBe(0);
+    expect(p({ kind: "non-code", in_progress: "yes" })).toBe(20);
+    expect(p({ kind: "non-code", deliverable_confirmed: "yes" })).toBe(100);
+    expect(labelFor(100, "non-code")).toBe("Deliverable confirmed complete");
+    expect(labelFor(40)).toBe("Built on a branch");
+  });
+
+  it("averages an action over its atoms and shows the next unfinished one", () => {
+    const a = parseLedger("compplan", SAMPLE);
+    const byCode = Object.fromEntries(a.actions.map((x) => [x.code, x]));
+    // 003A: built, tested on its head SHA, merged = 70; 003B: built only = 40 → average 55.
+    expect(byCode.task_compplan_003!.percent).toBe(55);
+    expect(byCode.task_compplan_003!.atoms_done).toBe(0);
+    expect(byCode.task_compplan_003!.next).toMatchObject({ id: "task_compplan_003B", next_step: "add test" });
+    expect(byCode.task_compplan_003!.owner).toBe("Claude");
+    expect(byCode.task_compplan_003!.pr).toBe("#931");
+    expect(byCode.task_compplan_002!).toMatchObject({ percent: 100, done: true, next: null, stage_label: "Verified live" });
+    expect(byCode.task_compplan_001!.percent).toBe(0);
+    expect(a.atoms.find((x) => x.id === "task_compplan_003B")!.stage_label).toBe("Built on a branch");
+  });
+
+  it("matches the task_athena_059 case: PR open, tests only author-reported → 40%", () => {
+    const raw = JSON.stringify({
+      atoms: [
+        { id: "task_athena_059A", parent: "task_athena_059", original_ask: "Company Research: save completed runs", atom: "runs saved", implemented: "yes", tested: "unknown", merged: "no", deployed: "no", live_checked: "no", pr: "#930", pr_housekeeping: "open draft", evidence: "tests author-reported; database-backed tests not run", next_step: "run database-backed tests on the exact head" },
+      ],
+    });
+    const x = parseLedger("compplan", raw).actions[0]!;
+    expect(x).toMatchObject({ code: "task_athena_059", percent: 40, stage_label: "Built on a branch", pr: "#930", done: false });
+    expect(x.next!.next_step).toContain("database-backed");
+  });
+
+  it("never rounds an unfinished action up to 100%", () => {
+    const yes = { implemented: "yes", tested: "yes", merged: "yes", deployed: "yes", live_checked: "yes" };
+    const atoms = Array.from({ length: 40 }, (_, i) => ({ id: `t_${i}`, parent: "t", ...yes }));
+    atoms[0] = { ...atoms[0]!, live_checked: "no" };
+    const x = parseLedger("x", JSON.stringify({ atoms })).actions[0]!;
+    expect(x.percent).toBe(99);
+    expect(x.done).toBe(false);
   });
 
   it("reports a broken file instead of inventing rows", () => {

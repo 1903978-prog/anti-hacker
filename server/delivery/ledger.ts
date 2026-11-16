@@ -40,6 +40,43 @@ export interface Atom {
   evidence: string;
   updated_at: string;
   done: boolean;
+  /** Optional ledger fields (16 Nov 2026 progress view). Empty string = not recorded. */
+  owner: string;
+  branch: string;
+  pr: string;
+  head_sha: string;
+  tested_sha: string;
+  /** Pull request housekeeping, shown as written; never inferred from the other stages. */
+  pr_housekeeping: string;
+  /** "code" (default) or "non-code" (a document, decision or other deliverable). */
+  kind: "code" | "non-code";
+  in_progress: Stage;
+  deliverable_confirmed: Stage;
+  /** Tests were recorded on a different SHA than the current head, so they do not count. */
+  tested_stale: boolean;
+  /** 0, 20, 40, 55, 70, 85 or 100, computed from the stages (never typed in). */
+  percent: number;
+  stage_label: string;
+}
+
+/** One requested action (a parent) with its atoms' average progress. */
+export interface Action {
+  code: string;
+  description: string;
+  asked_at: string;
+  asked_time: string;
+  owner: string;
+  branch: string;
+  pr: string;
+  head_sha: string;
+  pr_housekeeping: string;
+  atom_ids: string[];
+  atoms_done: number;
+  percent: number;
+  stage_label: string;
+  /** The atom furthest behind, or null when every atom is at 100%. */
+  next: { id: string; atom: string; next_step: string; stage_label: string } | null;
+  done: boolean;
 }
 
 export interface AppLedger {
@@ -58,6 +95,7 @@ export interface AppLedger {
   openPrs: number | null;
   prsLink: string;
   atoms: Atom[];
+  actions: Action[];
   counts: { total: number; done: number; open: number } & Record<StageKey, number>;
 }
 
@@ -129,6 +167,15 @@ const AtomIn = z.object({
   next_step: text.optional(),
   evidence: text.optional(),
   updated_at: text.optional(),
+  owner: text.optional(),
+  branch: text.optional(),
+  pr: text.optional(),
+  head_sha: text.optional(),
+  tested_sha: text.optional(),
+  pr_housekeeping: text.optional(),
+  kind: text.optional(),
+  in_progress: z.unknown().optional(),
+  deliverable_confirmed: z.unknown().optional(),
 });
 const LedgerIn = z.object({
   project: text.optional(),
@@ -136,6 +183,98 @@ const LedgerIn = z.object({
   last_synced: text.optional(),
   atoms: z.array(z.unknown()),
 });
+
+/** Progress points per stage (Livio, 16 Nov 2026). */
+export const PROGRESS = [
+  { pct: 0, label: "Requested, not started" },
+  { pct: 20, label: "Work in progress" },
+  { pct: 40, label: "Built on a branch" },
+  { pct: 55, label: "Tests passed on the current version" },
+  { pct: 70, label: "Merged" },
+  { pct: 85, label: "Deployed, not yet checked live" },
+  { pct: 100, label: "Verified live" },
+] as const;
+const NON_CODE_DONE = "Deliverable confirmed complete";
+
+export function labelFor(pct: number, kind: "code" | "non-code" = "code"): string {
+  if (kind === "non-code" && pct === 100) return NON_CODE_DONE;
+  return PROGRESS.find((p) => p.pct === pct)?.label ?? `${pct}%`;
+}
+
+/** True when both SHAs are known and neither is a prefix of the other. */
+export function shaDiffers(a: string, b: string): boolean {
+  const x = a.trim().toLowerCase();
+  const y = b.trim().toLowerCase();
+  if (!x || !y) return false;
+  return !(x.startsWith(y) || y.startsWith(x));
+}
+
+type ProgressIn = Pick<Atom, StageKey | "kind" | "in_progress" | "deliverable_confirmed" | "head_sha" | "tested_sha">;
+
+/**
+ * One atom's progress. Stages count only in order and only when "yes": a later
+ * stage marked done does not lift the bar past an earlier stage that is not
+ * done or unknown (each stage still shows on its own in the table). Tests count
+ * only when they ran on the current head SHA (or no SHA was recorded for either).
+ */
+export function atomProgress(a: ProgressIn): { percent: number; tested_stale: boolean } {
+  const tested_stale = a.tested === "yes" && shaDiffers(a.tested_sha, a.head_sha);
+  const start = a.in_progress === "yes" ? 20 : 0;
+  if (a.kind === "non-code") return { percent: a.deliverable_confirmed === "yes" ? 100 : start, tested_stale: false };
+  const chain: [boolean, number][] = [
+    [a.implemented === "yes", 40],
+    [a.tested === "yes" && !tested_stale, 55],
+    [a.merged === "yes", 70],
+    [a.deployed === "yes", 85],
+    [a.live_checked === "yes", 100],
+  ];
+  let percent = start;
+  for (const [ok, pct] of chain) {
+    if (!ok) break;
+    percent = pct;
+  }
+  return { percent, tested_stale };
+}
+
+const uniq = (xs: string[]) => [...new Set(xs.map((x) => x.trim()).filter(Boolean))];
+
+/** Groups atoms by parent; an action's percent is the plain average of its atoms. */
+export function buildActions(atoms: Atom[]): Action[] {
+  const groups = new Map<string, Atom[]>();
+  for (const a of atoms) {
+    const key = a.parent || a.id;
+    groups.set(key, [...(groups.get(key) ?? []), a]);
+  }
+  const out: Action[] = [];
+  for (const [code, list] of groups) {
+    const done = list.every((a) => a.percent === 100);
+    const avg = list.reduce((n, a) => n + a.percent, 0) / list.length;
+    // Never show 100% (by rounding) while any atom is unfinished.
+    const percent = done ? 100 : Math.min(99, Math.round(avg));
+    const lowest = list.reduce((m, a) => (a.percent < m.percent ? a : m), list[0]!);
+    // Next action = the requirement furthest behind (first one on a tie).
+    const first = done ? undefined : lowest;
+    const join = (k: "owner" | "branch" | "pr" | "head_sha" | "pr_housekeeping") => uniq(list.map((a) => a[k])).join(", ");
+    out.push({
+      code,
+      description: list[0]!.original_ask || list[0]!.atom,
+      asked_at: list[0]!.asked_at,
+      asked_time: list[0]!.asked_time,
+      owner: join("owner"),
+      branch: join("branch"),
+      pr: join("pr"),
+      head_sha: join("head_sha"),
+      pr_housekeeping: join("pr_housekeeping"),
+      atom_ids: list.map((a) => a.id),
+      atoms_done: list.filter((a) => a.percent === 100).length,
+      percent,
+      stage_label: done ? lowest.stage_label : list.length === 1 ? lowest.stage_label : `Furthest behind: ${lowest.stage_label}`,
+      next: first ? { id: first.id, atom: first.atom, next_step: first.next_step, stage_label: first.stage_label } : null,
+      done,
+    });
+  }
+  return out;
+}
 
 function emptyCounts(): AppLedger["counts"] {
   return { total: 0, done: 0, open: 0, implemented: 0, tested: 0, merged: 0, deployed: 0, live_checked: 0 };
@@ -162,6 +301,19 @@ export function parseLedger(repo: string, raw: string): AppLedger {
     }
     const a = r.data;
     const stages = Object.fromEntries(STAGES.map((k) => [k, normStage(a[k])])) as Record<StageKey, Stage>;
+    const kind = /^non[-_ ]?code$/i.test((a.kind ?? "").trim()) ? "non-code" : "code";
+    const extra = {
+      owner: a.owner ?? "",
+      branch: a.branch ?? "",
+      pr: a.pr ?? "",
+      head_sha: a.head_sha ?? "",
+      tested_sha: a.tested_sha ?? "",
+      pr_housekeeping: a.pr_housekeeping ?? "",
+      kind: kind as Atom["kind"],
+      in_progress: normStage(a.in_progress),
+      deliverable_confirmed: normStage(a.deliverable_confirmed),
+    };
+    const prog = atomProgress({ ...stages, ...extra });
     atoms.push({
       id: a.id,
       parent: a.parent ?? "",
@@ -173,7 +325,11 @@ export function parseLedger(repo: string, raw: string): AppLedger {
       next_step: a.next_step ?? "",
       evidence: a.evidence ?? "",
       updated_at: a.updated_at ?? "",
-      done: STAGES.every((k) => stages[k] === "yes"),
+      done: prog.percent === 100,
+      ...extra,
+      tested_stale: prog.tested_stale,
+      percent: prog.percent,
+      stage_label: labelFor(prog.percent, kind),
     });
   }
   const counts = emptyCounts();
@@ -189,6 +345,7 @@ export function parseLedger(repo: string, raw: string): AppLedger {
     status: "ok",
     lastSynced: parsed.data.last_synced || undefined,
     atoms,
+    actions: buildActions(atoms),
     counts,
     ...(skipped ? { message: `${skipped} row(s) without an atom ID were skipped.` } : {}),
   };
@@ -203,6 +360,7 @@ function baseApp(repo: string): AppLedger {
     openPrs: null,
     prsLink: `https://github.com/${OWNER}/${repo}/pulls`,
     atoms: [],
+    actions: [],
     counts: emptyCounts(),
   };
 }
