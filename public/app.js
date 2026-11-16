@@ -330,11 +330,13 @@ async function refreshDropbox() {
   const bad = (body.apps || []).filter((a) => a.status !== "ok");
   const lines = bad.map((a) => `<div><b>${esc(a.app)}</b>: ${esc(a.message)}</div>`).join("");
   const alarm = el("backupAlarm");
+  // The big red alarm sits on the Backup page only (Livio, 16 Nov 2026); other pages show a red dot on the Backup tab.
+  el("backupTabDot").hidden = body.status === "ok";
   if (body.status === "ok") alarm.hidden = true;
   else {
     alarm.hidden = false;
     alarm.innerHTML = `<h2>BACKUP NOT WORKING</h2><div>${esc(body.message)}</div>${lines}` +
-      `<div>${esc(body.centralNote || "")} <a href="#backup">See details</a></div>`;
+      (body.centralNote ? `<div>${esc(body.centralNote)}</div>` : "");
   }
   const fmt = (iso) => iso ? formatDateTime(iso, "Europe/Paris") : "";
   const cell = (iso, n, na) => {
