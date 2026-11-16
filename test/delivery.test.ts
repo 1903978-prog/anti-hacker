@@ -7,6 +7,7 @@ import {
   clearDeliveryCache,
   getDelivery,
   loadDelivery,
+  loadSnapshot,
   normStage,
   parseLedger,
   type GhFetcher,
@@ -115,6 +116,30 @@ describe("delivery ledger", () => {
     now += 11 * 60_000;
     await getDelivery(false, deps); // over 10 minutes old: re-read
     expect(calls.length).toBe(first * 3);
+  });
+
+  it("shows a pasted snapshot only while the live ledger cannot be read", async () => {
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "snap-"));
+    const snap = (repo: string) => ({ repo, label: "Pasted snapshot", groups: [{ group: "001A x", atoms: "1", stages: "✅❌❌❌❌", next_step: "go" }] });
+    writeFileSync(join(dir, "nexus-eendigo.json"), JSON.stringify(snap("nexus-eendigo")));
+    writeFileSync(join(dir, "compplan.json"), JSON.stringify(snap("compplan")));
+    const { f } = fakeGh();
+    const v = await loadDelivery({ env: { GITHUB_LEDGER_TOKEN: "t" }, fetcher: f, snapshotDir: dir });
+    expect(v.apps.find((a) => a.repo === "nexus-eendigo")!.snapshot!.groups[0]!.stages).toBe("✅❌❌❌❌");
+    // compplan's live file was read, so its snapshot is not shown.
+    expect(v.apps.find((a) => a.repo === "compplan")!.snapshot).toBeUndefined();
+  });
+
+  it("the saved Nexus snapshot matches what Livio pasted", () => {
+    const sn = loadSnapshot("nexus-eendigo")!;
+    expect(sn.groups).toHaveLength(16);
+    // As pasted: the rows add up to 82 while the headline says 84; the page says so instead of correcting it.
+    expect(sn.groups.reduce((n, g) => n + Number(g.atoms), 0)).toBe(82);
+    expect(sn.check).toContain("82");
+    expect(sn.counts).toContain("84 captured");
   });
 
   it("serves /api/delivery only to a signed-in caller", async () => {

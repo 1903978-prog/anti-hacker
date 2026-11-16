@@ -1332,7 +1332,7 @@ function renderDelivery() {
     `<span>open pull requests${a.openPrs == null ? " (could not be read)" : ""}</span></a>`;
   if (a.status !== "ok") {
     el("dlSummary").innerHTML = prBox + `<div><span class="muted">${esc(a.message || "No ledger yet.")}</span> <a href="${esc(a.link)}" target="_blank" rel="noopener noreferrer">Open on GitHub</a></div>`;
-    el("dlTable").innerHTML = "";
+    el("dlTable").innerHTML = a.snapshot ? dlSnapshotHtml(a.snapshot) : "";
     return;
   }
   const c = a.counts;
@@ -1362,6 +1362,19 @@ function renderDelivery() {
       )
       .join("") +
     "</tbody></table>";
+}
+
+// A pasted registry summary, shown as written until the live ledger file can be read.
+function dlSnapshotHtml(sn) {
+  return `<h3 class="sub3">${esc(sn.label)}</h3><div class="note">${esc(sn.source)}</div>` +
+    (sn.headline ? `<p><b>${esc(sn.headline)}</b></p>` : "") +
+    (sn.check ? `<p class="note">${esc(sn.check)}</p>` : "") +
+    `<table class="ledger snap"><thead><tr><th scope="col">Group</th><th scope="col">Atoms</th><th scope="col">Stages (Implemented, Tested, Merged, Deployed, Live)</th><th scope="col">Next step</th></tr></thead><tbody>` +
+    sn.groups.map((g) => `<tr><td class="wide" data-label="Group"><b>${esc(g.group)}</b></td><td class="wide" data-label="Atoms">${esc(g.atoms)}</td><td class="wide" data-label="Stages">${esc(g.stages)}</td><td class="wide" data-label="Next step">${esc(g.next_step)}</td></tr>`).join("") +
+    "</tbody></table>" +
+    (sn.counts ? `<p class="note">${esc(sn.counts)}</p>` : "") +
+    (sn.blockers.length ? `<div class="note">Blockers:<ul>${sn.blockers.map((b) => `<li>${esc(b)}</li>`).join("")}</ul></div>` : "") +
+    (sn.footer ? `<p class="note">${esc(sn.footer)}</p>` : "");
 }
 
 async function refreshDelivery(force) {

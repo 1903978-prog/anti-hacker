@@ -94,6 +94,16 @@ async function main(): Promise<void> {
           await page.locator(`section[data-panel="${tab}"]`).waitFor({ state: "visible" });
           await page.waitForTimeout(700); // let the tab's data arrive
           if (tab === "delivery") await page.locator("table.ledger").waitFor({ timeout: 5000 }).catch(() => problems.push(`${width}px ${scheme}: delivery table missing`));
+          if (tab === "delivery") {
+            // The pasted Nexus snapshot (shown while its live file cannot be read) must also fit and pass axe.
+            await page.click('[data-dlapp="nexus-eendigo"]');
+            await page.locator("table.snap").waitFor({ timeout: 5000 }).catch(() => problems.push(`${width}px ${scheme}: Nexus snapshot missing`));
+            const w2 = await sideways(page);
+            if (w2) problems.push(`delivery snapshot @ ${width}px ${scheme}: ${w2}`);
+            for (const v of await axe(page)) problems.push(`delivery snapshot @ ${width}px ${scheme}: ${v}`);
+            if (process.env.PAGE_SHOTS) await page.screenshot({ path: `${process.env.PAGE_SHOTS}/delivery-snap-${width}-${scheme}.png`, fullPage: true });
+            await page.click('[data-dlapp="compplan"]');
+          }
           if (tab === "delivery" && process.env.PAGE_SHOTS) await page.screenshot({ path: `${process.env.PAGE_SHOTS}/delivery-${width}-${scheme}.png`, fullPage: true });
           if (tab === "tests") await page.locator(".trow").first().waitFor({ timeout: 5000 }).catch(() => {});
           const where = `${tab} @ ${width}px ${scheme}`;

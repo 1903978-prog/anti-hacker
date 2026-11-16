@@ -7,6 +7,9 @@
  * back to the read-only GITHUB_USAGE_TOKEN already in the Render env group.
  * The token is never logged, returned or shown.
  */
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
 export const OWNER = "1903978-prog";
@@ -49,11 +52,41 @@ export interface AppLedger {
   link: string;
   /** Branch the ledger file was read from (integration, default branch or an open PR branch). */
   branch?: string;
+  /** Pasted starting point, shown only while the live ledger file cannot be read. */
+  snapshot?: Snapshot;
   /** Open pull requests in the repo right now (null = could not be read). */
   openPrs: number | null;
   prsLink: string;
   atoms: Atom[];
   counts: { total: number; done: number; open: number } & Record<StageKey, number>;
+}
+
+const SnapshotIn = z.object({
+  repo: z.string(),
+  label: z.string(),
+  source: z.string().default(""),
+  headline: z.string().default(""),
+  /** Secval's own note on the pasted text (never a correction of it). */
+  check: z.string().default(""),
+  groups: z.array(z.object({ group: z.string(), atoms: z.string(), stages: z.string(), next_step: z.string() })),
+  counts: z.string().default(""),
+  blockers: z.array(z.string()).default([]),
+  footer: z.string().default(""),
+});
+export type Snapshot = z.infer<typeof SnapshotIn>;
+
+export const SNAPSHOT_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "reports", "delivery-snapshots");
+
+/** A pasted registry summary kept in reports/delivery-snapshots/<repo>.json, as written; null when none or broken. */
+export function loadSnapshot(repo: string, dir = SNAPSHOT_DIR): Snapshot | null {
+  const file = join(dir, `${repo.replace(/[^a-z0-9._-]/gi, "")}.json`);
+  if (!existsSync(file)) return null;
+  try {
+    const r = SnapshotIn.safeParse(JSON.parse(readFileSync(file, "utf8")));
+    return r.success && r.data.repo === repo ? r.data : null;
+  } catch {
+    return null;
+  }
 }
 
 export interface DeliveryView {
@@ -286,6 +319,8 @@ export interface DeliveryDeps {
   env?: Record<string, string | undefined>;
   fetcher?: GhFetcher;
   now?: () => number;
+  /** Folder of pasted snapshots (tests hand in their own). */
+  snapshotDir?: string;
 }
 
 export function tokenFrom(env: Record<string, string | undefined>): string | undefined {
@@ -302,6 +337,12 @@ export async function loadDelivery(deps: DeliveryDeps = {}): Promise<DeliveryVie
   const extra = (await Promise.all(others.map((r) => fetchLedger(r, token, f)))).filter((a) => a.status === "ok");
   // Open PR count per shown app (a repo the token cannot read stays null, shown as "?").
   for (const a of [...known, ...extra]) a.openPrs = await countOpenPrs(a.repo, token, f);
+  // Until an app's live ledger can be read, show its pasted starting point (if any).
+  for (const a of known) {
+    if (a.status === "ok") continue;
+    const snap = loadSnapshot(a.repo, deps.snapshotDir);
+    if (snap) a.snapshot = snap;
+  }
   return {
     checkedAt: new Date(deps.now ? deps.now() : Date.now()).toISOString(),
     tokenSet: Boolean(token),
