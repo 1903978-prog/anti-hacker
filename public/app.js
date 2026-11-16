@@ -1301,7 +1301,7 @@ el("testsRunBtn").onclick = async () => {
 const DL_ICON = { yes: "✅", no: "❌", parked: "⏸️", unknown: "❓" };
 const DL_WORD = { yes: "done", no: "not done", parked: "parked", unknown: "unknown" };
 const DL_STAGES = [["implemented", "Implemented"], ["tested", "Tested"], ["merged", "Merged"], ["deployed", "Deployed"], ["live_checked", "Live checked"]];
-const DL_SHORT = { implemented: "Coded", tested: "Tested", merged: "Merged", deployed: "Deployed", live_checked: "Live" };
+const DL_SHORT = { implemented: "Coded", tested: "Tested", merged: "Merged", deployed: "Deploy", live_checked: "Live" };
 let dlData = null;
 let dlApp = null;
 let dlFilter = "open";
