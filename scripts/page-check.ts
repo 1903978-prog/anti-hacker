@@ -61,7 +61,9 @@ async function main(): Promise<void> {
     fetcher: async (url: string) =>
       url.endsWith("/compplan/contents/docs/delivery-ledger.json")
         ? { status: 200, text: async () => ledger }
-        : { status: 404, text: async () => "{}" },
+        : url.includes("/search/issues")
+          ? { status: 200, text: async () => JSON.stringify({ total_count: 27 }) }
+          : { status: 404, text: async () => "{}" },
   };
   const app = createApp(db, { apiToken: TOKEN, dbarch, delivery }); // seeds the allowlist the reports attach to
   await runAll(db, "deep", dbarch);

@@ -47,6 +47,9 @@ export interface AppLedger {
   message?: string;
   lastSynced?: string;
   link: string;
+  /** Open pull requests in the repo right now (null = could not be read). */
+  openPrs: number | null;
+  prsLink: string;
   atoms: Atom[];
   counts: { total: number; done: number; open: number } & Record<StageKey, number>;
 }
@@ -162,6 +165,8 @@ function baseApp(repo: string): AppLedger {
     project: repo,
     status: "missing",
     link: `https://github.com/${OWNER}/${repo}/blob/HEAD/${LEDGER_PATH}`,
+    openPrs: null,
+    prsLink: `https://github.com/${OWNER}/${repo}/pulls`,
     atoms: [],
     counts: emptyCounts(),
   };
@@ -206,6 +211,19 @@ export async function fetchLedger(repo: string, token: string | undefined, f: Gh
   }
 }
 
+/** Number of open pull requests (GET search, one call); null when GitHub does not answer. */
+export async function countOpenPrs(repo: string, token: string | undefined, f: GhFetcher): Promise<number | null> {
+  const q = encodeURIComponent(`repo:${OWNER}/${repo} is:pr is:open`);
+  try {
+    const res = await f(`https://api.github.com/search/issues?q=${q}&per_page=1`, { method: "GET", headers: headers(token, false) });
+    if (res.status !== 200) return null;
+    const n = (JSON.parse(await res.text()) as { total_count?: unknown }).total_count;
+    return typeof n === "number" && Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Other repos of the owner that the token can see (GET only); used to find extra ledger files. */
 export async function listRepos(token: string | undefined, f: GhFetcher): Promise<string[]> {
   const url = token
@@ -241,6 +259,8 @@ export async function loadDelivery(deps: DeliveryDeps = {}): Promise<DeliveryVie
   const known = await Promise.all(KNOWN_REPOS.map((r) => fetchLedger(r, token, f)));
   const others = (await listRepos(token, f)).filter((r) => !KNOWN_REPOS.includes(r));
   const extra = (await Promise.all(others.map((r) => fetchLedger(r, token, f)))).filter((a) => a.status === "ok");
+  // Open PR count per shown app (a repo the token cannot read stays null, shown as "?").
+  for (const a of [...known, ...extra]) a.openPrs = await countOpenPrs(a.repo, token, f);
   return {
     checkedAt: new Date(deps.now ? deps.now() : Date.now()).toISOString(),
     tokenSet: Boolean(token),

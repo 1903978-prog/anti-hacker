@@ -26,6 +26,11 @@ function fakeGh() {
     if (url === `${GH}/repos/1903978-prog/extra-app/contents/docs/delivery-ledger.json`) return ok(SAMPLE.replace('"project":"compplan"', '"project":"extra"'));
     if (url === `${GH}/repos/1903978-prog/lm-op-model`) return ok("{}");
     if (url === `${GH}/repos/1903978-prog/10bonds/contents/docs/delivery-ledger.json`) return ok("not json");
+    if (url.startsWith(`${GH}/search/issues`)) {
+      if (url.includes(encodeURIComponent("repo:1903978-prog/compplan "))) return ok(JSON.stringify({ total_count: 27 }));
+      if (url.includes(encodeURIComponent("repo:1903978-prog/lm-op-model "))) return ok(JSON.stringify({ total_count: 0 }));
+      return { status: 422, text: async () => "{}" };
+    }
     if (url.startsWith(`${GH}/user/repos`))
       return ok(JSON.stringify([{ name: "compplan", owner: { login: "1903978-prog" } }, { name: "extra-app", owner: { login: "1903978-prog" } }, { name: "plain", owner: { login: "1903978-prog" } }]));
     return no;
@@ -73,6 +78,7 @@ describe("delivery ledger", () => {
       ["10bonds", "error"],
       ["extra-app", "ok"],
     ]);
+    expect(v.apps.map((a) => a.openPrs)).toEqual([27, 0, null, null, null]);
     expect(JSON.stringify(v)).not.toContain("t-secret");
   });
 

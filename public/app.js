@@ -1301,6 +1301,7 @@ el("testsRunBtn").onclick = async () => {
 const DL_ICON = { yes: "✅", no: "❌", parked: "⏸️", unknown: "❓" };
 const DL_WORD = { yes: "done", no: "not done", parked: "parked", unknown: "unknown" };
 const DL_STAGES = [["implemented", "Implemented"], ["tested", "Tested"], ["merged", "Merged"], ["deployed", "Deployed"], ["live_checked", "Live checked"]];
+const DL_SHORT = { implemented: "Coded", tested: "Tested", merged: "Merged", deployed: "Deployed", live_checked: "Live" };
 let dlData = null;
 let dlApp = null;
 let dlFilter = "open";
@@ -1326,14 +1327,17 @@ function renderDelivery() {
     el("dlTable").innerHTML = "";
     return;
   }
+  const prBox =
+    `<a class="dlpr" href="${esc(a.prsLink)}" target="_blank" rel="noopener noreferrer"><b>${a.openPrs == null ? "?" : esc(a.openPrs)}</b>` +
+    `<span>open pull requests${a.openPrs == null ? " (could not be read)" : ""}</span></a>`;
   if (a.status !== "ok") {
-    el("dlSummary").innerHTML = `<span class="muted">${esc(a.message || "No ledger yet.")}</span> <a href="${esc(a.link)}" target="_blank" rel="noopener noreferrer">Open on GitHub</a>`;
+    el("dlSummary").innerHTML = prBox + `<div><span class="muted">${esc(a.message || "No ledger yet.")}</span> <a href="${esc(a.link)}" target="_blank" rel="noopener noreferrer">Open on GitHub</a></div>`;
     el("dlTable").innerHTML = "";
     return;
   }
   const c = a.counts;
   el("dlSummary").innerHTML =
-    `<div class="dlsum"><div><b>${c.total}</b>atoms</div><div><b>${c.open}</b>open</div>` +
+    prBox + `<div class="dlsum"><div><b>${c.total}</b>atoms</div><div><b>${c.open}</b>open</div>` +
     DL_STAGES.map(([k, label]) => `<div><b>${c[k]}</b>${esc(label)}</div>`).join("") +
     `<div><b>${c.done}</b>done</div></div>` +
     (a.lastSynced ? `<div class="note">Ledger last synced ${esc(formatDateTime(a.lastSynced))}.</div>` : "") +
@@ -1343,7 +1347,7 @@ function renderDelivery() {
     el("dlTable").innerHTML = `<p class="muted">${dlFilter === "done" ? "No atoms fully done yet." : dlFilter === "open" ? "No open atoms." : "No atoms."}</p>`;
     return;
   }
-  const st = (x, k, label) => `<td class="st" data-label="${esc(label)}" title="${esc(label)}: ${DL_WORD[x[k]]}"><span role="img" aria-label="${DL_WORD[x[k]]}">${DL_ICON[x[k]]}</span></td>`;
+  const st = (x, k, label) => `<td class="st" data-label="${esc(DL_SHORT[k])}" title="${esc(label)}: ${DL_WORD[x[k]]}"><span role="img" aria-label="${DL_WORD[x[k]]}">${DL_ICON[x[k]]}</span></td>`;
   el("dlTable").innerHTML =
     `<table class="ledger"><thead><tr><th scope="col">Atom ID</th><th scope="col">Asked</th><th scope="col">Original ask</th><th scope="col">This atom</th>` +
     DL_STAGES.map(([, label]) => `<th scope="col" class="st">${esc(label)}</th>`).join("") +
