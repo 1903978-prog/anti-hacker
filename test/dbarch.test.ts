@@ -555,3 +555,12 @@ describe("dbarch: TLS and connectivity stages (no network)", () => {
     expect(connected).toBe(0);
   });
 });
+
+describe("permission SQL: column-level write grants", () => {
+  it("counts a table as writable on a column-level INSERT/UPDATE/REFERENCES grant", async () => {
+    const { PERMISSION_SQL } = await import("../server/dbarch/permissions.js");
+    for (const p of ["INSERT", "UPDATE", "REFERENCES"]) {
+      expect(PERMISSION_SQL).toContain(`has_any_column_privilege(current_user, c.oid, '${p}')`);
+    }
+  });
+});
