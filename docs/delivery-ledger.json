@@ -1,7 +1,7 @@
 {
  "project": "Secval",
  "repo": "anti-hacker",
- "last_synced": "2026-11-16T10:00:00Z",
+ "last_synced": "2026-11-16T11:20:00Z",
  "atoms": [
   {
    "id": "task_secval_001A",
@@ -16,13 +16,13 @@
    "deployed": "yes",
    "live_checked": "yes",
    "next_step": "none",
-   "evidence": "Live on 4941a681: /health commit 4941a6818225 checked 16 Nov 2026 08:3x UTC; CI passed",
+   "evidence": "Exact-head CI: passed on 4941a681 (integration). Live: /health commit 4941a6818225 checked by Claude 16 Nov 2026 08:3x UTC.",
    "owner": "Claude",
    "branch": "integration",
    "pr": "",
    "head_sha": "4941a6818225c120e6f68d4a11cbaf9bbeec9203",
    "tested_sha": "4941a6818225c120e6f68d4a11cbaf9bbeec9203",
-   "updated_at": "2026-11-16T09:55:00Z"
+   "updated_at": "2026-11-16T11:20:00Z"
   },
   {
    "id": "task_secval_001B",
@@ -37,13 +37,13 @@
    "deployed": "yes",
    "live_checked": "yes",
    "next_step": "none",
-   "evidence": "Shipped in cc887306, live in 4941a681 (/health)",
+   "evidence": "Shipped in cc887306. Exact-head CI: passed on 4941a681. Live: /health 4941a6818225 (Claude, 08:3x UTC).",
    "owner": "Claude",
    "branch": "integration",
    "pr": "",
    "head_sha": "4941a6818225c120e6f68d4a11cbaf9bbeec9203",
    "tested_sha": "4941a6818225c120e6f68d4a11cbaf9bbeec9203",
-   "updated_at": "2026-11-16T09:55:00Z"
+   "updated_at": "2026-11-16T11:20:00Z"
   },
   {
    "id": "task_secval_001C",
@@ -58,13 +58,13 @@
    "deployed": "yes",
    "live_checked": "yes",
    "next_step": "none",
-   "evidence": "Shipped in 95f6003c, live in 4941a681 (/health)",
+   "evidence": "Shipped in 95f6003c. Exact-head CI: passed on 4941a681. Live: /health 4941a6818225 (Claude, 08:3x UTC).",
    "owner": "Claude",
    "branch": "integration",
    "pr": "",
    "head_sha": "4941a6818225c120e6f68d4a11cbaf9bbeec9203",
    "tested_sha": "4941a6818225c120e6f68d4a11cbaf9bbeec9203",
-   "updated_at": "2026-11-16T09:55:00Z"
+   "updated_at": "2026-11-16T11:20:00Z"
   },
   {
    "id": "task_secval_001D",
@@ -79,13 +79,13 @@
    "deployed": "yes",
    "live_checked": "yes",
    "next_step": "none",
-   "evidence": "Shipped in 4941a681, live (/health)",
+   "evidence": "Shipped in 4941a681. Exact-head CI: passed. Live: /health 4941a6818225 (Claude, 08:3x UTC).",
    "owner": "Claude",
    "branch": "integration",
    "pr": "",
    "head_sha": "4941a6818225c120e6f68d4a11cbaf9bbeec9203",
    "tested_sha": "4941a6818225c120e6f68d4a11cbaf9bbeec9203",
-   "updated_at": "2026-11-16T09:55:00Z"
+   "updated_at": "2026-11-16T11:20:00Z"
   },
   {
    "id": "task_secval_002A",
@@ -100,13 +100,13 @@
    "deployed": "no",
    "live_checked": "no",
    "next_step": "Livio exact-SHA approval after backup gate passes",
-   "evidence": "PR #61 63c17f17 merged unchanged into PR #62; CI #166 green on 6bee8954; local verify of #62 merged with #63 (e46753cc) passed 437 tests, reported by the audit thread",
+   "evidence": "PR #61 63c17f17 merged unchanged into PR #62. Exact-head CI: run #166 passed on 6bee8954. Local: npm run verify by Claude passed on 6bee8954.",
    "owner": "Claude",
    "branch": "claude/delivery-open-chart",
    "pr": "#62",
    "head_sha": "6bee8954c7b26083f5818fc9249bd2105ea2cc23",
    "tested_sha": "6bee8954c7b26083f5818fc9249bd2105ea2cc23",
-   "updated_at": "2026-11-16T09:55:00Z"
+   "updated_at": "2026-11-16T11:20:00Z"
   },
   {
    "id": "task_secval_003A",
@@ -121,13 +121,13 @@
    "deployed": "no",
    "live_checked": "no",
    "next_step": "Livio exact-SHA approval after backup gate passes",
-   "evidence": "PR #62; real compplan check: 4 points = 4 file changes in 72h; CI #166 green; local verify of #62 merged with #63 (e46753cc) passed 437 tests, reported by the audit thread",
+   "evidence": "PR #62. Exact-head CI: run #166 passed on 6bee8954. Local real-data check by Claude: compplan 4 points = 4 file changes in 72h.",
    "owner": "Claude",
    "branch": "claude/delivery-open-chart",
    "pr": "#62",
    "head_sha": "6bee8954c7b26083f5818fc9249bd2105ea2cc23",
    "tested_sha": "6bee8954c7b26083f5818fc9249bd2105ea2cc23",
-   "updated_at": "2026-11-16T09:55:00Z"
+   "updated_at": "2026-11-16T11:20:00Z"
   },
   {
    "id": "task_secval_003B",
@@ -142,13 +142,13 @@
    "deployed": "no",
    "live_checked": "no",
    "next_step": "Livio exact-SHA approval after backup gate passes",
-   "evidence": "Review #5916980200 fixes in 919a0e1d; tests in test/delivery-history.test.ts; local verify of #62 merged with #63 (e46753cc) passed 437 tests, reported by the audit thread",
+   "evidence": "Review #5916980200 fixes in 919a0e1d. Exact-head CI: run #166 passed on 6bee8954 (tests in test/delivery-history.test.ts).",
    "owner": "Claude",
    "branch": "claude/delivery-open-chart",
    "pr": "#62",
    "head_sha": "6bee8954c7b26083f5818fc9249bd2105ea2cc23",
    "tested_sha": "6bee8954c7b26083f5818fc9249bd2105ea2cc23",
-   "updated_at": "2026-11-16T09:55:00Z"
+   "updated_at": "2026-11-16T11:20:00Z"
   },
   {
    "id": "task_secval_003C",
@@ -163,13 +163,13 @@
    "deployed": "no",
    "live_checked": "no",
    "next_step": "Livio exact-SHA approval after backup gate passes",
-   "evidence": "PR #62; real compplan check 78/78 atoms; local verify of #62 merged with #63 (e46753cc) passed 437 tests, reported by the audit thread",
+   "evidence": "PR #62. Exact-head CI: run #166 passed on 6bee8954. Local real-data check by Claude: 78/78 compplan atoms copied.",
    "owner": "Claude",
    "branch": "claude/delivery-open-chart",
    "pr": "#62",
    "head_sha": "6bee8954c7b26083f5818fc9249bd2105ea2cc23",
    "tested_sha": "6bee8954c7b26083f5818fc9249bd2105ea2cc23",
-   "updated_at": "2026-11-16T09:55:00Z"
+   "updated_at": "2026-11-16T11:20:00Z"
   },
   {
    "id": "task_secval_003D",
@@ -184,13 +184,13 @@
    "deployed": "no",
    "live_checked": "no",
    "next_step": "Livio exact-SHA approval after backup gate passes",
-   "evidence": "PR #62; real compplan check 78/78 open atoms with next step and evidence; local verify of #62 merged with #63 (e46753cc) passed 437 tests, reported by the audit thread",
+   "evidence": "PR #62. Exact-head CI: run #166 passed on 6bee8954. Local real-data check by Claude: 78/78 open atoms with next step and evidence.",
    "owner": "Claude",
    "branch": "claude/delivery-open-chart",
    "pr": "#62",
    "head_sha": "6bee8954c7b26083f5818fc9249bd2105ea2cc23",
    "tested_sha": "6bee8954c7b26083f5818fc9249bd2105ea2cc23",
-   "updated_at": "2026-11-16T09:55:00Z"
+   "updated_at": "2026-11-16T11:20:00Z"
   },
   {
    "id": "task_secval_004A",
@@ -205,13 +205,13 @@
    "deployed": "no",
    "live_checked": "no",
    "next_step": "Livio exact-SHA approval for release, then config dry run, then switch on",
-   "evidence": "PR #63 head e46753cc (checked on GitHub 10:00 UTC). Full verify passed on e46753cc (420 tests + page check), reported by the audit thread; GitHub CI running",
+   "evidence": "PR #63. Exact-head CI: passed on e46753cc (checked by Claude 11:20 UTC). Author-reported (audit thread): local verify 420 tests + page check on e46753cc.",
    "owner": "Secval audit thread",
    "branch": "claude/secval-second-copy",
    "pr": "#63",
    "head_sha": "e46753cc781a4ff69e9c3114b861f85df35c8328",
    "tested_sha": "e46753cc781a4ff69e9c3114b861f85df35c8328",
-   "updated_at": "2026-11-16T10:00:00Z"
+   "updated_at": "2026-11-16T11:20:00Z"
   },
   {
    "id": "task_secval_005A",
@@ -226,13 +226,13 @@
    "deployed": "no",
    "live_checked": "no",
    "next_step": "Review and Livio exact-SHA approval",
-   "evidence": "PR #59 head b1f5a3fd, CI success",
+   "evidence": "PR #59. Exact-head CI: passed on b1f5a3fd (checked by Claude 11:20 UTC). No independent review recorded here.",
    "owner": "Codex",
    "branch": "codex/backup-date-validation-20261115",
    "pr": "#59",
    "head_sha": "b1f5a3fd447a5435148cce653b2cf119ae35e398",
    "tested_sha": "b1f5a3fd447a5435148cce653b2cf119ae35e398",
-   "updated_at": "2026-11-16T09:55:00Z"
+   "updated_at": "2026-11-16T11:20:00Z"
   },
   {
    "id": "task_secval_006A",
@@ -247,13 +247,13 @@
    "deployed": "no",
    "live_checked": "no",
    "next_step": "Review and Livio exact-SHA approval",
-   "evidence": "Draft PR #60 head fda3cffb, CI success",
+   "evidence": "Draft PR #60. Exact-head CI: passed on fda3cffb (checked by Claude 11:20 UTC).",
    "owner": "unknown",
    "branch": "claude/secval-consolidated-rc",
    "pr": "#60",
    "head_sha": "fda3cffbebf05e2e7da8d90b09b405b3995cf04e",
    "tested_sha": "fda3cffbebf05e2e7da8d90b09b405b3995cf04e",
-   "updated_at": "2026-11-16T09:55:00Z"
+   "updated_at": "2026-11-16T11:20:00Z"
   },
   {
    "id": "task_secval_007A",
@@ -268,13 +268,13 @@
    "deployed": "no",
    "live_checked": "no",
    "next_step": "Review and Livio exact-SHA approval",
-   "evidence": "PR #58 head b83175f5, CI success",
+   "evidence": "PR #58. Exact-head CI: passed on b83175f5 (checked by Claude 11:20 UTC).",
    "owner": "Codex",
    "branch": "codex/engineering-release-standard-20261115",
    "pr": "#58",
    "head_sha": "b83175f50596aea65987d2d3730bd6a91ca440c2",
    "tested_sha": "b83175f50596aea65987d2d3730bd6a91ca440c2",
-   "updated_at": "2026-11-16T09:55:00Z"
+   "updated_at": "2026-11-16T11:20:00Z"
   },
   {
    "id": "task_secval_004B",
@@ -283,7 +283,7 @@
    "tested": "yes",
    "tested_sha": "e46753cc781a4ff69e9c3114b861f85df35c8328",
    "next_step": "Livio exact-SHA approval for release, then config dry run, then switch on",
-   "evidence": "PR #63 head e46753cc; full verify passed on e46753cc, reported by the audit thread",
+   "evidence": "PR #63. Exact-head CI: passed on e46753cc (checked by Claude 11:20 UTC). Author-reported: local verify on e46753cc.",
    "parent": "task_secval_004",
    "asked_at": "2026-11-16",
    "asked_time": "09:18",
@@ -295,7 +295,7 @@
    "branch": "claude/secval-second-copy",
    "pr": "#63",
    "head_sha": "e46753cc781a4ff69e9c3114b861f85df35c8328",
-   "updated_at": "2026-11-16T10:00:00Z"
+   "updated_at": "2026-11-16T11:20:00Z"
   },
   {
    "id": "task_secval_004C",
@@ -304,7 +304,7 @@
    "tested": "no",
    "tested_sha": "",
    "next_step": "Livio exact-SHA approval for release, then config dry run, then switch on; then a real upload and restore test",
-   "evidence": "PR #63 head e46753cc; tested only against a simulated Dropbox, no real upload or restore yet",
+   "evidence": "PR #63 head e46753cc. NOT tested for real: only a simulated Dropbox; no real upload or independent restore yet. Stays tested=no until real validation.",
    "parent": "task_secval_004",
    "asked_at": "2026-11-16",
    "asked_time": "09:18",
@@ -316,7 +316,7 @@
    "branch": "claude/secval-second-copy",
    "pr": "#63",
    "head_sha": "e46753cc781a4ff69e9c3114b861f85df35c8328",
-   "updated_at": "2026-11-16T10:00:00Z"
+   "updated_at": "2026-11-16T11:20:00Z"
   }
  ]
 }
