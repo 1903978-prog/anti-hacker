@@ -46,6 +46,11 @@ export const BACKUP_APPS: { app: string; needsDb: boolean }[] = [
   { app: "10bonds", needsDb: true },
 ];
 
+/** The four apps, plus secval itself once its own Dropbox copy is switched on (SECVAL_SECOND_COPY=on, see secondCopy.ts). */
+export function appsChecked(env: Env): { app: string; needsDb: boolean }[] {
+  return env.SECVAL_SECOND_COPY === "on" ? [...BACKUP_APPS, { app: "secval", needsDb: true }] : BACKUP_APPS;
+}
+
 /** Livio, 14 Nov 2026: every app backs up into ONE folder, one subfolder per app. */
 export const DEFAULT_FOLDERS = ["/backups nov26"];
 
@@ -91,7 +96,7 @@ export type DropboxFetcher = (
   init: { method: "POST"; headers: Record<string, string>; body?: string },
 ) => Promise<DropboxResponse>;
 
-type Env = Record<string, string | undefined>;
+export type Env = Record<string, string | undefined>;
 
 const TIMEOUT_MS = 10_000;
 const realFetch: DropboxFetcher = (url, init) =>
@@ -201,6 +206,7 @@ export function judge(
   files: (FileEntry | string)[],
   now: Date,
   central: Map<string, string[]> = new Map(),
+  checked: { app: string; needsDb: boolean }[] = BACKUP_APPS,
 ): Pick<DropboxCheck, "status" | "apps" | "message"> {
   const today = parisDate(now);
   const found = files
@@ -208,7 +214,7 @@ export function judge(
     .filter((f) => f.size === undefined || f.size > 0)
     .map((f) => parseCopyName(f.name))
     .filter((x): x is NonNullable<typeof x> => x !== null);
-  const apps = BACKUP_APPS.map(({ app, needsDb }): AppCopies => {
+  const apps = checked.map(({ app, needsDb }): AppCopies => {
     const mine = found.filter((f) => f.app === app);
     const problems: string[] = [];
     const look = (kind: "code" | "db", label: string) => {
@@ -258,7 +264,7 @@ async function post(f: DropboxFetcher, url: string, headers: Record<string, stri
 }
 
 /** A short-lived access token, from the refresh token (preferred) or a plain access token. */
-async function accessToken(env: Env, f: DropboxFetcher): Promise<string | null> {
+export async function accessToken(env: Env, f: DropboxFetcher): Promise<string | null> {
   const { DROPBOX_REFRESH_TOKEN: refresh, DROPBOX_APP_KEY: key, DROPBOX_APP_SECRET: secret } = env;
   if (refresh && key && secret) {
     const body = new URLSearchParams({ grant_type: "refresh_token", refresh_token: refresh, client_id: key, client_secret: secret });
@@ -346,7 +352,7 @@ export async function checkDropbox(
       }
     } else centralNote = "The central backup's status file was not found.";
     if (missingFolders.length) centralNote += ` Folder not found: ${missingFolders.join(", ")}.`;
-    return { ...base, centralNote: centralNote.trim(), ...judge(files, now, central) };
+    return { ...base, centralNote: centralNote.trim(), ...judge(files, now, central, appsChecked(env)) };
   } catch (err) {
     return { ...base, status: "error", apps: [], message: "BACKUP CHECK FAILED: could not read Dropbox: " + failReason(err) };
   }
