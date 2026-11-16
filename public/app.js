@@ -1340,7 +1340,7 @@ function renderDelivery() {
     prBox + `<div class="dlsum"><div><b>${c.total}</b>atoms</div><div><b>${c.open}</b>open</div>` +
     DL_STAGES.map(([k, label]) => `<div><b>${c[k]}</b>${esc(label)}</div>`).join("") +
     `<div><b>${c.done}</b>done</div></div>` +
-    (a.lastSynced ? `<div class="note">Ledger last synced ${esc(formatDateTime(a.lastSynced))}.</div>` : "") +
+    `<div class="note">${a.branch ? `Read from branch <code>${esc(a.branch)}</code>. ` : ""}${a.lastSynced ? `Ledger last synced ${esc(formatDateTime(a.lastSynced))}.` : ""}</div>` +
     (a.message ? `<div class="note">${esc(a.message)}</div>` : "");
   const rows = a.atoms.filter((x) => dlFilter === "all" || (dlFilter === "done" ? x.done : !x.done));
   if (!rows.length) {

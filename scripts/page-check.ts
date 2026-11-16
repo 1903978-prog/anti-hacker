@@ -59,7 +59,9 @@ async function main(): Promise<void> {
   const delivery = {
     env: { GITHUB_LEDGER_TOKEN: "sample" },
     fetcher: async (url: string) =>
-      url.endsWith("/compplan/contents/docs/delivery-ledger.json")
+      url.endsWith("/repos/1903978-prog/compplan")
+        ? { status: 200, text: async () => JSON.stringify({ default_branch: "master" }) }
+        : url.includes("/compplan/contents/docs/delivery-ledger.json?ref=integration")
         ? { status: 200, text: async () => ledger }
         : url.includes("/search/issues")
           ? { status: 200, text: async () => JSON.stringify({ total_count: 27 }) }
