@@ -148,6 +148,30 @@ export function showDate(ymd: string): string {
   return `${d} ${MONTHS[Number(m) - 1] ?? "?"} ${y}`;
 }
 
+function parseCentralRunAt(value: string): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!match) return null;
+  const [, yearPart, monthPart, dayPart, hourPart, minutePart, secondPart] = match;
+  if (!yearPart || !monthPart || !dayPart || !hourPart || !minutePart || !secondPart) return null;
+  const year = Number(yearPart);
+  const month = Number(monthPart);
+  const day = Number(dayPart);
+  const hour = Number(hourPart);
+  const minute = Number(minutePart);
+  const second = Number(secondPart);
+  if (hour > 23 || minute > 59 || second > 59) return null;
+  const calendar = new Date(0);
+  calendar.setUTCFullYear(year, month - 1, day);
+  calendar.setUTCHours(hour, minute, second, 0);
+  if (
+    calendar.getUTCFullYear() !== year ||
+    calendar.getUTCMonth() !== month - 1 ||
+    calendar.getUTCDate() !== day
+  ) return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
 /** Whole days between two Paris dates. */
 function daysBetween(a: string, b: string): number {
   return Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 86_400_000);
@@ -164,24 +188,47 @@ export function parseCopyName(name: string): { app: string; kind: "code" | "db";
   if (m) {
     const [, y, mo, d, app = "", kind = ""] = m;
     const at = new Date(Date.UTC(2000 + Number(y), Number(mo) - 1, Number(d), 12));
-    if (Number.isNaN(at.getTime()) || at.getUTCDate() !== Number(d)) return null;
+    if (
+      Number.isNaN(at.getTime()) ||
+      at.getUTCFullYear() !== 2000 + Number(y) ||
+      at.getUTCMonth() !== Number(mo) - 1 ||
+      at.getUTCDate() !== Number(d)
+    ) return null;
     return { app, kind: kind as "code" | "db", at };
   }
   m = /^(.+)-(code|db)-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})Z\.(?:zip|dump)(?:\.enc)?$/.exec(name);
   if (!m) return null;
   const [, app = "", kind = "", y, mo, d, h, mi] = m;
   const at = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi)));
-  return Number.isNaN(at.getTime()) ? null : { app, kind: kind as "code" | "db", at };
+  if (
+    Number.isNaN(at.getTime()) ||
+    at.getUTCFullYear() !== Number(y) ||
+    at.getUTCMonth() !== Number(mo) - 1 ||
+    at.getUTCDate() !== Number(d) ||
+    at.getUTCHours() !== Number(h) ||
+    at.getUTCMinutes() !== Number(mi)
+  ) return null;
+  return { app, kind: kind as "code" | "db", at };
 }
 
 /** Problems recorded by the central backup in its status.json. */
 export function centralProblems(status: unknown, now: Date): { byApp: Map<string, string[]>; note: string } {
   const byApp = new Map<string, string[]>();
   const s = obj(status);
+  const flagAllApps = (problem: string, note: string) => {
+    for (const { app } of BACKUP_APPS) byApp.set(app, [problem]);
+    return { byApp, note };
+  };
   const runAt = str(s.runAt);
-  if (!runAt) return { byApp, note: "The central backup's status file has no run time." };
-  const runDay = parisDate(new Date(runAt));
+  if (!runAt)
+    return flagAllApps("the central backup status has no valid run time", "The central backup's status file has no run time.");
+  const runTime = parseCentralRunAt(runAt);
+  if (runTime === null)
+    return flagAllApps("the central backup status has an invalid run time", "The central backup's status file has an invalid run time.");
+  const runDay = parisDate(new Date(runTime));
   const age = daysBetween(runDay, parisDate(now));
+  if (runTime > now.getTime())
+    return flagAllApps("the central backup run time is in the future", `The central backup's status file is future-dated (${showDate(runDay)}).`);
   const notes = [`Central backup last ran on ${showDate(runDay)}.`];
   for (const [app, raw] of Object.entries(obj(s.apps))) {
     const a = obj(raw);
@@ -270,14 +317,18 @@ export function judge(
       const all = mine.filter((f) => f.kind === kind).sort((a, b) => b.at.getTime() - a.at.getTime());
       // one copy per day: two files of the same day are one copy
       const days = [...new Set(all.map((f) => parisDate(f.at)))];
-      const recent = days.filter((d) => daysBetween(d, today) <= WINDOW_DAYS).length;
+      const recent = days.filter((d) => {
+        const age = daysBetween(d, today);
+        return age >= 0 && age <= WINDOW_DAYS;
+      }).length;
       const newest = days[0];
       if (!newest) problems.push(`no ${label} copy found at all`);
       else {
         if (recent < MIN_COPIES)
           problems.push(`only ${recent} ${label} cop${recent === 1 ? "y" : "ies"} in the last ${WINDOW_DAYS} days (needs ${MIN_COPIES})`);
         const age = daysBetween(newest, today);
-        if (age > NEWEST_MAX_DAYS) problems.push(`newest ${label} copy is from ${showDate(newest)} (${age} days old)`);
+        if (age < 0) problems.push(`newest ${label} copy is future-dated (${showDate(newest)})`);
+        else if (age > NEWEST_MAX_DAYS) problems.push(`newest ${label} copy is from ${showDate(newest)} (${age} days old)`);
       }
       return { latest: all[0]?.at.toISOString() ?? null, recent };
     };
@@ -410,6 +461,10 @@ export async function checkDropbox(
       return { ...base, status: "error", apps: [], message: `BACKUP FAILURE: none of the backup folders exist (${folders.join(", ")})` };
     let central = new Map<string, string[]>();
     let centralNote = "";
+    const failClosed = (problem: string, note: string) => {
+      for (const { app } of BACKUP_APPS) central.set(app, [problem]);
+      centralNote = note;
+    };
     const statusPath = `${folders[0]}/status.json`.toLowerCase();
     const statusFile = files.find((x) => x.name === "status.json" && (x.path ?? "").toLowerCase() === statusPath);
     if (statusFile) {
@@ -420,9 +475,10 @@ export async function checkDropbox(
         central = c.byApp;
         centralNote = c.note;
       } catch (err) {
-        centralNote = "Could not read the central backup's status file: " + failReason(err) + ".";
+        failClosed("the central backup status file could not be read",
+          "Could not read the central backup's status file: " + failReason(err) + ".");
       }
-    } else centralNote = "The central backup's status file was not found.";
+    } else failClosed("the central backup status file was not found", "The central backup's status file was not found.");
     if (missingFolders.length) centralNote += ` Folder not found: ${missingFolders.join(", ")}.`;
     const own = await verifySecvalCopies(files, f, headers.authorization, env, now);
     const judged = judge(files, now, central, appsChecked(env), own.verified);
