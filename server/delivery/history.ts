@@ -27,6 +27,8 @@ export interface HistoryView {
   from: string;
   to: string;
   points: HistoryPoint[];
+  /** True when some versions in the window were not read: the line then starts at the oldest version read, with no bridge from 72 h ago. */
+  incomplete: boolean;
   /** Plain words shown under the chart: where the points come from and what is missing. */
   note: string;
 }
@@ -87,7 +89,7 @@ export async function loadHistory(
 ): Promise<HistoryView> {
   const to = new Date(now).toISOString();
   const from = new Date(now - WINDOW_HOURS * 3_600_000).toISOString();
-  const base: HistoryView = { repo, branch: branch ?? null, from, to, points: [], note: "" };
+  const base: HistoryView = { repo, branch: branch ?? null, from, to, points: [], incomplete: false, note: "" };
   if (!branch) return { ...base, note: "No ledger file found, so there is no history to show." };
   const api = `https://api.github.com/repos/${OWNER}/${encodeURIComponent(repo)}/commits?path=${encodeURIComponent(LEDGER_PATH)}&sha=${encodeURIComponent(branch)}`;
   try {
@@ -95,9 +97,13 @@ export async function loadHistory(
     if (!inWindow) return { ...base, note: "GitHub did not return the file's history." };
     const before = (await listCommits(`${api}&until=${encodeURIComponent(from)}&per_page=1`, token, f)) ?? [];
     let commits = inWindow.filter((c) => c.sha && when(c));
+    // A full first page (100) means GitHub may hold more changes than it returned.
+    const pageFull = inWindow.length >= 100;
     const skipped = Math.max(0, commits.length - MAX_POINTS);
     commits = commits.slice(0, MAX_POINTS); // GitHub lists newest first
-    const all = [...commits, ...before.filter((c) => c.sha && when(c)).slice(0, 1)];
+    const incomplete = skipped > 0 || pageFull;
+    // With versions missing, the version in force 72 h ago is NOT drawn: a line from it would bridge the gap.
+    const all = incomplete ? commits : [...commits, ...before.filter((c) => c.sha && when(c)).slice(0, 1)];
     const points: HistoryPoint[] = [];
     let unreadable = 0;
     for (const c of all) {
@@ -112,11 +118,14 @@ export async function loadHistory(
     }
     points.sort((a, b) => a.at.localeCompare(b.at));
     const parts = [`${commits.length} change(s) of the ledger file on branch ${branch} in the last ${WINDOW_HOURS} hours.`];
-    if (before.length && points.some((p) => p.at === from)) parts.push("The first point is the version in force 72 hours ago.");
+    if (incomplete) {
+      if (skipped) parts.push(`Incomplete: only the newest ${MAX_POINTS} changes are shown (${skipped} older ones in the window left out).`);
+      if (pageFull) parts.push("Incomplete: GitHub returned its maximum of 100 changes, so older ones may be missing.");
+      parts.push("The line starts at the oldest change shown, not 72 hours ago.");
+    } else if (before.length && points.some((p) => p.at === from)) parts.push("The first point is the version in force 72 hours ago.");
     else parts.push("No older version exists, so the line starts at the file's first commit.");
-    if (skipped) parts.push(`Only the newest ${MAX_POINTS} changes are shown (${skipped} older ones in the window left out).`);
     if (unreadable) parts.push(`${unreadable} version(s) could not be read and are left out.`);
-    return { ...base, points, note: parts.join(" ") };
+    return { ...base, points, incomplete: incomplete || unreadable > 0, note: parts.join(" ") };
   } catch {
     return { ...base, note: "GitHub could not be reached, so the history is not shown." };
   }

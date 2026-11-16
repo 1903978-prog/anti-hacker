@@ -81,6 +81,43 @@ describe("open atoms over the last 72 hours", () => {
     expect(h.note).toContain("5 older ones");
   });
 
+  it("marks the history incomplete and does not bridge from 72 h ago when versions were left out", async () => {
+    const many = Array.from({ length: MAX_POINTS + 5 }, (_, i) => [`s${i}`, new Date(NOW - (i + 1) * 60_000).toISOString(), i] as [string, string, number]);
+    const { f, calls } = fakeGh(many, [["old", "2026-11-12T09:00:00Z", 99]]);
+    const h = await loadHistory("compplan", "main", "t", f, NOW);
+    expect(h.incomplete).toBe(true);
+    expect(h.points.some((p) => p.at === h.from)).toBe(false); // no baseline point at the window start
+    expect(h.points.map((p) => p.open)).not.toContain(99);
+    expect(calls.some((c) => c.url.endsWith("ref=old"))).toBe(false);
+    expect(h.note).toContain("Incomplete");
+    expect(h.note).toContain("not 72 hours ago");
+  });
+
+  it("marks the history incomplete when GitHub returns a full page of 100 changes", async () => {
+    const hundred = Array.from({ length: 100 }, (_, i) => [`p${i}`, new Date(NOW - (i + 1) * 60_000).toISOString(), 1] as [string, string, number]);
+    const { f } = fakeGh(hundred, [["old", "2026-11-12T09:00:00Z", 7]]);
+    const h = await loadHistory("compplan", "main", "t", f, NOW);
+    expect(h.incomplete).toBe(true);
+    expect(h.note).toContain("maximum of 100");
+  });
+
+  it("carries the version in force 72 h ago to now when the file did not change in the window", async () => {
+    const { f } = fakeGh([], [["c1", "2026-11-12T09:00:00Z", 4]]);
+    const h = await loadHistory("compplan", "main", "t", f, NOW);
+    expect(h.incomplete).toBe(false);
+    expect(h.points.map((p) => [p.at, p.open])).toEqual([[h.from, 4]]);
+    expect(h.note).toContain("0 change(s)");
+  });
+
+  it("returns no points (shown as unknown, never 0) when the token cannot read the repo", async () => {
+    const denied: GhFetcher = async () => ({ status: 404, text: async () => '{"message":"Not Found"}' });
+    const h = await loadHistory("compplan", "main", "t", denied, NOW);
+    expect(h.points).toEqual([]);
+    expect(h.note).toContain("did not return");
+    const down: GhFetcher = async () => { throw new Error("network"); };
+    expect((await loadHistory("compplan", "main", "t", down, NOW)).points).toEqual([]);
+  });
+
   it("shows nothing when there is no ledger branch", async () => {
     const { f, calls } = fakeGh([]);
     const h = await loadHistory("lm-op-model", null, "t", f, NOW);

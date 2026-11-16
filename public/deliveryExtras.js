@@ -15,7 +15,6 @@
   let data = null;
 
   const selectedRepo = () => document.querySelector('#dlApps [aria-pressed="true"]')?.dataset.dlapp || null;
-  const selectedApp = () => (data?.apps || []).find((a) => a.repo === selectedRepo()) || null;
 
   async function getJson(url) {
     const r = await fetch(url, { credentials: "same-origin" });
@@ -70,7 +69,7 @@
     if (repo !== selectedRepo()) return; // the user picked another app meanwhile
     const last = h.points[h.points.length - 1];
     box.innerHTML =
-      `<div class="dlchart-title">Open atoms, last 72 hours${last ? ` <b>${last.open}</b> now` : ""}</div>` +
+      `<div class="dlchart-title">Open atoms, last 72 hours${last ? ` <b>${last.open}</b> now` : " <b>?</b> unknown"}${h.incomplete ? ' <span class="dlinc">incomplete history</span>' : ""}</div>` +
       (h.points.length ? chartSvg(h) : "") +
       `<div class="note">${escH(h.points.length ? h.note : h.note || "No history yet.")}</div>`;
   }
@@ -126,7 +125,7 @@
   }
   const OWNER_REPO = (app) => `1903978-prog/${app.repo}`;
 
-  async function copy(text, msgEl) {
+  async function copy(text, msgEl, what) {
     let ok = false;
     try {
       await navigator.clipboard.writeText(text);
@@ -142,19 +141,21 @@
       try { ok = document.execCommand("copy"); } catch { ok = false; }
       ta.remove();
     }
-    msgEl.textContent = ok ? "Copied. Paste it into a Claude Code session." : "Your browser blocked copying.";
+    msgEl.textContent = ok ? `Copied ${what}. Paste it into a Claude Code session.` : "Your browser blocked copying.";
     setTimeout(() => { msgEl.textContent = ""; }, 5000);
   }
 
   async function withApp(fn) {
     const msg = $("dlCopyMsg");
+    // The app is fixed when the button is pressed, so switching apps during the fetch cannot copy another app.
+    const repo = selectedRepo();
     try {
       data = await getJson("/api/delivery"); // server-side cache: no extra GitHub calls
     } catch {
       msg.textContent = "Could not load the ledger.";
       return;
     }
-    const app = selectedApp();
+    const app = (data?.apps || []).find((a) => a.repo === repo);
     if (!app || app.status !== "ok") {
       msg.textContent = "This app has no ledger file to copy yet.";
       return;
@@ -165,8 +166,8 @@
   function wire() {
     const apps = $("dlApps");
     if (!apps || !$("dlChart")) return;
-    $("dlCopyTable").onclick = () => withApp((app, msg) => copy(tableText(app), msg));
-    $("dlCopyPrompt").onclick = () => withApp((app, msg) => copy(promptText(app), msg));
+    $("dlCopyTable").onclick = () => withApp((app, msg) => copy(tableText(app), msg, `the ${app.project} table (${app.atoms.length} atoms)`));
+    $("dlCopyPrompt").onclick = () => withApp((app, msg) => copy(promptText(app), msg, `the Claude Code prompt for ${app.project} (${app.atoms.filter((a) => !a.done).length} open atoms)`));
     // Redraw the chart whenever another app is selected (or the list is first drawn).
     new MutationObserver(() => {
       const repo = selectedRepo();
