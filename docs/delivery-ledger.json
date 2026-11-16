@@ -1,7 +1,7 @@
 {
  "project": "Secval",
  "repo": "anti-hacker",
- "last_synced": "2026-11-16T11:20:00Z",
+ "last_synced": "2026-11-16T11:45:00Z",
  "atoms": [
   {
    "id": "task_secval_001A",
@@ -205,13 +205,13 @@
    "deployed": "no",
    "live_checked": "no",
    "next_step": "Livio exact-SHA approval for release, then config dry run, then switch on",
-   "evidence": "PR #63. Exact-head CI: passed on e46753cc (checked by Claude 11:20 UTC). Author-reported (audit thread): local verify 420 tests + page check on e46753cc.",
+   "evidence": "PR #63. Exact-head CI: run #170 passed on c03e65e9 (checked by Claude 11:45 UTC). CI only: no real Dropbox upload or restore verified.",
    "owner": "Secval audit thread",
    "branch": "claude/secval-second-copy",
    "pr": "#63",
-   "head_sha": "e46753cc781a4ff69e9c3114b861f85df35c8328",
-   "tested_sha": "e46753cc781a4ff69e9c3114b861f85df35c8328",
-   "updated_at": "2026-11-16T11:20:00Z"
+   "head_sha": "c03e65e90e80655ab11bda895cba0533860f7e9e",
+   "tested_sha": "c03e65e90e80655ab11bda895cba0533860f7e9e",
+   "updated_at": "2026-11-16T11:45:00Z"
   },
   {
    "id": "task_secval_005A",
@@ -281,9 +281,9 @@
    "atom": "Staged bootstrap: dry run, scope check, minimal permissions",
    "implemented": "yes",
    "tested": "yes",
-   "tested_sha": "e46753cc781a4ff69e9c3114b861f85df35c8328",
+   "tested_sha": "c03e65e90e80655ab11bda895cba0533860f7e9e",
    "next_step": "Livio exact-SHA approval for release, then config dry run, then switch on",
-   "evidence": "PR #63. Exact-head CI: passed on e46753cc (checked by Claude 11:20 UTC). Author-reported: local verify on e46753cc.",
+   "evidence": "PR #63. Exact-head CI: run #170 passed on c03e65e9 (checked by Claude 11:45 UTC). CI only: no real Dropbox upload or restore verified.",
    "parent": "task_secval_004",
    "asked_at": "2026-11-16",
    "asked_time": "09:18",
@@ -294,8 +294,8 @@
    "owner": "Secval audit thread",
    "branch": "claude/secval-second-copy",
    "pr": "#63",
-   "head_sha": "e46753cc781a4ff69e9c3114b861f85df35c8328",
-   "updated_at": "2026-11-16T11:20:00Z"
+   "head_sha": "c03e65e90e80655ab11bda895cba0533860f7e9e",
+   "updated_at": "2026-11-16T11:45:00Z"
   },
   {
    "id": "task_secval_004C",
@@ -304,7 +304,7 @@
    "tested": "no",
    "tested_sha": "",
    "next_step": "Livio exact-SHA approval for release, then config dry run, then switch on; then a real upload and restore test",
-   "evidence": "PR #63 head e46753cc. NOT tested for real: only a simulated Dropbox; no real upload or independent restore yet. Stays tested=no until real validation.",
+   "evidence": "PR #63 head c03e65e9 (CI run #170 passed, simulated Dropbox only). Real Dropbox upload and independent restore NOT verified; stays tested=no.",
    "parent": "task_secval_004",
    "asked_at": "2026-11-16",
    "asked_time": "09:18",
@@ -315,8 +315,8 @@
    "owner": "Secval audit thread",
    "branch": "claude/secval-second-copy",
    "pr": "#63",
-   "head_sha": "e46753cc781a4ff69e9c3114b861f85df35c8328",
-   "updated_at": "2026-11-16T11:20:00Z"
+   "head_sha": "c03e65e90e80655ab11bda895cba0533860f7e9e",
+   "updated_at": "2026-11-16T11:45:00Z"
   }
  ]
 }
