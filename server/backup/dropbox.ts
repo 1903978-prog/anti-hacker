@@ -278,6 +278,24 @@ export async function accessToken(env: Env, f: DropboxFetcher): Promise<string |
   return env.DROPBOX_ACCESS_TOKEN || null;
 }
 
+/**
+ * Same sign-in, but also returns the scopes Dropbox states for the token (scoped apps list them in the token
+ * reply). Used by the second copy's dry run to say, before anything is written, whether the app may write.
+ * The token itself is never logged or returned to a page.
+ */
+export async function accessTokenWithScope(env: Env, f: DropboxFetcher): Promise<{ token: string; scopes: string[] | null } | null> {
+  const { DROPBOX_REFRESH_TOKEN: refresh, DROPBOX_APP_KEY: key, DROPBOX_APP_SECRET: secret } = env;
+  if (refresh && key && secret) {
+    const body = new URLSearchParams({ grant_type: "refresh_token", refresh_token: refresh, client_id: key, client_secret: secret });
+    const res = obj(await post(f, "https://api.dropbox.com/oauth2/token", { "content-type": "application/x-www-form-urlencoded" }, body.toString()));
+    const token = str(res.access_token);
+    if (!token) return null;
+    const scope = str(res.scope);
+    return { token, scopes: scope ? scope.split(/\s+/).filter(Boolean) : null };
+  }
+  return env.DROPBOX_ACCESS_TOKEN ? { token: env.DROPBOX_ACCESS_TOKEN, scopes: null } : null;
+}
+
 /** Names only (never values): which of the three variables are missing or empty, and any similar names that are set. */
 export function missingNote(env: Env): string {
   const need = ["DROPBOX_REFRESH_TOKEN", "DROPBOX_APP_KEY", "DROPBOX_APP_SECRET"];

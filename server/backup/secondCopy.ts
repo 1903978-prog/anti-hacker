@@ -6,7 +6,7 @@ import { deflateRawSync, gunzipSync, gzipSync, inflateRawSync } from "node:zlib"
 import type { DB } from "../db.js";
 import { appendAudit } from "../audit/log.js";
 import { checkStoreCopy } from "./drill.js";
-import { accessToken, parisDate, type DropboxFetcher, type Env } from "./dropbox.js";
+import { accessTokenWithScope, parisDate, type DropboxFetcher, type Env } from "./dropbox.js";
 
 /**
  * Second backup copy of secval itself (database AND code) in Livio's Dropbox,
@@ -59,10 +59,27 @@ export interface SecondCopyRun {
   detail: string;
   copies: CopyResult[];
   retention: { removed: string[]; detail: string };
+  /** True for a dry run: nothing was uploaded or removed. */
+  dryRun?: boolean;
+  /** Scopes Dropbox stated for the token (null = not stated); missing ones, for the bootstrap check. */
+  scopes?: string[] | null;
+  missingScopes?: string[] | null;
 }
 
-export function secondCopyMode(env: Env = process.env): "on" | "off" {
-  return env.SECVAL_SECOND_COPY === "on" ? "on" : "off";
+/**
+ * off (default): nothing runs. dryrun: the bootstrap step; signs in, reads the token's scopes and the target
+ * folder (read-only), builds and encrypts both copies and restores them on the server, but uploads and deletes
+ * NOTHING. on: daily copies to Dropbox.
+ */
+export type Mode = "on" | "dryrun" | "off";
+export function secondCopyMode(env: Env = process.env): Mode {
+  return env.SECVAL_SECOND_COPY === "on" ? "on" : env.SECVAL_SECOND_COPY === "dryrun" ? "dryrun" : "off";
+}
+
+/** The least the Dropbox app needs: list (retention, monitor), read (download check), write (upload, own old copies). */
+export const NEEDED_SCOPES = ["files.metadata.read", "files.content.read", "files.content.write"] as const;
+export function missingScopes(scopes: string[] | null): string[] | null {
+  return scopes === null ? null : NEEDED_SCOPES.filter((s) => !scopes.includes(s));
 }
 
 // --- encryption ----------------------------------------------------------------
@@ -334,6 +351,8 @@ export interface RunOptions {
   /** Directory of the deployed code (default: current directory). */
   codeDir?: string;
   actor?: string;
+  /** Force a dry run (default: SECVAL_SECOND_COPY=dryrun). */
+  dryRun?: boolean;
 }
 
 export async function runSecondCopy(db: DB, opts: RunOptions = {}): Promise<SecondCopyRun> {
@@ -342,6 +361,7 @@ export async function runSecondCopy(db: DB, opts: RunOptions = {}): Promise<Seco
   const now = opts.now ?? new Date();
   const day = parisDate(now);
   const commit = env.RENDER_GIT_COMMIT || "unknown";
+  const dry = opts.dryRun ?? secondCopyMode(env) === "dryrun";
   const base = { at: now.toISOString(), day, copies: [] as CopyResult[], retention: { removed: [] as string[], detail: "not run" } };
   const finish = (r: SecondCopyRun): SecondCopyRun => {
     db.prepare(
@@ -351,7 +371,7 @@ export async function runSecondCopy(db: DB, opts: RunOptions = {}): Promise<Seco
       actor: opts.actor ?? "scheduler",
       action: "backup.second_copy",
       decision: "info",
-      detail: { ok: r.ok, detail: r.detail, copies: r.copies.map((c) => ({ kind: c.kind, ok: c.ok, backupId: c.backupId })) },
+      detail: { ok: r.ok, dryRun: !!r.dryRun, detail: r.detail, copies: r.copies.map((c) => ({ kind: c.kind, ok: c.ok, backupId: c.backupId })) },
     });
     return r;
   };
@@ -359,15 +379,53 @@ export async function runSecondCopy(db: DB, opts: RunOptions = {}): Promise<Seco
   const k = backupKey(env);
   if (!k) return finish({ ...base, ok: false, detail: "No encryption key: SECVAL_BACKUP_KEY is not set (or is under 32 characters), so nothing was copied (never uploaded unencrypted)." });
 
-  let token: string | null;
+  let signed: { token: string; scopes: string[] | null } | null;
   try {
     // The read-only check's helper; it only needs the token, so the binary fetcher is fine here.
-    token = await accessToken(env, f as unknown as DropboxFetcher);
+    signed = await accessTokenWithScope(env, f as unknown as DropboxFetcher);
   } catch (err) {
-    return finish({ ...base, ok: false, detail: `Could not sign in to Dropbox: ${plainDropboxFailure(err)}` });
+    return finish({ ...base, dryRun: dry, ok: false, detail: `Could not sign in to Dropbox: ${plainDropboxFailure(err)}` });
   }
-  if (!token) return finish({ ...base, ok: false, detail: "Dropbox is not connected (DROPBOX_REFRESH_TOKEN, DROPBOX_APP_KEY, DROPBOX_APP_SECRET)." });
-  const auth = { authorization: `Bearer ${token}` };
+  if (!signed) return finish({ ...base, dryRun: dry, ok: false, detail: "Dropbox is not connected (DROPBOX_REFRESH_TOKEN, DROPBOX_APP_KEY, DROPBOX_APP_SECRET)." });
+  const auth = { authorization: `Bearer ${signed.token}` };
+  const scopeInfo = { scopes: signed.scopes, missingScopes: missingScopes(signed.scopes) };
+
+  if (dry) {
+    // Read-only: the parent folder must be reachable. Nothing is created, uploaded or removed.
+    let reach: string;
+    try {
+      await call(f, "https://api.dropboxapi.com/2/files/list_folder",
+        { ...auth, "content-type": "application/json" }, JSON.stringify({ path: ROOT.slice(0, ROOT.lastIndexOf("/")), limit: 1 }));
+      reach = `${ROOT.slice(0, ROOT.lastIndexOf("/"))} is readable`;
+    } catch (err) {
+      reach = `the backup folder could not be read: ${err instanceof DbxError ? plainDropboxFailure(err) : (err as Error).message.slice(0, 120)}`;
+    }
+    const work = mkdtempSync(join(tmpdir(), "secval-dry-"));
+    const copies: CopyResult[] = [];
+    try {
+      for (const kind of ["db", "code"] as const) {
+        try {
+          const { plain, code } = makePlain(db, kind, work, opts.codeDir ?? process.cwd(), commit);
+          const blob = encrypt(plain, k.key);
+          const checked = checkCopy(kind, decrypt(blob, k.key), work, commit);
+          copies.push({ kind, ok: true, bytes: blob.length, sha256: sha256(blob), detail: `Dry run: built, encrypted and ${checked}${code ? `; ${code.refused.length} files refused by the allowlist` : ""}` });
+        } catch (err) {
+          copies.push({ kind, ok: false, detail: `Dry run ${kind} failed: ${(err as Error).message.slice(0, 160)}` });
+        }
+      }
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+    const miss = scopeInfo.missingScopes;
+    const scopeNote = miss === null ? "Dropbox did not state the token's scopes, so write permission is proven only by the first real run"
+      : miss.length ? `the Dropbox app lacks ${miss.join(", ")}` : "the Dropbox app has every needed scope";
+    const ok = copies.every((c) => c.ok) && !reach.startsWith("the backup folder could not") && !(miss && miss.length);
+    return finish({
+      ...base, ...scopeInfo, dryRun: true, ok, copies,
+      retention: { removed: [], detail: "dry run: nothing removed" },
+      detail: `DRY RUN, nothing uploaded or removed. ${copies.map((c) => c.detail).join("; ")}. ${reach}; ${scopeNote}.`,
+    });
+  }
 
   const work = mkdtempSync(join(tmpdir(), "secval-copy-"));
   const copies: CopyResult[] = [];
@@ -376,14 +434,7 @@ export async function runSecondCopy(db: DB, opts: RunOptions = {}): Promise<Seco
       let plain: Buffer;
       let code: CodeCollection | null = null;
       try {
-        if (kind === "db") {
-          const snap = join(work, "snapshot.sqlite");
-          db.prepare("VACUUM INTO ?").run(snap);
-          plain = gzipSync(readFileSync(snap));
-        } else {
-          code = collectCode(opts.codeDir ?? process.cwd(), commit);
-          plain = makeZip(code.files);
-        }
+        ({ plain, code } = makePlain(db, kind, work, opts.codeDir ?? process.cwd(), commit));
       } catch (err) {
         copies.push({ kind, ok: false, detail: `Could not make the ${kind === "db" ? "database snapshot" : "code archive"}: ${(err as Error).message.slice(0, 120)}` });
         continue;
@@ -403,23 +454,7 @@ export async function runSecondCopy(db: DB, opts: RunOptions = {}): Promise<Seco
           { ...auth, "Dropbox-API-Arg": JSON.stringify({ path }) });
         const back = Buffer.from(await res.arrayBuffer());
         if (sha256(back) !== hash) throw new Error("the downloaded copy differs from what was uploaded");
-        const opened = decrypt(back, k.key);
-        let checked: string;
-        if (kind === "db") {
-          const file = join(work, "restored.sqlite");
-          writeFileSync(file, gunzipSync(opened));
-          const c = checkStoreCopy(file);
-          if (!c.ok) throw new Error(c.detail);
-          checked = `restored and intact (${c.allowlistRows} allowlist rows)`;
-        } else {
-          const entries = readZip(opened);
-          for (const must of CODE_REQUIRED)
-            if (!entries.has(must)) throw new Error(`code copy is missing ${must}`);
-          for (const name of entries.keys())
-            if (name !== "SECVAL_COMMIT.txt" && refuseReason(name)) throw new Error(`code copy holds a refused file: ${name}`);
-          if (entries.get("SECVAL_COMMIT.txt")!.toString().trim() !== commit) throw new Error("code copy names a different commit");
-          checked = `opened, ${entries.size} files, every checksum right, no secret-looking file`;
-        }
+        const checked = checkCopy(kind, decrypt(back, k.key), work, commit);
         const manifest = {
           backupId, app: "secval", kind, createdAt: now.toISOString(), sourceCommit: commit,
           file: path, bytes: blob.length, sha256: hash, plainSha256: sha256(plain),
@@ -441,6 +476,7 @@ export async function runSecondCopy(db: DB, opts: RunOptions = {}): Promise<Seco
   }
 
   const ok = copies.length === 2 && copies.every((c) => c.ok);
+  Object.assign(base, scopeInfo);
   const retention = ok ? await applyRetention(f, auth) : { removed: [], detail: "skipped: today's copies did not both pass, so nothing old is removed" };
   return finish({
     ...base,
@@ -449,6 +485,34 @@ export async function runSecondCopy(db: DB, opts: RunOptions = {}): Promise<Seco
     retention,
     detail: ok ? "Database and code copied to Dropbox, downloaded again and checked" : copies.filter((c) => !c.ok).map((c) => c.detail).join("; "),
   });
+}
+
+/** The plain (unencrypted) bytes of one copy: a VACUUM INTO snapshot, gzipped, or the allowlisted code zip. */
+function makePlain(db: DB, kind: Kind, work: string, codeDir: string, commit: string): { plain: Buffer; code: CodeCollection | null } {
+  if (kind === "db") {
+    const snap = join(work, `snapshot-${randomBytes(4).toString("hex")}.sqlite`);
+    db.prepare("VACUUM INTO ?").run(snap);
+    return { plain: gzipSync(readFileSync(snap)), code: null };
+  }
+  const code = collectCode(codeDir, commit);
+  return { plain: makeZip(code.files), code };
+}
+
+/** Restore check on decrypted bytes; throws with a plain reason. Same check for the dry run and the real run. */
+function checkCopy(kind: Kind, opened: Buffer, work: string, commit: string): string {
+  if (kind === "db") {
+    const file = join(work, `restored-${randomBytes(4).toString("hex")}.sqlite`);
+    writeFileSync(file, gunzipSync(opened));
+    const c = checkStoreCopy(file);
+    if (!c.ok) throw new Error(c.detail);
+    return `restored and intact (${c.allowlistRows} allowlist rows)`;
+  }
+  const entries = readZip(opened);
+  for (const must of CODE_REQUIRED) if (!entries.has(must)) throw new Error(`code copy is missing ${must}`);
+  for (const name of entries.keys())
+    if (name !== "SECVAL_COMMIT.txt" && refuseReason(name)) throw new Error(`code copy holds a refused file: ${name}`);
+  if (entries.get("SECVAL_COMMIT.txt")!.toString().trim() !== commit) throw new Error("code copy names a different commit");
+  return `opened, ${entries.size} files, every checksum right, no secret-looking file`;
 }
 
 /** Keeps the newest KEEP copies of each kind; removes only older files this job named. */
@@ -488,7 +552,7 @@ export function getSecondCopy(db: DB): SecondCopyRun | null {
 
 /** Status for the backup panel: healthy only when switched on and today's or yesterday's run passed. */
 export function secondCopyStatus(db: DB, now: Date = new Date(), env: Env = process.env): {
-  mode: "on" | "off"; last: SecondCopyRun | null; healthy: boolean; message: string;
+  mode: Mode; last: SecondCopyRun | null; healthy: boolean; message: string;
 } {
   const mode = secondCopyMode(env);
   const last = getSecondCopy(db);
@@ -496,6 +560,7 @@ export function secondCopyStatus(db: DB, now: Date = new Date(), env: Env = proc
   const healthy = mode === "on" && fresh && !!last?.ok;
   const message =
     mode === "off" ? "Second copy in Dropbox is switched off (SECVAL_SECOND_COPY is not on)."
+      : mode === "dryrun" ? `Second copy is in DRY RUN (nothing written to Dropbox). ${last ? last.detail : "Not run yet."}`
       : !last ? "Second copy in Dropbox has not run yet."
       : !last.ok ? `SECOND COPY FAILED: ${last.detail}`
       : !fresh ? "SECOND COPY IS OLD: the last good copy is over two days old."
@@ -513,7 +578,7 @@ export function dueNow(last: SecondCopyRun | null, now: Date): boolean {
 
 /** Runs ~10 minutes after start, then checks hourly. Only when SECVAL_SECOND_COPY=on; never crashes the server. */
 export function startSecondCopy(db: DB): void {
-  if (secondCopyMode() !== "on") return;
+  if (secondCopyMode() === "off") return;
   let running = false;
   const tick = () => {
     if (running || !dueNow(getSecondCopy(db), new Date())) return;

@@ -9,7 +9,7 @@ import { freshDb } from "./helpers.js";
 import { listAudit } from "../server/audit/log.js";
 import { appsChecked, judge } from "../server/backup/dropbox.js";
 import {
-  CODE_REQUIRED, KEEP, backupKey, collectCode, copyName, decrypt, dueNow, encrypt, makeZip, readZip, refuseReason, runSecondCopy, secondCopyStatus,
+  CODE_REQUIRED, KEEP, backupKey, collectCode, copyName, decrypt, dueNow, encrypt, makeZip, readZip, refuseReason, runSecondCopy, secondCopyMode, secondCopyStatus,
   type BinFetcher, type BinResponse,
 } from "../server/backup/secondCopy.js";
 
@@ -23,7 +23,7 @@ const ENV = {
 const NOW = new Date("2026-11-16T09:30:00Z");
 
 /** An in-memory Dropbox: a map of path -> bytes, plus ways to make it misbehave. */
-function fakeDropbox(opts: { readOnly?: boolean; tamper?: boolean } = {}) {
+function fakeDropbox(opts: { readOnly?: boolean; tamper?: boolean; scope?: string } = {}) {
   const files = new Map<string, Buffer>();
   const calls: string[] = [];
   const reply = (status: number, body: unknown, bytes?: Buffer): BinResponse => ({
@@ -37,7 +37,7 @@ function fakeDropbox(opts: { readOnly?: boolean; tamper?: boolean } = {}) {
   const f: BinFetcher = async (url, init) => {
     const op = url.split("/").slice(-2).join("/");
     calls.push(op);
-    if (url.endsWith("/oauth2/token")) return reply(200, { access_token: "t" });
+    if (url.endsWith("/oauth2/token")) return reply(200, opts.scope === undefined ? { access_token: "t" } : { access_token: "t", scope: opts.scope });
     const arg = init.headers["Dropbox-API-Arg"] ? JSON.parse(init.headers["Dropbox-API-Arg"]) : JSON.parse(String(init.body));
     if (op === "files/upload") {
       if (opts.readOnly) return reply(401, { error_summary: "missing_scope/.." });
@@ -326,5 +326,47 @@ describe("secval second copy: review #5917832972 hardening", () => {
     const missing = tracked.filter((t) => dirs.some((d) => t.startsWith(d)) && !have.has(t) && refuseReason(t) === null
       && /\.(ts|html|js|css|svg|png|ico|mjs|sh|py)$/.test(t));
     expect(missing).toEqual([]);
+  });
+});
+
+describe("secval second copy: staged bootstrap (dry run)", () => {
+  const FULL = "account_info.read files.metadata.read files.content.read files.content.write";
+  it("a dry run builds and checks both copies but writes nothing to Dropbox", async () => {
+    const db = freshDb();
+    const dbx = fakeDropbox({ scope: FULL });
+    const r = await runSecondCopy(db, { env: { ...ENV, SECVAL_SECOND_COPY: "dryrun" }, fetcher: dbx.f, now: NOW, codeDir: codeDir() });
+    expect(r.dryRun).toBe(true);
+    expect(r.ok).toBe(true);
+    expect(r.copies.map((c) => c.ok)).toEqual([true, true]);
+    expect(r.missingScopes).toEqual([]);
+    expect(dbx.calls.filter((c) => c === "files/upload" || c === "files/delete_v2")).toEqual([]);
+    expect(dbx.files.size).toBe(0);
+    expect(r.detail).toMatch(/DRY RUN, nothing uploaded or removed/);
+    expect(secondCopyStatus(db, NOW, { ...ENV, SECVAL_SECOND_COPY: "dryrun" }).healthy).toBe(false);
+  });
+  it("a dry run reports a missing write scope and fails", async () => {
+    const dbx = fakeDropbox({ scope: "files.metadata.read files.content.read" });
+    const r = await runSecondCopy(freshDb(), { env: { ...ENV, SECVAL_SECOND_COPY: "dryrun" }, fetcher: dbx.f, now: NOW, codeDir: codeDir() });
+    expect(r.ok).toBe(false);
+    expect(r.missingScopes).toEqual(["files.content.write"]);
+    expect(r.detail).toMatch(/lacks files.content.write/);
+    expect(dbx.files.size).toBe(0);
+  });
+  it("unstated scopes are reported, not assumed", async () => {
+    const r = await runSecondCopy(freshDb(), { env: { ...ENV, SECVAL_SECOND_COPY: "dryrun" }, fetcher: fakeDropbox().f, now: NOW, codeDir: codeDir() });
+    expect(r.missingScopes).toBeNull();
+    expect(r.detail).toMatch(/did not state the token's scopes/);
+  });
+  it("modes: unset or anything else is off; only exact words switch it", () => {
+    expect(secondCopyMode({})).toBe("off");
+    expect(secondCopyMode({ SECVAL_SECOND_COPY: "ON" })).toBe("off");
+    expect(secondCopyMode({ SECVAL_SECOND_COPY: "dryrun" })).toBe("dryrun");
+    expect(secondCopyMode({ SECVAL_SECOND_COPY: "on" })).toBe("on");
+  });
+  it("a dry run without the key still refuses before signing in", async () => {
+    const dbx = fakeDropbox({ scope: FULL });
+    const r = await runSecondCopy(freshDb(), { env: { ...ENV, SECVAL_SECOND_COPY: "dryrun", SECVAL_BACKUP_KEY: undefined }, fetcher: dbx.f, now: NOW });
+    expect(r.ok).toBe(false);
+    expect(dbx.calls).toEqual([]);
   });
 });
