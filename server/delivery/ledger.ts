@@ -7,6 +7,9 @@
  * back to the read-only GITHUB_USAGE_TOKEN already in the Render env group.
  * The token is never logged, returned or shown.
  */
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
 export const OWNER = "1903978-prog";
@@ -47,11 +50,43 @@ export interface AppLedger {
   message?: string;
   lastSynced?: string;
   link: string;
+  /** Branch the ledger file was read from (integration, default branch or an open PR branch). */
+  branch?: string;
+  /** Pasted starting point, shown only while the live ledger file cannot be read. */
+  snapshot?: Snapshot;
   /** Open pull requests in the repo right now (null = could not be read). */
   openPrs: number | null;
   prsLink: string;
   atoms: Atom[];
   counts: { total: number; done: number; open: number } & Record<StageKey, number>;
+}
+
+const SnapshotIn = z.object({
+  repo: z.string(),
+  label: z.string(),
+  source: z.string().default(""),
+  headline: z.string().default(""),
+  /** Secval's own note on the pasted text (never a correction of it). */
+  check: z.string().default(""),
+  groups: z.array(z.object({ group: z.string(), atoms: z.string(), stages: z.string(), next_step: z.string() })),
+  counts: z.string().default(""),
+  blockers: z.array(z.string()).default([]),
+  footer: z.string().default(""),
+});
+export type Snapshot = z.infer<typeof SnapshotIn>;
+
+export const SNAPSHOT_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "reports", "delivery-snapshots");
+
+/** A pasted registry summary kept in reports/delivery-snapshots/<repo>.json, as written; null when none or broken. */
+export function loadSnapshot(repo: string, dir = SNAPSHOT_DIR): Snapshot | null {
+  const file = join(dir, `${repo.replace(/[^a-z0-9._-]/gi, "")}.json`);
+  if (!existsSync(file)) return null;
+  try {
+    const r = SnapshotIn.safeParse(JSON.parse(readFileSync(file, "utf8")));
+    return r.success && r.data.repo === repo ? r.data : null;
+  } catch {
+    return null;
+  }
 }
 
 export interface DeliveryView {
@@ -181,31 +216,70 @@ function headers(token: string | undefined, raw: boolean): Record<string, string
   };
 }
 
-/** Reads one repo's ledger file from its default branch (GET only). */
-export async function fetchLedger(repo: string, token: string | undefined, f: GhFetcher): Promise<AppLedger> {
-  const url = `https://api.github.com/repos/${OWNER}/${encodeURIComponent(repo)}/contents/${LEDGER_PATH}`;
+/** GitHub's own error text ("Not Found", "Bad credentials", ...), short and with nothing secret. */
+async function ghError(res: { status: number; text: () => Promise<string> }): Promise<string> {
   try {
-    const res = await f(url, { method: "GET", headers: headers(token, true) });
-    if (res.status === 200) return parseLedger(repo, await res.text());
-    if (res.status === 404) {
-      // 404 also means "no access" on a private repo; the repo check tells them apart.
-      const r = await f(`https://api.github.com/repos/${OWNER}/${encodeURIComponent(repo)}`, {
-        method: "GET",
-        headers: headers(token, false),
-      });
-      if (r.status === 200) return { ...baseApp(repo), status: "missing", message: "No ledger file in this repository yet." };
-      return {
-        ...baseApp(repo),
-        status: "no-access",
-        message: token
-          ? "The GitHub token cannot read this repository."
-          : "No GitHub token set, so this private repository cannot be read.",
-      };
+    const m = (JSON.parse(await res.text()) as { message?: unknown }).message;
+    return typeof m === "string" ? `GitHub said ${res.status} "${m.slice(0, 120)}"` : `GitHub answered ${res.status}`;
+  } catch {
+    return `GitHub answered ${res.status}`;
+  }
+}
+
+/** Branches to look in, in order: integration, the default branch, then open PR branches (max 50). */
+async function candidateBranches(repo: string, defaultBranch: string, token: string | undefined, f: GhFetcher): Promise<string[]> {
+  const out = ["integration", defaultBranch];
+  try {
+    const res = await f(`https://api.github.com/repos/${OWNER}/${encodeURIComponent(repo)}/pulls?state=open&per_page=100`, {
+      method: "GET",
+      headers: headers(token, false),
+    });
+    if (res.status === 200) {
+      const prs = JSON.parse(await res.text()) as Array<{ head?: { ref?: string; repo?: { full_name?: string } | null } }>;
+      for (const pr of prs) {
+        const ref = pr.head?.ref;
+        if (ref && pr.head?.repo?.full_name === `${OWNER}/${repo}`) out.push(ref);
+      }
     }
-    if (res.status === 401 || res.status === 403) {
-      return { ...baseApp(repo), status: "no-access", message: `GitHub refused the request (${res.status}).` };
+  } catch {
+    // Open PR branches are a bonus; integration and the default branch are still tried.
+  }
+  return [...new Set(out)].slice(0, 52);
+}
+
+/**
+ * Reads one repo's ledger file (GET only): from integration first, then the
+ * default branch, then any open PR branch that has it. Says which branch it came from.
+ */
+export async function fetchLedger(repo: string, token: string | undefined, f: GhFetcher): Promise<AppLedger> {
+  const base = `https://api.github.com/repos/${OWNER}/${encodeURIComponent(repo)}`;
+  try {
+    const r = await f(base, { method: "GET", headers: headers(token, false) });
+    if (r.status !== 200) {
+      const why = await ghError(r);
+      const hint =
+        r.status === 404
+          ? token
+            ? "The GitHub token cannot read this repository"
+            : "No GitHub token set, so this private repository cannot be read"
+          : "GitHub refused the request";
+      return { ...baseApp(repo), status: r.status === 404 || r.status === 401 || r.status === 403 ? "no-access" : "error", message: `${hint} (${why}).` };
     }
-    return { ...baseApp(repo), status: "error", message: `GitHub answered ${res.status}.` };
+    const defaultBranch = String((JSON.parse(await r.text()) as { default_branch?: unknown }).default_branch || "main");
+    let lastError = "";
+    for (const branch of await candidateBranches(repo, defaultBranch, token, f)) {
+      const res = await f(`${base}/contents/${LEDGER_PATH}?ref=${encodeURIComponent(branch)}`, { method: "GET", headers: headers(token, true) });
+      if (res.status === 200) {
+        const app = parseLedger(repo, await res.text());
+        return { ...app, branch, link: `https://github.com/${OWNER}/${repo}/blob/${encodeURIComponent(branch)}/${LEDGER_PATH}` };
+      }
+      if (res.status !== 404) lastError = await ghError(res);
+    }
+    return {
+      ...baseApp(repo),
+      status: lastError ? "error" : "missing",
+      message: lastError ? `The ledger file could not be read (${lastError}).` : "No ledger file on integration, the default branch or any open PR branch yet.",
+    };
   } catch {
     return { ...baseApp(repo), status: "error", message: "GitHub could not be reached." };
   }
@@ -245,6 +319,8 @@ export interface DeliveryDeps {
   env?: Record<string, string | undefined>;
   fetcher?: GhFetcher;
   now?: () => number;
+  /** Folder of pasted snapshots (tests hand in their own). */
+  snapshotDir?: string;
 }
 
 export function tokenFrom(env: Record<string, string | undefined>): string | undefined {
@@ -261,6 +337,12 @@ export async function loadDelivery(deps: DeliveryDeps = {}): Promise<DeliveryVie
   const extra = (await Promise.all(others.map((r) => fetchLedger(r, token, f)))).filter((a) => a.status === "ok");
   // Open PR count per shown app (a repo the token cannot read stays null, shown as "?").
   for (const a of [...known, ...extra]) a.openPrs = await countOpenPrs(a.repo, token, f);
+  // Until an app's live ledger can be read, show its pasted starting point (if any).
+  for (const a of known) {
+    if (a.status === "ok") continue;
+    const snap = loadSnapshot(a.repo, deps.snapshotDir);
+    if (snap) a.snapshot = snap;
+  }
   return {
     checkedAt: new Date(deps.now ? deps.now() : Date.now()).toISOString(),
     tokenSet: Boolean(token),

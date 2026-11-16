@@ -57,6 +57,7 @@ export interface AppOptions {
 }
 import { DEFAULT_WEEKLY, getLastRun, runWeeklySweep } from "./schedule/weekly.js";
 import { backupMode, backupStatus, runRestoreDrill } from "./backup/drill.js";
+import { runSecondCopy, secondCopyMode, secondCopyStatus } from "./backup/secondCopy.js";
 import { dropboxStatus } from "./backup/dropbox.js";
 import { lastIntegrity, refreshIntegrity } from "./integrity.js";
 import { bigBodyBypass, qualityRoutes } from "./quality/routes.js";
@@ -251,7 +252,16 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
 
   // --- Backup (status and restore drill) -------------------------------------
   app.get("/api/backup", (_req, res) => {
-    res.json(backupStatus(db));
+    res.json({ ...backupStatus(db), secondCopy: secondCopyStatus(db) });
+  });
+
+  // Second copy of secval's own database and code in Dropbox (secondCopy.ts). Logged-in only, like every /api route.
+  app.post("/api/backup/second-copy", async (_req, res) => {
+    if (secondCopyMode() !== "on") {
+      res.status(409).json({ error: "The second copy is switched off (SECVAL_SECOND_COPY is not on), so nothing was copied." });
+      return;
+    }
+    res.json(await runSecondCopy(db, { actor: ACTOR }));
   });
 
   app.post("/api/backup/drill", async (_req, res) => {

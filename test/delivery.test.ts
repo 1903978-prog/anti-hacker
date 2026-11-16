@@ -7,6 +7,7 @@ import {
   clearDeliveryCache,
   getDelivery,
   loadDelivery,
+  loadSnapshot,
   normStage,
   parseLedger,
   type GhFetcher,
@@ -15,17 +16,27 @@ import {
 const SAMPLE = readFileSync(new URL("./fixtures/delivery-ledger.json", import.meta.url), "utf8");
 const GH = "https://api.github.com";
 
-/** Canned GitHub: compplan has a ledger, a discovered extra repo has one, lm-op-model has none, nexus is unreadable. */
+/**
+ * Canned GitHub: compplan has its ledger only on an open PR branch, extra-app on integration,
+ * lm-op-model has none, nexus-eendigo is unreadable (404 "Not Found"), 10bonds has a broken file.
+ */
 function fakeGh() {
   const calls: { url: string; method: string; auth?: string }[] = [];
   const f: GhFetcher = async (url, init) => {
     calls.push({ url, method: init.method, auth: init.headers.authorization });
     const ok = (body: string) => ({ status: 200, text: async () => body });
-    const no = { status: 404, text: async () => "{}" };
-    if (url === `${GH}/repos/1903978-prog/compplan/contents/docs/delivery-ledger.json`) return ok(SAMPLE);
-    if (url === `${GH}/repos/1903978-prog/extra-app/contents/docs/delivery-ledger.json`) return ok(SAMPLE.replace('"project":"compplan"', '"project":"extra"'));
-    if (url === `${GH}/repos/1903978-prog/lm-op-model`) return ok("{}");
-    if (url === `${GH}/repos/1903978-prog/10bonds/contents/docs/delivery-ledger.json`) return ok("not json");
+    const no = { status: 404, text: async () => JSON.stringify({ message: "Not Found" }) };
+    const R = `${GH}/repos/1903978-prog/`;
+    const C = "/contents/docs/delivery-ledger.json?ref=";
+    if (["compplan", "lm-op-model", "10bonds", "extra-app"].some((r) => url === R + r)) return ok(JSON.stringify({ default_branch: "master" }));
+    if (url === `${R}compplan/pulls?state=open&per_page=100`)
+      return ok(JSON.stringify([
+        { head: { ref: "fork-branch", repo: { full_name: "someone/compplan" } } },
+        { head: { ref: "compplan_NOV26_github", repo: { full_name: "1903978-prog/compplan" } } },
+      ]));
+    if (url === `${R}compplan${C}compplan_NOV26_github`) return ok(SAMPLE);
+    if (url === `${R}extra-app${C}integration`) return ok(SAMPLE.replace('"project":"compplan"', '"project":"extra"'));
+    if (url === `${R}10bonds${C}integration`) return ok("not json");
     if (url.startsWith(`${GH}/search/issues`)) {
       if (url.includes(encodeURIComponent("repo:1903978-prog/compplan "))) return ok(JSON.stringify({ total_count: 27 }));
       if (url.includes(encodeURIComponent("repo:1903978-prog/lm-op-model "))) return ok(JSON.stringify({ total_count: 0 }));
@@ -79,6 +90,11 @@ describe("delivery ledger", () => {
       ["extra-app", "ok"],
     ]);
     expect(v.apps.map((a) => a.openPrs)).toEqual([27, 0, null, null, null]);
+    expect(v.apps.map((a) => a.branch)).toEqual(["compplan_NOV26_github", undefined, undefined, "integration", "integration"]);
+    // integration first, then the default branch, then the open PR branch; a fork's branch is never tried.
+    const tried = calls.filter((c) => c.url.includes("/compplan/contents/")).map((c) => c.url.split("ref=")[1]);
+    expect(tried).toEqual(["integration", "master", "compplan_NOV26_github"]);
+    expect(v.apps[2]!.message).toContain('GitHub said 404 "Not Found"');
     expect(JSON.stringify(v)).not.toContain("t-secret");
   });
 
@@ -100,6 +116,30 @@ describe("delivery ledger", () => {
     now += 11 * 60_000;
     await getDelivery(false, deps); // over 10 minutes old: re-read
     expect(calls.length).toBe(first * 3);
+  });
+
+  it("shows a pasted snapshot only while the live ledger cannot be read", async () => {
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "snap-"));
+    const snap = (repo: string) => ({ repo, label: "Pasted snapshot", groups: [{ group: "001A x", atoms: "1", stages: "✅❌❌❌❌", next_step: "go" }] });
+    writeFileSync(join(dir, "nexus-eendigo.json"), JSON.stringify(snap("nexus-eendigo")));
+    writeFileSync(join(dir, "compplan.json"), JSON.stringify(snap("compplan")));
+    const { f } = fakeGh();
+    const v = await loadDelivery({ env: { GITHUB_LEDGER_TOKEN: "t" }, fetcher: f, snapshotDir: dir });
+    expect(v.apps.find((a) => a.repo === "nexus-eendigo")!.snapshot!.groups[0]!.stages).toBe("✅❌❌❌❌");
+    // compplan's live file was read, so its snapshot is not shown.
+    expect(v.apps.find((a) => a.repo === "compplan")!.snapshot).toBeUndefined();
+  });
+
+  it("the saved Nexus snapshot matches what Livio pasted", () => {
+    const sn = loadSnapshot("nexus-eendigo")!;
+    expect(sn.groups).toHaveLength(16);
+    // As pasted: the rows add up to 82 while the headline says 84; the page says so instead of correcting it.
+    expect(sn.groups.reduce((n, g) => n + Number(g.atoms), 0)).toBe(82);
+    expect(sn.check).toContain("82");
+    expect(sn.counts).toContain("84 captured");
   });
 
   it("serves /api/delivery only to a signed-in caller", async () => {
