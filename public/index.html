@@ -137,6 +137,30 @@
       .tbody .tadv { margin-top: 2px; }
       .tbody .tadv.fail { color: var(--text); } .tbody .tadv.not-run { color: var(--muted); font-size: 13px; }
       .tbody .tdet { margin-top: 4px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+      .dlapps { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+      .dlapps button, .dlfilter button { padding: 6px 12px; font-size: 13px; }
+      .dlapps button[aria-pressed="true"], .dlfilter button[aria-pressed="true"] { background: var(--btn); color: #fff; border-color: var(--btn); }
+      .dlfilter { margin: 10px 0 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+      .dlpr { display: inline-flex; align-items: baseline; gap: 10px; border: 2px solid var(--accent); border-radius: 12px; padding: 8px 16px; margin-bottom: 10px; color: var(--text); text-decoration: none; }
+      .dlpr b { font-size: 40px; line-height: 1.1; }
+      .dlpr span { font-size: 14px; color: var(--muted); }
+      .dlsum { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+      .dlsum div { border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font-size: 12px; color: var(--muted); }
+      .dlsum b { display: block; font-size: 20px; color: var(--text); }
+      table.ledger td.st { text-align: center; font-size: 16px; white-space: nowrap; }
+      table.ledger th.st, table.ledger td.st, table.ledger td.st::before { text-align: center; font-size: 12px; overflow-wrap: normal; }
+      table.ledger td.aid { font: 600 12px ui-monospace, monospace; white-space: nowrap; }
+      table.ledger td.ask { font-style: italic; }
+      @media (max-width: 760px) {
+        table.ledger, table.ledger tbody { display: block; }
+        table.ledger thead { display: none; }
+        table.ledger tr { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px 4px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+        table.ledger td { border: 0; padding: 2px; }
+        table.ledger td.wide { grid-column: 1 / -1; }
+        table.ledger td::before { content: attr(data-label); display: block; font-size: 10px; font-weight: 600; color: var(--muted); font-style: normal; white-space: normal; }
+        table.ledger td.st { font-size: 15px; }
+        table.ledger td.st::before { overflow-wrap: anywhere; }
+      }
       .bigcost { display: inline-block; padding: 0 8px; border: 2px solid var(--high); border-radius: 999px; color: var(--high); font-weight: 700; white-space: nowrap; }
       table.rel { font-size: 13px; }
       table.rel th { font-size: 11px; vertical-align: bottom; }
@@ -172,6 +196,7 @@
       .ubar .good { background: #1f9d55; } .ubar .mid { background: #d98324; } .ubar .bad { background: #d23b3b; }
       .uprov ul { margin: 6px 0 0; padding-left: 16px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
       .uprov a, #dropboxText a, #rollbackText a { color: var(--accent); font-size: 13px; }
+      #dlSummary a:not(.dlpr) { color: var(--accent); }
       .uline { padding: 6px 0; border-top: 1px solid var(--border); font-size: 13px; }
       .uline:first-of-type { border-top: 0; }
       .uline .un { font-weight: 600; overflow-wrap: anywhere; }
@@ -192,6 +217,7 @@
     </header>
     <nav class="tabs" role="tablist">
       <a href="#health" data-tab="health" role="tab">Health dashboard</a>
+      <a href="#delivery" data-tab="delivery" role="tab">Delivery</a>
       <a href="#eees" data-tab="eees" role="tab">EEES quality</a>
       <a href="#scans" data-tab="scans" role="tab">Security scans</a>
       <a href="#tests" data-tab="tests" role="tab">All tests</a>
@@ -240,6 +266,28 @@
         <div id="reportMsg" class="note">Saved as estimates, with the date. secval picks the app for you; change it if it guessed wrong.</div>
       </div>
 
+      </section>
+
+      <section data-panel="delivery" hidden>
+      <div class="card">
+        <h2>Delivery ledger</h2>
+        <div class="note" style="margin:-6px 0 12px">
+          Every ask, split into atoms, from each app's <code>docs/delivery-ledger.json</code> on GitHub (read only).
+          ✅ done · ❌ not done · ⏸️ parked · ❓ unknown. Updates every 10 minutes.
+        </div>
+        <div id="dlApps" class="dlapps" role="group" aria-label="App"></div>
+        <div id="dlSummary" class="muted">Loading…</div>
+        <div class="dlfilter" role="group" aria-label="Filter">
+          <button class="ghost" data-dlfilter="open" aria-pressed="true">Open only</button>
+          <button class="ghost" data-dlfilter="done" aria-pressed="false">Done</button>
+          <button class="ghost" data-dlfilter="all" aria-pressed="false">All</button>
+        </div>
+        <div id="dlTable"></div>
+        <div class="row" style="margin-top:8px;align-items:center">
+          <span id="dlMsg" class="note" style="flex:1;margin:0"></span>
+          <button id="dlRefresh" class="ghost">Refresh now</button>
+        </div>
+      </div>
       </section>
 
       <section data-panel="eees" hidden>

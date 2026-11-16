@@ -18,7 +18,7 @@ import { CLASSIFIED } from "../server/dbarch/registry.js";
 import { FakePg, sampleTables } from "../test/dbarch-fake.js";
 
 const TOKEN = "page-check-token";
-const TABS = ["health", "eees", "scans", "tests", "usage", "aeos", "relationships", "database", "settings"];
+const TABS = ["health", "delivery", "eees", "scans", "tests", "usage", "aeos", "relationships", "database", "settings"];
 const WIDTHS = [1440, 390, 360];
 const axeSource = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
 
@@ -54,7 +54,20 @@ async function main(): Promise<void> {
   CLASSIFIED.atlas.push({ column: "projects.client_id", classification: "mandatory", evidence: "page-check sample" });
   const dbEnv = { SECVAL_DBARCH_URL_ATLAS: "a", SECVAL_DBARCH_URL_LM_OP_MODEL: "l", SECVAL_DBARCH_URL_NEXUS: "n" };
   const dbarch = { env: dbEnv, now: () => new Date(), connect: async () => new FakePg(sampleTables({ orphan: true })) };
-  const app = createApp(db, { apiToken: TOKEN, dbarch }); // seeds the allowlist the reports attach to
+  // Delivery sample: the test fixture ledger for compplan, no network.
+  const ledger = readFileSync(new URL("../test/fixtures/delivery-ledger.json", import.meta.url), "utf8");
+  const delivery = {
+    env: { GITHUB_LEDGER_TOKEN: "sample" },
+    fetcher: async (url: string) =>
+      url.endsWith("/repos/1903978-prog/compplan")
+        ? { status: 200, text: async () => JSON.stringify({ default_branch: "master" }) }
+        : url.includes("/compplan/contents/docs/delivery-ledger.json?ref=integration")
+        ? { status: 200, text: async () => ledger }
+        : url.includes("/search/issues")
+          ? { status: 200, text: async () => JSON.stringify({ total_count: 27 }) }
+          : { status: 404, text: async () => "{}" },
+  };
+  const app = createApp(db, { apiToken: TOKEN, dbarch, delivery }); // seeds the allowlist the reports attach to
   await runAll(db, "deep", dbarch);
   const loaded = loadReportFiles(db).filter((r) => r.loaded).length;
   const server = app.listen(0);
@@ -80,6 +93,18 @@ async function main(): Promise<void> {
           await page.goto(`${base}/#${tab}`);
           await page.locator(`section[data-panel="${tab}"]`).waitFor({ state: "visible" });
           await page.waitForTimeout(700); // let the tab's data arrive
+          if (tab === "delivery") await page.locator("table.ledger").waitFor({ timeout: 5000 }).catch(() => problems.push(`${width}px ${scheme}: delivery table missing`));
+          if (tab === "delivery") {
+            // The pasted Nexus snapshot (shown while its live file cannot be read) must also fit and pass axe.
+            await page.click('[data-dlapp="nexus-eendigo"]');
+            await page.locator("table.snap").waitFor({ timeout: 5000 }).catch(() => problems.push(`${width}px ${scheme}: Nexus snapshot missing`));
+            const w2 = await sideways(page);
+            if (w2) problems.push(`delivery snapshot @ ${width}px ${scheme}: ${w2}`);
+            for (const v of await axe(page)) problems.push(`delivery snapshot @ ${width}px ${scheme}: ${v}`);
+            if (process.env.PAGE_SHOTS) await page.screenshot({ path: `${process.env.PAGE_SHOTS}/delivery-snap-${width}-${scheme}.png`, fullPage: true });
+            await page.click('[data-dlapp="compplan"]');
+          }
+          if (tab === "delivery" && process.env.PAGE_SHOTS) await page.screenshot({ path: `${process.env.PAGE_SHOTS}/delivery-${width}-${scheme}.png`, fullPage: true });
           if (tab === "tests") await page.locator(".trow").first().waitFor({ timeout: 5000 }).catch(() => {});
           const where = `${tab} @ ${width}px ${scheme}`;
           const wide = await sideways(page);

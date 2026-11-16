@@ -80,6 +80,24 @@ function saveDrill(db: DB, r: DrillResult): void {
   ).run(DRILL_KEY, JSON.stringify(r));
 }
 
+/**
+ * Opens a copy of the store read-only and checks it is intact and really a
+ * secval store (it has the allowlist table). Used by the restore drill and by
+ * the second (Dropbox) copy's restore check. Throws if the file cannot be read.
+ */
+export function checkStoreCopy(path: string): { ok: boolean; detail: string; allowlistRows?: number } {
+  const copy = new Database(path, { readonly: true, fileMustExist: true });
+  try {
+    const check = copy.pragma("integrity_check", { simple: true });
+    const rows = (copy.prepare(`SELECT COUNT(*) AS n FROM allowlist`).get() as { n: number }).n;
+    return check === "ok"
+      ? { ok: true, detail: "intact", allowlistRows: rows }
+      : { ok: false, detail: `Restored copy is damaged: ${String(check)}` };
+  } finally {
+    copy.close();
+  }
+}
+
 /** Runs one restore drill and records the result (also in the audit trail). */
 export async function runRestoreDrill(
   db: DB,
@@ -92,17 +110,10 @@ export async function runRestoreDrill(
   let result: DrillResult;
   try {
     await restore(out);
-    const copy = new Database(out, { readonly: true, fileMustExist: true });
-    try {
-      const check = copy.pragma("integrity_check", { simple: true });
-      const rows = (copy.prepare(`SELECT COUNT(*) AS n FROM allowlist`).get() as { n: number }).n;
-      result =
-        check === "ok"
-          ? { ok: true, at: now().toISOString(), detail: "Backup restored and checked", allowlistRows: rows }
-          : { ok: false, at: now().toISOString(), detail: `Restored copy is damaged: ${String(check)}` };
-    } finally {
-      copy.close();
-    }
+    const c = checkStoreCopy(out);
+    result = c.ok
+      ? { ok: true, at: now().toISOString(), detail: "Backup restored and checked", allowlistRows: c.allowlistRows }
+      : { ok: false, at: now().toISOString(), detail: c.detail };
   } catch (err) {
     result = { ok: false, at: now().toISOString(), detail: `Restore failed: ${(err as Error).message}`.slice(0, 300) };
   } finally {

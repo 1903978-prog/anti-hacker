@@ -42,6 +42,10 @@ services:
       # Usage tab (read-only tokens; each tile says "not connected" until set).
       - key: GITHUB_USAGE_TOKEN
         sync: false
+      # Delivery menu: read-only token for docs/delivery-ledger.json in private
+      # repos (Contents: read). Optional: falls back to GITHUB_USAGE_TOKEN.
+      - key: GITHUB_LEDGER_TOKEN
+        sync: false
       - key: RENDER_API_KEY
         sync: false
       - key: FLY_API_TOKEN

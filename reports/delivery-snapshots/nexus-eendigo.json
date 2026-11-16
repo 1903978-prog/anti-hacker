@@ -1,0 +1,112 @@
+{
+  "repo": "nexus-eendigo",
+  "label": "Pasted snapshot, 16 Nov 2026, 06:30 UTC",
+  "source": "Registry summary pasted by Livio in chat on 16 Nov 2026, 07:18 UTC (last synced 16 Nov 2026 06:30 UTC). Shown as written; replaced by the live ledger file once it can be read.",
+  "headline": "From registry (last synced 16 Nov 2026 06:30 UTC): 84 atoms, 0 fully live. Live is still 4b37892.",
+  "check": "Secval check: the group rows below add up to 82 atoms, not the 84 in the headline. Shown as pasted; not corrected.",
+  "groups": [
+    {
+      "group": "001A–001B backups",
+      "atoms": "2",
+      "stages": "❓❓❓❓❓ / ❌❓❌❓❓",
+      "next_step": "verify last Dropbox run; your call on rebuilding auto-prune"
+    },
+    {
+      "group": "002A ATENA sync",
+      "atoms": "1",
+      "stages": "✅❓❌❌❌",
+      "next_step": "Batch C with ATENA #814, needs your `approve <SHA>`"
+    },
+    {
+      "group": "003A backup dedup",
+      "atoms": "1",
+      "stages": "✅✅✅✅❌",
+      "next_step": "check Dropbox `/nexus/BLOBS`"
+    },
+    {
+      "group": "004A CI green",
+      "atoms": "1",
+      "stages": "✅✅✅✅❓",
+      "next_step": "keep main green"
+    },
+    {
+      "group": "005A–005C BytePlus",
+      "atoms": "3",
+      "stages": "✅❓❌❌❌ / ❓❓❌❌❌ / ❌❌❌❌❌",
+      "next_step": "verify cap tests; build 005C routing"
+    },
+    {
+      "group": "006A–006B deck page",
+      "atoms": "2",
+      "stages": "✅❓❌❌❌ / ❓❓❌❌❌",
+      "next_step": "not released; Qwen missing"
+    },
+    {
+      "group": "007A–007D key issues",
+      "atoms": "4",
+      "stages": "✅✅❌❌❌ ×2, ✅❓❌❌❌ ×2",
+      "next_step": "CI on exact heads, reviewer, GO"
+    },
+    {
+      "group": "008A Defne",
+      "atoms": "1",
+      "stages": "✅❓❌❌❌",
+      "next_step": "#266 review, migration 19 rehearsal, GO"
+    },
+    {
+      "group": "009A–009B schema governance",
+      "atoms": "2",
+      "stages": "✅✅❌❌❌",
+      "next_step": "awaits `approve <SHA>` (#273)"
+    },
+    {
+      "group": "010A–010B DB work",
+      "atoms": "2",
+      "stages": "⏸❌❌❌❌",
+      "next_step": "starts after Batch A ships"
+    },
+    {
+      "group": "011A–011B dates",
+      "atoms": "2",
+      "stages": "✅✅❌❌❌",
+      "next_step": "#271, CI passed on 63c08b9; GO"
+    },
+    {
+      "group": "012A privacy masking",
+      "atoms": "1",
+      "stages": "✅✅❌❌❌",
+      "next_step": "#268, CI passed on 5b9311c; security review, GO"
+    },
+    {
+      "group": "013A release workflow",
+      "atoms": "1",
+      "stages": "✅✅❌❌❌",
+      "next_step": "needs `COPILOT_ASSIGNMENT_TOKEN`"
+    },
+    {
+      "group": "014A–014B docs",
+      "atoms": "2",
+      "stages": "✅n/a❌❌❌",
+      "next_step": "docs only"
+    },
+    {
+      "group": "015A PR cleanup",
+      "atoms": "1",
+      "stages": "✅n/a❓n/an/a",
+      "next_step": "done, nothing to deploy"
+    },
+    {
+      "group": "016A–023H CoDesign directive",
+      "atoms": "56",
+      "stages": "26 are ❌❌❌❌❌, 30 are ❓❓❓❓❓",
+      "next_step": "Phase 1 mapping against existing CoDesign"
+    }
+  ],
+  "counts": "Atoms: 84 captured · 18 implemented · 10 tested · 2 merged · 2 deployed · 0 verified live · 3 parked",
+  "blockers": [
+    "All deploys wait on your `approve <SHA>` for the exact commit.",
+    "#270 needs `COPILOT_ASSIGNMENT_TOKEN`.",
+    "The 56 CoDesign atoms need their Phase 1 mapping first."
+  ],
+  "footer": "nexus-eendigo · integration: 0 commits ahead of main · live: 4b37892 · last verified: /api/version checked this turn"
+}
