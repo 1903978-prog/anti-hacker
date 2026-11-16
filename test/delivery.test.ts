@@ -79,10 +79,15 @@ describe("delivery ledger", () => {
     expect(p({})).toBe(0);
     expect(p({ in_progress: "yes" })).toBe(20);
     expect(p({ implemented: "yes" })).toBe(40);
-    expect(p({ implemented: "yes", tested: "yes" })).toBe(55);
-    expect(p({ implemented: "yes", tested: "yes", merged: "yes" })).toBe(70);
-    expect(p({ implemented: "yes", tested: "yes", merged: "yes", deployed: "yes" })).toBe(85);
-    expect(p({ implemented: "yes", tested: "yes", merged: "yes", deployed: "yes", live_checked: "yes" })).toBe(100);
+    const t = { tested: "yes", head_sha: "abcdef0123", tested_sha: "abcdef0" } as const;
+    expect(p({ implemented: "yes", ...t })).toBe(55);
+    expect(p({ implemented: "yes", ...t, merged: "yes" })).toBe(70);
+    expect(p({ implemented: "yes", ...t, merged: "yes", deployed: "yes" })).toBe(85);
+    expect(p({ implemented: "yes", ...t, merged: "yes", deployed: "yes", live_checked: "yes" })).toBe(100);
+    // "Tested" without the SHA it ran on, or with a too-short prefix, does not count.
+    const all = { implemented: "yes", tested: "yes", merged: "yes", deployed: "yes", live_checked: "yes" } as const;
+    expect(p(all)).toBe(40);
+    expect(p({ ...all, head_sha: "abcdef0123", tested_sha: "a" })).toBe(40);
     // A later stage never lifts the bar past an earlier one that is not done or unknown.
     expect(p({ implemented: "yes", tested: "unknown", merged: "yes", deployed: "yes" })).toBe(40);
     // Tests on an older SHA do not count; a matching short SHA does.
@@ -123,7 +128,7 @@ describe("delivery ledger", () => {
   });
 
   it("never rounds an unfinished action up to 100%", () => {
-    const yes = { implemented: "yes", tested: "yes", merged: "yes", deployed: "yes", live_checked: "yes" };
+    const yes = { implemented: "yes", tested: "yes", merged: "yes", deployed: "yes", live_checked: "yes", head_sha: "abcdef0123", tested_sha: "abcdef0123" };
     const atoms = Array.from({ length: 40 }, (_, i) => ({ id: `t_${i}`, parent: "t", ...yes }));
     atoms[0] = { ...atoms[0]!, live_checked: "no" };
     const x = parseLedger("x", JSON.stringify({ atoms })).actions[0]!;
@@ -234,8 +239,10 @@ describe("delivery ledger: GitHub evidence", () => {
   const ledger = (rows: object[]) => parseLedger("compplan", JSON.stringify({ atoms: rows }));
 
   it("reads PR numbers in the usual spellings", () => {
-    expect(["#930", "930", "PR 930", "https://github.com/o/r/pull/930"].map(prNumber)).toEqual([930, 930, 930, 930]);
-    expect(["", "none", "unknown"].map(prNumber)).toEqual([null, null, null]);
+    const p = (v: string) => prNumber(v, "compplan");
+    expect(["#930", "930", "PR 930", "PR-930", "https://github.com/1903978-prog/compplan/pull/930"].map(p)).toEqual([930, 930, 930, 930, 930]);
+    // Another repo's URL, several PRs, or no number: nothing is guessed.
+    expect(["https://github.com/1903978-prog/nexus-eendigo/pull/12", "see #12 and #930", "", "none", "unknown"].map(p)).toEqual([null, null, null, null, null]);
   });
 
   it("fills branch, exact head SHA and PR status from GitHub and keeps #930 at 40%", async () => {
@@ -266,6 +273,12 @@ describe("delivery ledger: GitHub evidence", () => {
     const merged = await enrichFromGithub(ledger([{ ...row, merged: "yes", tested_sha: HEAD930 }]), undefined, gh, now);
     expect(merged.atoms[0]!.merged).toBe("yes");
     expect(merged.atoms[0]!.notes.join(" ")).toContain("GitHub shows this PR not merged");
+  });
+
+  it("does not count stale tests in the Tested box", () => {
+    const app = parseLedger("x", JSON.stringify({ atoms: [{ id: "a", implemented: "yes", tested: "yes", head_sha: "1111111aa", tested_sha: "2222222bb" }] }));
+    expect(app.counts.tested).toBe(0);
+    expect(app.atoms[0]!.percent).toBe(40);
   });
 
   it("keeps the ledger's own values when a PR cannot be read", async () => {

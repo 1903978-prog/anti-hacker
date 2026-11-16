@@ -227,6 +227,9 @@ export function shaDiffers(a: string, b: string): boolean {
   const x = a.trim().toLowerCase();
   const y = b.trim().toLowerCase();
   if (!x || !y) return false;
+  // A prefix only counts as the same commit when it has at least 7 hex characters.
+  const short = x.length <= y.length ? x : y;
+  if (!/^[0-9a-f]{7,40}$/.test(short)) return true;
   return !(x.startsWith(y) || y.startsWith(x));
 }
 
@@ -238,12 +241,12 @@ type ProgressIn = Pick<Atom, StageKey | "kind" | "in_progress" | "deliverable_co
  * One atom's progress. Stages count only in order and only when "yes": a later
  * stage marked done does not lift the bar past an earlier stage that is not
  * done or unknown (each stage still shows on its own in the table). Tests count
- * only when they ran on the current head SHA. When GitHub gives the PR's current
- * head, the ledger must name the tested SHA; otherwise (no PR) the ledger's word stands.
+ * only when the ledger names the SHA they ran on and it matches the current head SHA
+ * (from GitHub when a PR is named, else the ledger's head_sha); without both, 40% at most.
  */
 export function atomProgress(a: ProgressIn): { percent: number; tested_stale: boolean } {
-  // When GitHub tells us the PR's current head, "tested" must name that exact SHA.
-  const unproven = Boolean(a.github) && !a.tested_sha.trim();
+  // "Tested" counts only when the ledger names the SHA the tests ran on and it is the current head.
+  const unproven = !a.tested_sha.trim() || !a.head_sha.trim();
   const tested_stale = a.tested === "yes" && (shaDiffers(a.tested_sha, a.head_sha) || unproven);
   const start = a.in_progress === "yes" ? 20 : 0;
   if (a.kind === "non-code") return { percent: a.deliverable_confirmed === "yes" ? 100 : start, tested_stale: false };
@@ -385,7 +388,7 @@ function countAtoms(atoms: Atom[]): AppLedger["counts"] {
   for (const a of atoms) {
     counts.total++;
     if (a.done) counts.done++;
-    for (const k of STAGES) if (a[k] === "yes") counts[k]++;
+    for (const k of STAGES) if (a[k] === "yes" && !(k === "tested" && a.tested_stale)) counts[k]++;
   }
   counts.open = counts.total - counts.done;
   return counts;
@@ -405,10 +408,21 @@ export function recalc(app: AppLedger): AppLedger {
   return app;
 }
 
-/** "#930", "930", "PR 930", or a pull URL → 930; anything else → null. */
-export function prNumber(v: string): number | null {
-  const m = /(?:pull\/|#|^\s*(?:pr\s*)?)(\d{1,6})\b/i.exec(v ?? "");
-  return m ? Number(m[1]) : null;
+/**
+ * "#930", "930", "PR 930", "PR-930" or this repo's pull URL → 930. A pull URL of another
+ * repository, or text naming more than one PR, gives null (never guess which one).
+ */
+export function prNumber(v: string, repo?: string): number | null {
+  const t = (v ?? "").trim();
+  const url = /github\.com\/([^/\s]+)\/([^/\s]+)\/pull\/(\d{1,6})/i.exec(t);
+  if (url) {
+    if (repo && (url[1]!.toLowerCase() !== OWNER.toLowerCase() || url[2]!.toLowerCase() !== repo.toLowerCase())) return null;
+    return Number(url[3]);
+  }
+  const nums = new Set<number>();
+  for (const m of t.matchAll(/(?:#|\bpr[\s#-]*)(\d{1,6})\b/gi)) nums.add(Number(m[1]));
+  if (!nums.size && /^\d{1,6}$/.test(t)) nums.add(Number(t));
+  return nums.size === 1 ? [...nums][0]! : null;
 }
 
 const DAY = 86_400_000;
@@ -429,7 +443,7 @@ export function housekeepingFrom(pr: GithubPr, now: number): string {
 /** Fills branch, head SHA and PR housekeeping from GitHub where the ledger names a PR (GET only, at most 40 PRs per app). */
 export async function enrichFromGithub(app: AppLedger, token: string | undefined, f: GhFetcher, now: number): Promise<AppLedger> {
   if (app.status !== "ok") return app;
-  const nums = [...new Set(app.atoms.map((a) => prNumber(a.pr)).filter((n): n is number => n != null))].slice(0, 40);
+  const nums = [...new Set(app.atoms.map((a) => prNumber(a.pr, app.repo)).filter((n): n is number => n != null))].slice(0, 40);
   const prs = new Map<number, GithubPr>();
   await Promise.all(
     nums.map(async (n) => {
@@ -441,7 +455,8 @@ export async function enrichFromGithub(app: AppLedger, token: string | undefined
         if (!/^[0-9a-f]{40}$/i.test(sha)) return;
         prs.set(n, {
           number: n,
-          url: String(b.html_url ?? `https://github.com/${OWNER}/${app.repo}/pull/${n}`),
+          // Built from known parts, never taken from the response, so the link cannot point elsewhere.
+          url: `https://github.com/${OWNER}/${app.repo}/pull/${n}`,
           state: b.state === "closed" ? "closed" : "open",
           draft: b.draft === true,
           merged: Boolean(b.merged_at) || b.merged === true,
@@ -455,8 +470,9 @@ export async function enrichFromGithub(app: AppLedger, token: string | undefined
     }),
   );
   for (const a of app.atoms) {
-    const n = prNumber(a.pr);
+    const n = prNumber(a.pr, app.repo);
     const pr = n == null ? undefined : prs.get(n);
+    if (n == null && a.pr.trim()) a.notes.push(`"${a.pr}" is not one pull request of this repository, so nothing was read from GitHub.`);
     if (!pr) {
       if (n != null) a.notes.push(`PR #${n} could not be read from GitHub; showing the ledger's values.`);
       continue;

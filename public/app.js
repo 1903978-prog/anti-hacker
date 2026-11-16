@@ -61,7 +61,7 @@ async function migrateOldToken() {
   }
 }
 const el = (id) => document.getElementById(id);
-const esc = (s) => String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 async function refreshKillSwitch() {
   const { body } = await api("/health");
