@@ -470,6 +470,7 @@ function refreshAll() {
   if (currentTab === "aeos") refreshAeos();
   if (currentTab === "relationships") refreshRelationships();
   if (currentTab === "eees") refreshEees();
+  if (currentTab === "delivery") refreshDelivery(false);
 
 }
 
@@ -1093,7 +1094,7 @@ el("eeesRefresh").onclick = async () => {
 // #tests, #usage, #aeos, #backup, #settings) picks the menu, so links and reloads keep it; the last one
 // used is remembered in this browser. The token box sits above the menus, so it
 // shows whichever menu is open.
-const TABS = ["health", "eees", "scans", "tests", "usage", "aeos", "relationships", "database", "backup", "settings"];
+const TABS = ["health", "delivery", "eees", "scans", "tests", "usage", "aeos", "relationships", "database", "backup", "settings"];
 let currentTab = "health";
 function showTab(name) {
   const tab = TABS.includes(name) ? name : "health";
@@ -1107,6 +1108,7 @@ function showTab(name) {
   if (tab === "aeos" && signedIn) refreshAeos();
   if (tab === "relationships" && signedIn) refreshRelationships();
   if (tab === "eees" && signedIn) refreshEees();
+  if (tab === "delivery" && signedIn) refreshDelivery(false);
   if (tab === "database" && signedIn && typeof loadDbarch === "function") loadDbarch();
 }
 function storedTab() {
@@ -1292,6 +1294,101 @@ el("testsRunBtn").onclick = async () => {
     refreshAudit();
   }
 };
+
+// --- Delivery ledger -----------------------------------------------------------
+// One sub-menu per app; each shows that app's docs/delivery-ledger.json (read
+// from GitHub by the server, read only) as one row per atom. Default: open only.
+const DL_ICON = { yes: "✅", no: "❌", parked: "⏸️", unknown: "❓" };
+const DL_WORD = { yes: "done", no: "not done", parked: "parked", unknown: "unknown" };
+const DL_STAGES = [["implemented", "Implemented"], ["tested", "Tested"], ["merged", "Merged"], ["deployed", "Deployed"], ["live_checked", "Live checked"]];
+let dlData = null;
+let dlApp = null;
+let dlFilter = "open";
+try { dlApp = localStorage.getItem("secval_dl_app"); } catch { /* not remembered */ }
+
+function dlAsked(a) {
+  const d = /^\d{4}-\d{2}-\d{2}/.test(a.asked_at) ? formatDate(a.asked_at.slice(0, 10)) : a.asked_at || "Unknown";
+  const t = /^\d{1,2}:\d{2}/.test(a.asked_time || "") ? a.asked_time.slice(0, 5) : "time unknown";
+  return `${d}, ${t}`;
+}
+
+function renderDelivery() {
+  const d = dlData;
+  if (!d) return;
+  if (!d.apps.some((a) => a.repo === dlApp)) dlApp = (d.apps.find((a) => a.status === "ok") || d.apps[0] || {}).repo;
+  el("dlApps").innerHTML = d.apps
+    .map((a) => `<button class="ghost" data-dlapp="${esc(a.repo)}" aria-pressed="${a.repo === dlApp}">${esc(a.project)}${a.status === "ok" ? ` (${a.counts.open})` : ""}</button>`)
+    .join("");
+  const a = d.apps.find((x) => x.repo === dlApp);
+  for (const b of document.querySelectorAll("[data-dlfilter]")) b.setAttribute("aria-pressed", String(b.dataset.dlfilter === dlFilter));
+  if (!a) {
+    el("dlSummary").textContent = "No apps.";
+    el("dlTable").innerHTML = "";
+    return;
+  }
+  if (a.status !== "ok") {
+    el("dlSummary").innerHTML = `<span class="muted">${esc(a.message || "No ledger yet.")}</span> <a href="${esc(a.link)}" target="_blank" rel="noopener noreferrer">Open on GitHub</a>`;
+    el("dlTable").innerHTML = "";
+    return;
+  }
+  const c = a.counts;
+  el("dlSummary").innerHTML =
+    `<div class="dlsum"><div><b>${c.total}</b>atoms</div><div><b>${c.open}</b>open</div>` +
+    DL_STAGES.map(([k, label]) => `<div><b>${c[k]}</b>${esc(label)}</div>`).join("") +
+    `<div><b>${c.done}</b>done</div></div>` +
+    (a.lastSynced ? `<div class="note">Ledger last synced ${esc(formatDateTime(a.lastSynced))}.</div>` : "") +
+    (a.message ? `<div class="note">${esc(a.message)}</div>` : "");
+  const rows = a.atoms.filter((x) => dlFilter === "all" || (dlFilter === "done" ? x.done : !x.done));
+  if (!rows.length) {
+    el("dlTable").innerHTML = `<p class="muted">${dlFilter === "done" ? "No atoms fully done yet." : dlFilter === "open" ? "No open atoms." : "No atoms."}</p>`;
+    return;
+  }
+  const st = (x, k, label) => `<td class="st" data-label="${esc(label)}" title="${esc(label)}: ${DL_WORD[x[k]]}"><span role="img" aria-label="${DL_WORD[x[k]]}">${DL_ICON[x[k]]}</span></td>`;
+  el("dlTable").innerHTML =
+    `<table class="ledger"><thead><tr><th scope="col">Atom ID</th><th scope="col">Asked</th><th scope="col">Original ask</th><th scope="col">This atom</th>` +
+    DL_STAGES.map(([, label]) => `<th scope="col" class="st">${esc(label)}</th>`).join("") +
+    `<th scope="col">Next step</th></tr></thead><tbody>` +
+    rows
+      .map(
+        (x) =>
+          `<tr><td class="aid wide" data-label="Atom ID">${esc(x.id)}</td><td class="wide" data-label="Asked">${esc(dlAsked(x))}</td>` +
+          `<td class="ask wide" data-label="Original ask">${esc(x.original_ask)}</td><td class="wide" data-label="This atom">${esc(x.atom)}</td>` +
+          DL_STAGES.map(([k, label]) => st(x, k, label)).join("") +
+          `<td class="wide" data-label="Next step">${esc(x.next_step)}</td></tr>`,
+      )
+      .join("") +
+    "</tbody></table>";
+}
+
+async function refreshDelivery(force) {
+  const { ok, status, body } = await api("/api/delivery" + (force ? "?refresh=1" : ""));
+  if (!ok) {
+    el("dlSummary").textContent = status === 401 ? NEED_TOKEN : "Could not load the ledgers: " + (body.error || status);
+    return;
+  }
+  dlData = body;
+  renderDelivery();
+  el("dlMsg").textContent =
+    (body.checkedAt ? "Last checked " + formatDateTime(body.checkedAt) : "") +
+    (body.tokenSet ? "" : " · No GitHub token set: private repositories cannot be read.");
+}
+el("dlApps").onclick = (e) => {
+  const b = e.target.closest("[data-dlapp]");
+  if (!b) return;
+  dlApp = b.dataset.dlapp;
+  try { localStorage.setItem("secval_dl_app", dlApp); } catch { /* not remembered */ }
+  renderDelivery();
+};
+for (const b of document.querySelectorAll("[data-dlfilter]")) {
+  b.onclick = () => { dlFilter = b.dataset.dlfilter; renderDelivery(); };
+}
+el("dlRefresh").onclick = async () => {
+  el("dlRefresh").disabled = true;
+  el("dlMsg").textContent = "Checking…";
+  try { await refreshDelivery(true); } finally { el("dlRefresh").disabled = false; }
+};
+// Every 10 minutes while the Delivery menu is open.
+setInterval(() => { if (currentTab === "delivery" && signedIn && !document.hidden) refreshDelivery(true); }, 10 * 60_000);
 
 showTab(location.hash.slice(1) || storedTab() || "health");
 

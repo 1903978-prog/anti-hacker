@@ -52,6 +52,8 @@ export interface AppOptions {
   eeesDir?: string;
   /** Database scorecard: connector, env and clock (tests hand in fakes). */
   dbarch?: DbarchDeps;
+  /** Delivery ledger: GitHub caller, env and clock (tests hand in fakes). */
+  delivery?: DeliveryDeps;
 }
 import { DEFAULT_WEEKLY, getLastRun, runWeeklySweep } from "./schedule/weekly.js";
 import { backupMode, backupStatus, runRestoreDrill } from "./backup/drill.js";
@@ -62,6 +64,7 @@ import { dbarchRoutes, defaultDeps as dbarchDefaultDeps } from "./dbarch/routes.
 import { runAll as dbarchRunAll, type Deps as DbarchDeps } from "./dbarch/engine.js";
 import { listDeploys, rollbackTo, type RenderFetcher } from "./deploy/rollback.js";
 import { eeesView } from "./eees/registry.js";
+import { getDelivery, type DeliveryDeps } from "./delivery/ledger.js";
 
 // Until a real auth layer exists, the actor is a fixed operator identity.
 // Every governance action is still attributed in the audit trail.
@@ -401,6 +404,11 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
       console.error("secval: EEES files could not be read:", err instanceof Error ? err.message : "unknown error");
       res.status(500).json({ error: "The EEES standard files could not be read." });
     }
+  });
+
+  // --- Delivery ledger (16 Nov 2026): each app's docs/delivery-ledger.json, read-only from GitHub ----
+  app.get("/api/delivery", async (req, res) => {
+    res.json(await getDelivery(req.query.refresh === "1", options.delivery));
   });
 
   // What tomorrow's daily e-mail would say, and whether e-mail is configured.
