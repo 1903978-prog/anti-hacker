@@ -7,6 +7,7 @@ import type { DB } from "../db.js";
 import { appendAudit } from "../audit/log.js";
 import { checkStoreCopy } from "./drill.js";
 import { accessTokenWithScope, parisDate, type DropboxFetcher, type Env } from "./dropbox.js";
+import { attestationKey, dropboxContentHash, signManifest } from "./attestation.js";
 
 /**
  * Second backup copy of secval itself (database AND code) in Livio's Dropbox,
@@ -454,15 +455,18 @@ export async function runSecondCopy(db: DB, opts: RunOptions = {}): Promise<Seco
           { ...auth, "Dropbox-API-Arg": JSON.stringify({ path }) });
         const back = Buffer.from(await res.arrayBuffer());
         if (sha256(back) !== hash) throw new Error("the downloaded copy differs from what was uploaded");
+        const signKey = attestationKey(env);
+        if (!signKey) throw new Error("SECVAL_BACKUP_KEY is missing, so the manifest cannot be signed");
         const checked = checkCopy(kind, decrypt(back, k.key), work, commit);
-        const manifest = {
+        const manifest = signManifest({
           backupId, app: "secval", kind, createdAt: now.toISOString(), sourceCommit: commit,
-          file: path, bytes: blob.length, sha256: hash, plainSha256: sha256(plain),
+          file: path, bytes: blob.length, sha256: hash, dropboxContentHash: dropboxContentHash(blob), plainSha256: sha256(plain),
           format: kind === "db" ? "AES-256-GCM(gzip(SQLite VACUUM INTO))" : "AES-256-GCM(zip of the allowlisted release source; source-only, rebuild needs npm ci and the server secrets)",
           ...(code ? { contents: code.files.map((x) => ({ name: x.name, sha256: sha256(x.data) })), refusedCount: code.refused.length } : {}),
           keyId: k.keyId, keySource: k.source, restoreCheck: checked,
           otherCopies: kind === "db" ? "Litestream replica in Backblaze B2 (bucket path secval)" : "GitHub 1903978-prog/anti-hacker",
-        };
+          signedWith: "HMAC-SHA256, key HKDF(SECVAL_BACKUP_KEY, info manifest-sign-v1)",
+        }, signKey);
         await call(f, "https://content.dropboxapi.com/2/files/upload",
           { ...auth, "content-type": "application/octet-stream", "Dropbox-API-Arg": JSON.stringify({ path: `${folder}/${yymmdd(day)}-secval-${kind}.manifest.json`, mode: "add", autorename: false, mute: true }) },
           Buffer.from(JSON.stringify(manifest, null, 2)));

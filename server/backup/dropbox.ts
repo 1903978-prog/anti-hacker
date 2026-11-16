@@ -30,6 +30,7 @@
  * This is not scanning: it reads Livio's own account, so it does not go through
  * the scan policy engine.
  */
+import { attestationKey, verifyCopy } from "./attestation.js";
 
 export type DropboxStatus = "ok" | "red" | "not-connected" | "error";
 
@@ -84,6 +85,8 @@ export interface FileEntry {
   name: string;
   size?: number;
   path?: string;
+  /** Dropbox's content_hash of the stored bytes (from the folder listing). */
+  contentHash?: string;
 }
 
 export interface DropboxResponse {
@@ -201,21 +204,63 @@ export function centralProblems(status: unknown, now: Date): { byApp: Map<string
   return { byApp, note: notes.join(" ") };
 }
 
+/** SecVal's own encrypted copies (written by secondCopy.ts). */
+export const SECVAL_OWN_RE = /^\d{6}-secval-(code|db)\.(?:zip|dump)\.enc$/;
+
+/**
+ * Verifies, at check time, every SecVal own copy inside the counting window: downloads its manifest,
+ * checks the signature and that Dropbox's listed size and content_hash equal the signed values.
+ * Returns the verified paths (lower case) and one reason per copy that was not counted.
+ */
+export async function verifySecvalCopies(
+  files: FileEntry[],
+  f: DropboxFetcher,
+  authorization: string,
+  env: Env,
+  now: Date,
+): Promise<{ verified: Set<string>; problems: string[] }> {
+  const verified = new Set<string>();
+  const problems: string[] = [];
+  const key = attestationKey(env);
+  const today = parisDate(now);
+  for (const file of files) {
+    if (!SECVAL_OWN_RE.test(file.name) || !file.path) continue;
+    const at = parseCopyName(file.name);
+    if (!at || daysBetween(parisDate(at.at), today) > WINDOW_DAYS) continue;
+    const manifestPath = file.path.replace(/\.(?:zip|dump)\.enc$/, ".manifest.json");
+    let manifest: unknown = null;
+    if (key && files.some((x) => (x.path ?? "").toLowerCase() === manifestPath.toLowerCase())) {
+      try {
+        manifest = await post(f, "https://content.dropboxapi.com/2/files/download",
+          { authorization, "Dropbox-API-Arg": JSON.stringify({ path: manifestPath }) });
+      } catch (err) {
+        problems.push(`SecVal copy ${file.name} not counted: its manifest could not be read (${failReason(err)})`);
+        continue;
+      }
+    }
+    const why = verifyCopy(file, manifest, key);
+    if (why) problems.push(`SecVal copy ${file.name} not counted: ${why}`);
+    else verified.add(file.path.toLowerCase());
+  }
+  return { verified, problems };
+}
+
 /** Works out each app's cell from the files found and the central status file. */
 export function judge(
   files: (FileEntry | string)[],
   now: Date,
   central: Map<string, string[]> = new Map(),
   checked: { app: string; needsDb: boolean }[] = BACKUP_APPS,
+  verified: ReadonlySet<string> = new Set(),
 ): Pick<DropboxCheck, "status" | "apps" | "message"> {
   const today = parisDate(now);
   const entries = files
     .map((f) => (typeof f === "string" ? { name: f } : f))
     .filter((f) => f.size === undefined || f.size > 0);
-  // SecVal's own copies count only with their same-day manifest (the attestation): fail closed.
-  const manifests = new Set(entries.map((f) => f.name).filter((n) => /^\d{6}-secval-(?:code|db)\.manifest\.json$/.test(n)));
+  // SecVal's own copies count only when verified at check time (signed manifest + stored bytes match):
+  // fail closed. A manifest file merely existing is not enough. See attestation.ts.
   const found = entries
-    .filter((f) => !/^\d{6}-secval-(code|db)\./.test(f.name) || manifests.has(f.name.replace(/\.(?:zip|dump)(?:\.enc)?$/, ".manifest.json")))
+    .filter((f) => !SECVAL_OWN_RE.test(f.name) || verified.has((f.path ?? "").toLowerCase()))
     .map((f) => parseCopyName(f.name))
     .filter((x): x is NonNullable<typeof x> => x !== null);
   const apps = checked.map(({ app, needsDb }): AppCopies => {
@@ -316,7 +361,12 @@ async function listFolder(f: DropboxFetcher, headers: Record<string, string>, pa
     for (const raw of Array.isArray(page.entries) ? page.entries : []) {
       const e = obj(raw);
       if (str(e[".tag"]) && str(e[".tag"]) !== "file") continue;
-      out.push({ name: str(e.name), size: typeof e.size === "number" ? e.size : undefined, path: str(e.path_display) });
+      out.push({
+        name: str(e.name),
+        size: typeof e.size === "number" ? e.size : undefined,
+        path: str(e.path_display),
+        contentHash: typeof e.content_hash === "string" ? e.content_hash : undefined,
+      });
     }
     if (page.has_more !== true) break;
     page = obj(await post(f, "https://api.dropboxapi.com/2/files/list_folder/continue", headers, JSON.stringify({ cursor: str(page.cursor) })));
@@ -374,7 +424,17 @@ export async function checkDropbox(
       }
     } else centralNote = "The central backup's status file was not found.";
     if (missingFolders.length) centralNote += ` Folder not found: ${missingFolders.join(", ")}.`;
-    return { ...base, centralNote: centralNote.trim(), ...judge(files, now, central, appsChecked(env)) };
+    const own = await verifySecvalCopies(files, f, headers.authorization, env, now);
+    const judged = judge(files, now, central, appsChecked(env), own.verified);
+    // Reasons a SecVal copy was not counted are shown, but only turn the cell red if the count is short.
+    if (own.problems.length) {
+      const sv = judged.apps.find((a) => a.app === "secval");
+      if (sv && sv.status !== "ok") {
+        sv.problems.push(...own.problems);
+        sv.message = sv.problems.join("; ");
+      } else centralNote += " " + own.problems.join("; ") + ".";
+    }
+    return { ...base, centralNote: centralNote.trim(), ...judged };
   } catch (err) {
     return { ...base, status: "error", apps: [], message: "BACKUP CHECK FAILED: could not read Dropbox: " + failReason(err) };
   }

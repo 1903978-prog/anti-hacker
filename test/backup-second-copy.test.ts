@@ -7,7 +7,8 @@ import { gunzipSync } from "node:zlib";
 import Database from "better-sqlite3";
 import { freshDb } from "./helpers.js";
 import { listAudit } from "../server/audit/log.js";
-import { appsChecked, judge } from "../server/backup/dropbox.js";
+import { appsChecked, checkDropbox, judge } from "../server/backup/dropbox.js";
+import { dropboxContentHash, signManifest, attestationKey } from "../server/backup/attestation.js";
 import {
   CODE_REQUIRED, KEEP, backupKey, collectCode, copyName, decrypt, dueNow, encrypt, makeZip, readZip, refuseReason, runSecondCopy, secondCopyMode, secondCopyStatus,
   type BinFetcher, type BinResponse,
@@ -50,12 +51,14 @@ function fakeDropbox(opts: { readOnly?: boolean; tamper?: boolean; scope?: strin
       if (!b) return reply(409, { error_summary: "path/not_found/" });
       const out = Buffer.from(b);
       if (opts.tamper) out[out.length - 20] = out[out.length - 20]! ^ 0xff;
-      return reply(200, {}, out);
+      let parsed: unknown = {};
+      try { parsed = JSON.parse(out.toString()); } catch { /* binary body: json() is not used for it */ }
+      return reply(200, parsed, out);
     }
     if (op === "files/list_folder") {
       const entries = [...files.keys()]
         .filter((p) => p.startsWith(`${arg.path}/`))
-        .map((p) => ({ ".tag": "file", name: p.split("/").pop(), path_display: p }));
+        .map((p) => ({ ".tag": "file", name: p.split("/").pop(), path_display: p, size: files.get(p)!.length, content_hash: dropboxContentHash(files.get(p)!) }));
       return reply(200, { entries });
     }
     if (op === "files/delete_v2") {
@@ -207,7 +210,9 @@ describe("secval second copy", () => {
     expect(appsChecked({}).some((a) => a.app === "secval")).toBe(false);
     expect(appsChecked(ENV).some((a) => a.app === "secval")).toBe(true);
     const j = judge(["261116-secval-db.dump.enc", "261115-secval-db.dump.enc", "261116-secval-code.zip.enc", "261115-secval-code.zip.enc"], NOW, new Map(), appsChecked(ENV));
-    expect(j.apps.find((a) => a.app === "secval")).toBeTruthy();
+    const sv = j.apps.find((a) => a.app === "secval")!;
+    expect(sv).toBeTruthy();
+    expect(sv.status).toBe("red"); // names alone never count: no verified set given
   });
 
   it("retries a failed run only after 3 hours", () => {
@@ -302,14 +307,77 @@ describe("secval second copy: review #5917832972 hardening", () => {
     expect(m.contents.length).toBe(src.files.length);
   });
 
-  it("the Dropbox check counts a SecVal copy only with its same-day manifest", () => {
-    const copies = ["261116-secval-db.dump.enc", "261115-secval-db.dump.enc", "261116-secval-code.zip.enc", "261115-secval-code.zip.enc"];
-    const manifests = copies.map((n) => n.replace(/\.(zip|dump)\.enc$/, ".manifest.json"));
-    const withAll = judge([...copies, ...manifests], NOW, new Map(), appsChecked(ENV)).apps.find((a) => a.app === "secval")!;
-    expect(withAll.status).toBe("ok");
-    const noManifest = judge([...copies, ...manifests.slice(1)], NOW, new Map(), appsChecked(ENV)).apps.find((a) => a.app === "secval")!;
-    expect(noManifest.status).toBe("red");
-    expect(noManifest.recentDb).toBe(1);
+  describe("the Dropbox check counts a SecVal copy only when verified at check time", () => {
+    const FOLDER = "/backups nov26/secval";
+    const DAYS = ["261116", "261115"];
+    /** Two days of SecVal copies with signed manifests, as runSecondCopy writes them. */
+    function seeded(env: Record<string, string> = ENV) {
+      const dbx = fakeDropbox();
+      const key = attestationKey(env)!;
+      for (const d of DAYS)
+        for (const [kind, dir, ext] of [["db", "DB", "dump"], ["code", "CODE", "zip"]] as const) {
+          const path = `${FOLDER}/${dir}/${d}-secval-${kind}.${ext}.enc`;
+          const blob = Buffer.from(`ciphertext ${d} ${kind}`);
+          dbx.files.set(path, blob);
+          const m = signManifest({ app: "secval", kind, file: path, bytes: blob.length, dropboxContentHash: dropboxContentHash(blob) }, key);
+          dbx.files.set(`${FOLDER}/${dir}/${d}-secval-${kind}.manifest.json`, Buffer.from(JSON.stringify(m)));
+        }
+      return dbx;
+    }
+    const run = (dbx: ReturnType<typeof fakeDropbox>, env: Record<string, string | undefined> = ENV) =>
+      checkDropbox({ env: { ...env, DROPBOX_BACKUP_FOLDER: FOLDER, DROPBOX_ACCESS_TOKEN: "t" }, fetcher: dbx.f as never, now: NOW });
+    const cell = (r: Awaited<ReturnType<typeof checkDropbox>>) => r.apps.find((a) => a.app === "secval")!;
+
+    it("two real runs on two days produce copies the check counts", async () => {
+      const dbx = fakeDropbox();
+      const db = freshDb();
+      const DAY1 = new Date(NOW.getTime() - 24 * 3600_000);
+      expect((await runSecondCopy(db, { env: ENV, fetcher: dbx.f, now: DAY1, codeDir: codeDir() })).ok).toBe(true);
+      expect((await runSecondCopy(db, { env: ENV, fetcher: dbx.f, now: NOW, codeDir: codeDir() })).ok).toBe(true);
+      const r = await checkDropbox({ env: { ...ENV, DROPBOX_BACKUP_FOLDER: FOLDER, DROPBOX_ACCESS_TOKEN: "t" }, fetcher: dbx.f as never, now: NOW });
+      expect(r.apps.find((a) => a.app === "secval")!.status).toBe("ok");
+    });
+    it("counts two verified days as ok", async () => {
+      expect(cell(await run(seeded())).status).toBe("ok");
+    });
+    it("a tampered manifest is not counted", async () => {
+      const dbx = seeded();
+      const p = `${FOLDER}/DB/261116-secval-db.manifest.json`;
+      const m = JSON.parse(dbx.files.get(p)!.toString());
+      m.bytes += 1;
+      dbx.files.set(p, Buffer.from(JSON.stringify(m)));
+      const c = cell(await run(dbx));
+      expect(c.status).toBe("red");
+      expect(c.problems.join(" ")).toMatch(/signature is invalid/);
+    });
+    it("tampered stored content is not counted", async () => {
+      const dbx = seeded();
+      dbx.files.set(`${FOLDER}/DB/261115-secval-db.dump.enc`, Buffer.from("ciphertext 261115 dX")); // same length
+      const c = cell(await run(dbx));
+      expect(c.status).toBe("red");
+      expect(c.problems.join(" ")).toMatch(/bytes differ/);
+    });
+    it("a stored file of another size is not counted", async () => {
+      const dbx = seeded();
+      dbx.files.set(`${FOLDER}/DB/261115-secval-db.dump.enc`, Buffer.from("ciphertext 261115 db, longer"));
+      expect(cell(await run(dbx)).problems.join(" ")).toMatch(/size differs/);
+    });
+    it("a manifest signed with another key is not counted", async () => {
+      const dbx = seeded({ ...ENV, SECVAL_BACKUP_KEY: "another-key-another-key-another-key-00" });
+      expect(cell(await run(dbx)).status).toBe("red");
+    });
+    it("without the key nothing is counted, and the reason is shown", async () => {
+      const c = cell(await run(seeded(), { ...ENV, SECVAL_BACKUP_KEY: undefined }));
+      expect(c.status).toBe("red");
+      expect(c.problems.join(" ")).toMatch(/SECVAL_BACKUP_KEY is not available/);
+    });
+    it("a missing manifest is not counted", async () => {
+      const dbx = seeded();
+      dbx.files.delete(`${FOLDER}/CODE/261116-secval-code.manifest.json`);
+      const c = cell(await run(dbx));
+      expect(c.status).toBe("red");
+      expect(c.problems.join(" ")).toMatch(/manifest is missing/);
+    });
   });
 
   it("every git-tracked file in an allowlisted place is in the real archive", () => {
