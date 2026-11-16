@@ -121,6 +121,40 @@ describe("dropbox backup check", () => {
     expect(invalid.byApp.get("nexus")).toEqual(["the central backup status has an invalid run time"]);
     const missing = centralProblems({ apps: {} }, NOW);
     expect(missing.byApp.get("10bonds")).toEqual(["the central backup status has no valid run time"]);
+    const impossibleDate = centralProblems(
+      { runAt: "2026-11-31T14:00:00Z", apps: {} },
+      new Date("2026-12-02T09:00:00Z"),
+    );
+    expect(impossibleDate.byApp.get("nexus")).toEqual(["the central backup status has an invalid run time"]);
+  });
+
+  it("fails closed when the central status file is missing or unreadable", async () => {
+    const env = { DROPBOX_ACCESS_TOKEN: "t" };
+    const run = async (includeStatus: boolean) => {
+      const entries = [
+        ...(includeStatus ? [{ ".tag": "file", name: "status.json", path_display: "/backups nov26/status.json", size: 5 }] : []),
+        ...copies(["261113", "261114"]).map((name) => ({
+          ".tag": "file",
+          name,
+          path_display: `/backups nov26/${name}`,
+          size: 9,
+        })),
+      ];
+      const f: DropboxFetcher = async (url) => {
+        if (url.endsWith("/list_folder")) return { status: 200, async json() { return { entries, has_more: false }; } };
+        if (url.endsWith("/download")) return { status: 403, async json() { return {}; } };
+        return { status: 200, async json() { return { access_token: "t" }; } };
+      };
+      return checkDropbox({ env, fetcher: f, now: NOW });
+    };
+
+    const missing = await run(false);
+    expect(missing.status).toBe("red");
+    expect(missing.apps.find((app) => app.app === "compplan")?.problems).toContain("the central backup status file was not found");
+
+    const unreadable = await run(true);
+    expect(unreadable.status).toBe("red");
+    expect(unreadable.apps.find((app) => app.app === "compplan")?.problems).toContain("the central backup status file could not be read");
   });
 
   it("reproduces 14 Nov 2026: red for every app", () => {

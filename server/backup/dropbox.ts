@@ -148,6 +148,30 @@ export function showDate(ymd: string): string {
   return `${d} ${MONTHS[Number(m) - 1] ?? "?"} ${y}`;
 }
 
+function parseCentralRunAt(value: string): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!match) return null;
+  const [, yearPart, monthPart, dayPart, hourPart, minutePart, secondPart] = match;
+  if (!yearPart || !monthPart || !dayPart || !hourPart || !minutePart || !secondPart) return null;
+  const year = Number(yearPart);
+  const month = Number(monthPart);
+  const day = Number(dayPart);
+  const hour = Number(hourPart);
+  const minute = Number(minutePart);
+  const second = Number(secondPart);
+  if (hour > 23 || minute > 59 || second > 59) return null;
+  const calendar = new Date(0);
+  calendar.setUTCFullYear(year, month - 1, day);
+  calendar.setUTCHours(hour, minute, second, 0);
+  if (
+    calendar.getUTCFullYear() !== year ||
+    calendar.getUTCMonth() !== month - 1 ||
+    calendar.getUTCDate() !== day
+  ) return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
 /** Whole days between two Paris dates. */
 function daysBetween(a: string, b: string): number {
   return Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 86_400_000);
@@ -198,8 +222,8 @@ export function centralProblems(status: unknown, now: Date): { byApp: Map<string
   const runAt = str(s.runAt);
   if (!runAt)
     return flagAllApps("the central backup status has no valid run time", "The central backup's status file has no run time.");
-  const runTime = Date.parse(runAt);
-  if (!Number.isFinite(runTime))
+  const runTime = parseCentralRunAt(runAt);
+  if (runTime === null)
     return flagAllApps("the central backup status has an invalid run time", "The central backup's status file has an invalid run time.");
   const runDay = parisDate(new Date(runTime));
   const age = daysBetween(runDay, parisDate(now));
@@ -437,6 +461,10 @@ export async function checkDropbox(
       return { ...base, status: "error", apps: [], message: `BACKUP FAILURE: none of the backup folders exist (${folders.join(", ")})` };
     let central = new Map<string, string[]>();
     let centralNote = "";
+    const failClosed = (problem: string, note: string) => {
+      for (const { app } of BACKUP_APPS) central.set(app, [problem]);
+      centralNote = note;
+    };
     const statusPath = `${folders[0]}/status.json`.toLowerCase();
     const statusFile = files.find((x) => x.name === "status.json" && (x.path ?? "").toLowerCase() === statusPath);
     if (statusFile) {
@@ -447,9 +475,10 @@ export async function checkDropbox(
         central = c.byApp;
         centralNote = c.note;
       } catch (err) {
-        centralNote = "Could not read the central backup's status file: " + failReason(err) + ".";
+        failClosed("the central backup status file could not be read",
+          "Could not read the central backup's status file: " + failReason(err) + ".");
       }
-    } else centralNote = "The central backup's status file was not found.";
+    } else failClosed("the central backup status file was not found", "The central backup's status file was not found.");
     if (missingFolders.length) centralNote += ` Folder not found: ${missingFolders.join(", ")}.`;
     const own = await verifySecvalCopies(files, f, headers.authorization, env, now);
     const judged = judge(files, now, central, appsChecked(env), own.verified);
