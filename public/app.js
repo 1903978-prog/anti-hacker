@@ -61,7 +61,7 @@ async function migrateOldToken() {
   }
 }
 const el = (id) => document.getElementById(id);
-const esc = (s) => String(s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 async function refreshKillSwitch() {
   const { body } = await api("/health");
@@ -1313,6 +1313,28 @@ function dlAsked(a) {
   return `${d}, ${t}`;
 }
 
+// Progress bar 0-100%, computed by the server from the requirement stages (never typed in).
+function dlBar(pct, label, small) {
+  const p = Math.max(0, Math.min(100, Number(pct) || 0));
+  return `<div class="dlbar${small ? " sm" : ""}"><div class="dltrack" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p}" aria-label="${esc(label)}"><div class="dlfill${p === 100 ? " full" : ""}" style="width:${p}%"></div></div>` +
+    `<b>${p}%</b><span>${esc(label)}</span></div>`;
+}
+
+function dlActionRow(x) {
+  const n = x.atom_ids.length;
+  const nf = (v) => esc(v || "Unknown");
+  const sha = x.head_sha ? `<code>${esc(x.head_sha)}</code>${x.from_github ? " (from GitHub)" : ""}` : "Unknown";
+  const next = x.next
+    ? `<b>${esc(x.next.id)}</b> ${esc(x.next.atom)}${x.next.next_step ? ` → ${esc(x.next.next_step)}` : ""}`
+    : "Nothing left: every requirement is at 100%.";
+  return `<div class="dlact"><div class="dlact-top"><span class="dlcode">${esc(x.code)}</span><span class="dldesc">${esc(x.description)}</span></div>` +
+    dlBar(x.percent, x.stage_label) +
+    `<dl class="dlmeta"><div><dt>Asked</dt><dd>${esc(dlAsked(x))}</dd></div><div><dt>Owner</dt><dd>${nf(x.owner)}</dd></div>` +
+    `<div><dt>Requirements at 100%</dt><dd>${x.atoms_done} of ${n}</dd></div><div><dt>Branch / PR</dt><dd>${x.branch || x.pr ? esc([x.branch, x.pr].filter(Boolean).join(" · ")) : "Unknown"}${x.pr_url ? ` <a href="${esc(x.pr_url)}" target="_blank" rel="noopener noreferrer">open</a>` : ""}</dd></div>` +
+    `<div><dt>Head SHA</dt><dd>${sha}</dd></div><div><dt>PR housekeeping</dt><dd>${esc(x.pr_housekeeping || "Not recorded")}</dd></div></dl>` +
+    `<div class="dlnext"><span>Next action</span> ${next}</div></div>`;
+}
+
 function renderDelivery() {
   const d = dlData;
   if (!d) return;
@@ -1324,6 +1346,7 @@ function renderDelivery() {
   for (const b of document.querySelectorAll("[data-dlfilter]")) b.setAttribute("aria-pressed", String(b.dataset.dlfilter === dlFilter));
   if (!a) {
     el("dlSummary").textContent = "No apps.";
+    el("dlActions").innerHTML = "";
     el("dlTable").innerHTML = "";
     return;
   }
@@ -1332,6 +1355,7 @@ function renderDelivery() {
     `<span>open pull requests${a.openPrs == null ? " (could not be read)" : ""}</span></a>`;
   if (a.status !== "ok") {
     el("dlSummary").innerHTML = prBox + `<div><span class="muted">${esc(a.message || "No ledger yet.")}</span> <a href="${esc(a.link)}" target="_blank" rel="noopener noreferrer">Open on GitHub</a></div>`;
+    el("dlActions").innerHTML = "";
     el("dlTable").innerHTML = a.snapshot ? dlSnapshotHtml(a.snapshot) : "";
     return;
   }
@@ -1342,6 +1366,10 @@ function renderDelivery() {
     `<div><b>${c.done}</b>done</div></div>` +
     `<div class="note">${a.branch ? `Read from branch <code>${esc(a.branch)}</code>. ` : ""}${a.lastSynced ? `Ledger last synced ${esc(formatDateTime(a.lastSynced))}.` : ""}</div>` +
     (a.message ? `<div class="note">${esc(a.message)}</div>` : "");
+  const acts = (a.actions || []).filter((x) => dlFilter === "all" || (dlFilter === "done" ? x.done : !x.done));
+  el("dlActions").innerHTML = acts.length
+    ? `<h3 class="dlh">Progress by action</h3><div class="dlacts">` + acts.map(dlActionRow).join("") + "</div>"
+    : "";
   const rows = a.atoms.filter((x) => dlFilter === "all" || (dlFilter === "done" ? x.done : !x.done));
   if (!rows.length) {
     el("dlTable").innerHTML = `<p class="muted">${dlFilter === "done" ? "No atoms fully done yet." : dlFilter === "open" ? "No open atoms." : "No atoms."}</p>`;
@@ -1349,14 +1377,16 @@ function renderDelivery() {
   }
   const st = (x, k, label) => `<td class="st" data-label="${esc(DL_SHORT[k])}" title="${esc(label)}: ${DL_WORD[x[k]]}"><span role="img" aria-label="${DL_WORD[x[k]]}">${DL_ICON[x[k]]}</span></td>`;
   el("dlTable").innerHTML =
-    `<table class="ledger"><thead><tr><th scope="col">Atom ID</th><th scope="col">Asked</th><th scope="col">Original ask</th><th scope="col">This atom</th>` +
+    `<h3 class="dlh">Each requirement</h3>` +
+    `<table class="ledger"><thead><tr><th scope="col">Atom ID</th><th scope="col">Asked</th><th scope="col">Original ask</th><th scope="col">This atom</th><th scope="col">Progress</th>` +
     DL_STAGES.map(([, label]) => `<th scope="col" class="st">${esc(label)}</th>`).join("") +
     `<th scope="col">Next step</th></tr></thead><tbody>` +
     rows
       .map(
         (x) =>
           `<tr><td class="aid wide" data-label="Atom ID">${esc(x.id)}</td><td class="wide" data-label="Asked">${esc(dlAsked(x))}</td>` +
-          `<td class="ask wide" data-label="Original ask">${esc(x.original_ask)}</td><td class="wide" data-label="This atom">${esc(x.atom)}</td>` +
+          `<td class="ask wide" data-label="Original ask">${esc(x.original_ask)}</td><td class="wide" data-label="This atom">${esc(x.atom)}<div class="note ev">Evidence: ${esc(x.evidence || "none recorded")}</div><div class="note">PR housekeeping: ${esc(x.pr_housekeeping || "not recorded")}${x.sources && x.sources.pr_housekeeping === "github" ? " (from GitHub)" : ""}</div></td>` +
+          `<td class="wide" data-label="Progress">${dlBar(x.percent, x.stage_label, true)}${x.tested_stale && x.tested_sha ? `<div class="note">Tests ran on ${esc(x.tested_sha.slice(0, 8))}, not the current version${x.head_sha ? " " + esc(x.head_sha.slice(0, 8)) : ""}, so they do not count.</div>` : ""}${(x.notes || []).map((n) => `<div class="note">${esc(n)}</div>`).join("")}${x.kind === "non-code" ? `<div class="note">Not code: 100% only when the deliverable is confirmed complete.</div>` : ""}</td>` +
           DL_STAGES.map(([k, label]) => st(x, k, label)).join("") +
           `<td class="wide" data-label="Next step">${esc(x.next_step)}</td></tr>`,
       )
