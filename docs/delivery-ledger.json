@@ -1,7 +1,7 @@
 {
  "project": "Secval",
  "repo": "anti-hacker",
- "last_synced": "2026-11-16T14:20:00Z",
+ "last_synced": "2026-11-16T15:40:00Z",
  "atoms": [
   {
    "id": "task_secval_001A",
@@ -222,17 +222,17 @@
    "atom": "Reject future and invalid backup timestamps",
    "implemented": "yes",
    "tested": "yes",
-   "merged": "no",
-   "deployed": "no",
+   "merged": "yes",
+   "deployed": "yes",
    "live_checked": "no",
-   "next_step": "Review and Livio exact-SHA approval",
-   "evidence": "PR #59. Exact-head CI: run #173 passed on 6d62ce0c (checked by Claude 14:20 UTC). No independent review recorded here.",
+   "next_step": "functional check on production",
+   "evidence": "PR #59 (head 2bab4c02) merged as c89425af; approval text 'Livio: approve 2bab4c02' is taken from that merge commit message, not from a Livio message seen by this ledger's author; CI passed on c89425af (run 43894142400). Deployed: /health commit c89425af7026 checked by Claude 15:35 UTC. The timestamp rejection itself has not been exercised on production yet.",
    "owner": "Codex",
-   "branch": "codex/backup-date-validation-20261115",
+   "branch": "integration",
    "pr": "#59",
-   "head_sha": "6d62ce0c8bced41f9556bd771a91cd34bf407f77",
-   "tested_sha": "6d62ce0c8bced41f9556bd771a91cd34bf407f77",
-   "updated_at": "2026-11-16T14:20:00Z"
+   "head_sha": "c89425af7026d9cd50e18e068c842baba8a9323d",
+   "tested_sha": "c89425af7026d9cd50e18e068c842baba8a9323d",
+   "updated_at": "2026-11-16T15:40:00Z"
   },
   {
    "id": "task_secval_006A",
@@ -243,17 +243,17 @@
    "atom": "EEN-REL-001 policy text and column-level write check",
    "implemented": "yes",
    "tested": "yes",
-   "merged": "no",
-   "deployed": "no",
+   "merged": "yes",
+   "deployed": "yes",
    "live_checked": "no",
-   "next_step": "Review and Livio exact-SHA approval",
-   "evidence": "Draft PR #60. Exact-head CI: run #174 passed on e6860861 (checked by Claude 14:20 UTC).",
+   "next_step": "functional check on production",
+   "evidence": "PR #60 (head e6860861) merged as db91a568; approval text 'Livio: approve e6860861' is taken from that merge commit message, not from a Livio message seen by this ledger's author; CI passed on db91a568 (run 43892953970). Deployed: production /health c89425af7026 contains it (checked by Claude 15:35 UTC). Policy and write check not exercised on production yet.",
    "owner": "unknown",
-   "branch": "claude/secval-consolidated-rc",
+   "branch": "integration",
    "pr": "#60",
-   "head_sha": "e686086154815f38d7d7678c1e4f6f9813e3f952",
-   "tested_sha": "e686086154815f38d7d7678c1e4f6f9813e3f952",
-   "updated_at": "2026-11-16T14:20:00Z"
+   "head_sha": "db91a568242c8a95427bbfe94a0c841b1154635d",
+   "tested_sha": "db91a568242c8a95427bbfe94a0c841b1154635d",
+   "updated_at": "2026-11-16T15:40:00Z"
   },
   {
    "id": "task_secval_007A",
@@ -317,6 +317,27 @@
    "pr": "#63",
    "head_sha": "f2c9b459009f240204039f68413127a75adfb6a0",
    "updated_at": "2026-11-16T14:10:00Z"
+  },
+  {
+   "id": "task_secval_008A",
+   "parent": "task_secval_008",
+   "asked_at": "2026-11-16",
+   "asked_time": "12:34",
+   "original_ask": "move the red part to its menu page then",
+   "atom": "Red backup alarm only on the Backup page; red dot on the Backup tab elsewhere",
+   "implemented": "yes",
+   "tested": "yes",
+   "merged": "yes",
+   "deployed": "yes",
+   "live_checked": "yes",
+   "next_step": "none",
+   "evidence": "PR #65 head a8d74a38 (CI #175 passed), merged as bfbdb947 (CI #177 passed on bfbdb947; approval text 'Livio: ship it a8d74a38' is taken from that merge commit message). Live: /health commit 2eea085921ad (includes bfbdb947) and served page has #backupAlarm inside the Backup section plus #backupTabDot, checked by Claude 14:36 UTC. Checked from served HTML and /health only; the signed-in Backup page has not been looked at in a browser.",
+   "owner": "Claude",
+   "branch": "integration",
+   "pr": "#65",
+   "head_sha": "bfbdb947d00db40cf768d521a414b4aa9fe6bcf9",
+   "tested_sha": "bfbdb947d00db40cf768d521a414b4aa9fe6bcf9",
+   "updated_at": "2026-11-16T14:40:00Z"
   }
  ]
 }
