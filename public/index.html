@@ -147,6 +147,26 @@
       .dlsum { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
       .dlsum div { border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font-size: 12px; color: var(--muted); }
       .dlsum b { display: block; font-size: 20px; color: var(--text); }
+      .dlh { font-size: 14px; margin: 14px 0 6px; }
+      .dlacts { display: grid; gap: 8px; }
+      .dlact { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; min-width: 0; }
+      .dlact-top { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; margin-bottom: 6px; }
+      .dlcode { font: 600 12px ui-monospace, monospace; padding: 1px 6px; border: 1px solid var(--border); border-radius: 6px; white-space: nowrap; }
+      .dldesc { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 14px; }
+      .dlbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+      .dlbar b { font-size: 16px; min-width: 3.2em; text-align: right; }
+      .dlbar span { color: var(--muted); }
+      .dlbar.sm b { font-size: 13px; }
+      .dltrack { flex: 1 1 140px; max-width: 320px; height: 10px; border-radius: 999px; background: var(--border); overflow: hidden; }
+      .dlbar.sm .dltrack { flex-basis: 80px; height: 8px; }
+      .dlfill { height: 100%; background: var(--btn); }
+      .dlfill.full { background: var(--good); }
+      .dlmeta { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 12px; margin: 8px 0 4px; font-size: 12px; }
+      .dlmeta dt { color: var(--muted); font-weight: 600; }
+      .dlmeta dd { margin: 0; overflow-wrap: anywhere; }
+      .dlnext { font-size: 13px; overflow-wrap: anywhere; }
+      .dlnext > span { font-weight: 700; }
+      .ev { font-size: 12px; overflow-wrap: anywhere; }
       table.ledger td.st { text-align: center; font-size: 16px; white-space: nowrap; }
       table.ledger th.st, table.ledger td.st, table.ledger td.st::before { text-align: center; font-size: 12px; overflow-wrap: normal; }
       table.ledger td.aid { font: 600 12px ui-monospace, monospace; white-space: nowrap; }
@@ -161,6 +181,23 @@
         table.ledger td.st { font-size: 15px; }
         table.ledger td.st::before { overflow-wrap: anywhere; }
       }
+      .dltopright { float: right; width: min(440px, 42%); margin: 0 0 10px 16px; }
+      .dlchart { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+      .dlchart-title { font-size: 13px; color: var(--muted); font-weight: 600; }
+      .dlchart-title b { color: var(--text); font-size: 18px; margin-left: 6px; }
+      .dlinc { font-size: 11px; color: var(--medium); border: 1px solid currentColor; border-radius: 10px; padding: 0 6px; margin-left: 6px; }
+      .dlchart-svg { width: 100%; height: auto; display: block; color: var(--muted); }
+      .dlchart-svg text { font-size: 11px; fill: var(--muted); }
+      .dlchart-svg .grid { stroke: var(--border); stroke-dasharray: 2 3; }
+      .dlchart-svg .axis { stroke: var(--border); }
+      .dlchart-svg .line { fill: none; stroke: var(--accent); stroke-width: 2; }
+      .dlchart-svg circle { fill: var(--accent); }
+      .dlchart .note { margin-top: 2px; font-size: 12px; }
+      .dlcopy { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+      .dlcopy button { padding: 6px 12px; font-size: 13px; }
+      .dlcopy .note { margin: 0; }
+      .dlfilter, #dlTable { clear: both; }
+      @media (max-width: 760px) { .dltopright { float: none; width: 100%; margin: 0 0 12px; } }
       .bigcost { display: inline-block; padding: 0 8px; border: 2px solid var(--high); border-radius: 999px; color: var(--high); font-weight: 700; white-space: nowrap; }
       table.rel { font-size: 13px; }
       table.rel th { font-size: 11px; vertical-align: bottom; }
@@ -271,9 +308,20 @@
       <section data-panel="delivery" hidden>
       <div class="card">
         <h2>Delivery ledger</h2>
+        <div class="dltopright">
+          <div id="dlChart" class="dlchart" aria-live="polite"></div>
+          <div class="dlcopy">
+            <button id="dlCopyTable" class="ghost">Copy table</button>
+            <button id="dlCopyPrompt" class="ghost">Copy prompt for Claude Code</button>
+            <span id="dlCopyMsg" class="note" role="status"></span>
+          </div>
+        </div>
         <div class="note" style="margin:-6px 0 12px">
           Every ask, split into atoms, from each app's <code>docs/delivery-ledger.json</code> on GitHub (read only).
-          ✅ done · ❌ not done · ⏸️ parked · ❓ unknown. Updates every 10 minutes.
+          ✅ done · ❌ not done · ⏸️ parked · ❓ unknown. Updates every 10 minutes.<br>
+          Progress is calculated, never typed in. Each requirement scores its furthest step reached in order:
+          requested 0% · work in progress 20% · built on a branch 40% · tests passed on the current version 55% · merged 70% · deployed 85% · verified live 100%.
+          An action is the average of its requirements and reaches 100% only when every requirement does.
         </div>
         <div id="dlApps" class="dlapps" role="group" aria-label="App"></div>
         <div id="dlSummary" class="muted">Loading…</div>
@@ -282,6 +330,7 @@
           <button class="ghost" data-dlfilter="done" aria-pressed="false">Done</button>
           <button class="ghost" data-dlfilter="all" aria-pressed="false">All</button>
         </div>
+        <div id="dlActions"></div>
         <div id="dlTable"></div>
         <div class="row" style="margin-top:8px;align-items:center">
           <span id="dlMsg" class="note" style="flex:1;margin:0"></span>
@@ -554,6 +603,7 @@
     <script src="/dates.js" defer></script>
     <script src="/money.js" defer></script>
     <script src="/app.js" defer></script>
+    <script src="/deliveryExtras.js" defer></script>
     <script src="/dbarch.js" defer></script>
   </body>
 </html>
