@@ -1,3 +1,4 @@
+/* global noteProblem */
 /* global formatDateTime, module */
 // Delivery menu extras (16 Nov 2026, Livio):
 //  - chart of open atoms over the last 72 hours for the selected app, from the
@@ -17,8 +18,11 @@
   const selectedRepo = () => document.querySelector('#dlApps [aria-pressed="true"]')?.dataset.dlapp || null;
 
   async function getJson(url) {
-    const r = await fetch(url, { credentials: "same-origin" });
-    if (!r.ok) throw new Error(String(r.status));
+    const r = await fetch(url, { credentials: "same-origin", cache: "no-store" });
+    if (!r.ok) {
+      if (typeof noteProblem === "function") noteProblem(url.split("?")[0] + " answered " + r.status);
+      throw new Error(String(r.status));
+    }
     return r.json();
   }
 

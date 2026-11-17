@@ -1134,6 +1134,7 @@ async function refreshTests() {
   const host = el("testsApp").value;
   if (!host) {
     el("testsList").textContent = signedIn ? "No apps yet. Add one in Security scans." : NEED_TOKEN;
+    noteProblem("no app to read tests for");
     return;
   }
   const { ok, status, body } = await api("/api/tests/" + encodeURIComponent(host));
@@ -1452,13 +1453,15 @@ const REFRESHERS = {
   usage: () => [refreshUsage(true)],
   aeos: () => [refreshAeos()],
   relationships: () => [refreshRelationships()],
-  database: () => [typeof loadDbarch === "function" ? loadDbarch() : Promise.resolve()],
+  database: () => [typeof loadDbarch === "function" ? loadDbarch() : (noteProblem("the database scorecard did not load"), Promise.resolve())],
   backup: () => [refreshBackup(), refreshDropbox(true), refreshRollback()],
   settings: () => [refreshLenovo(false), refreshLenovoQuestions(), refreshKillSwitch()],
 };
 const lastRefreshed = {};
+let refreshingTab = null; // only one Refresh runs at a time, so one run cannot hide another's failures
 function showRefreshStamp(tab, problems) {
   const box = el("refreshStamp");
+  if (refreshingTab) { box.className = "note"; box.textContent = "Refreshing " + refreshingTab + "…"; return; }
   const at = lastRefreshed[tab];
   const when = at ? "Last refreshed " + formatDateTime(at) : "Press Refresh to re-read this menu from the live sources.";
   if (problems && problems.length) {
@@ -1470,7 +1473,8 @@ function showRefreshStamp(tab, problems) {
   }
 }
 async function refreshTab(tab) {
-  if (!REFRESHERS[tab]) return;
+  if (!REFRESHERS[tab] || refreshingTab) return;
+  refreshingTab = tab;
   const btn = el("refreshBtn");
   btn.disabled = true;
   el("refreshStamp").className = "note";
@@ -1482,6 +1486,7 @@ async function refreshTab(tab) {
     for (const r of results) if (r.status === "rejected") problems.push("an unexpected error (" + (r.reason?.message || r.reason) + ")");
   } finally {
     refreshProblems = null;
+    refreshingTab = null;
     btn.disabled = false;
   }
   if (!problems.length) lastRefreshed[tab] = new Date().toISOString();
