@@ -24,14 +24,22 @@ function askForToken(message) {
   el("tokenInput").focus({ preventScroll: true });
 }
 
+// While a Refresh runs, every failed read is written here, so the page can say
+// what it could not read instead of quietly keeping the old numbers.
+let refreshProblems = null;
+const noteProblem = (what) => { if (refreshProblems) refreshProblems.push(what); };
 const api = (path, opts = {}) => {
   const headers = { "content-type": "application/json", ...(opts.headers || {}) };
-  return fetch(path, { ...opts, headers, credentials: "same-origin" }).then((r) =>
-    r.json().then((b) => {
-      if (r.status === 401) askForToken(el("tokenMsg").textContent === WRONG ? undefined : WHY[b?.reason]);
-      else if (r.ok && path.startsWith("/api/")) signedIn = true;
-      return { ok: r.ok, status: r.status, body: b };
-    }),
+  // cache: "no-store" = the browser must ask the server every time, never reuse an earlier answer.
+  return fetch(path, { ...opts, headers, credentials: "same-origin", cache: "no-store" }).then(
+    (r) =>
+      r.json().then((b) => {
+        if (r.status === 401) askForToken(el("tokenMsg").textContent === WRONG ? undefined : WHY[b?.reason]);
+        else if (r.ok && path.startsWith("/api/")) signedIn = true;
+        if (!r.ok) noteProblem(r.status === 401 ? "not signed in" : `${path.split("?")[0]} answered ${r.status}${b?.error ? " (" + b.error + ")" : ""}`);
+        return { ok: r.ok, status: r.status, body: b };
+      }),
+    (e) => { noteProblem(`${path.split("?")[0]} could not be reached`); throw e; },
   );
 };
 
@@ -323,9 +331,10 @@ async function refreshBackup() {
     esc(BACKUP_MODE[body.mode] || body.mode) + " · " + esc(drill);
   el("drillBtn").hidden = body.mode !== "on";
 }
-async function refreshDropbox() {
-  const { ok, body } = await api("/api/backup/dropbox");
+async function refreshDropbox(force) {
+  const { ok, body } = await api("/api/backup/dropbox" + (force ? "?refresh=1" : ""));
   if (!ok) return;
+  if (body.status === "error") noteProblem("Dropbox check failed: " + (body.message || "unknown"));
   const label = { ok: "ok", red: "BACKUP FAILURE", "not-connected": "not connected", error: "check failed" }[body.status] || body.status;
   const bad = (body.apps || []).filter((a) => a.status !== "ok");
   const lines = bad.map((a) => `<div><b>${esc(a.app)}</b>: ${esc(a.message)}</div>`).join("");
@@ -840,11 +849,6 @@ async function refreshUsage(force) {
     .join("")}</div>`;
   el("usageMsg").textContent = "Last checked " + formatDateTime(body.cachedAt);
 }
-el("usageRefresh").onclick = async () => {
-  el("usageRefresh").disabled = true;
-  el("usageMsg").textContent = "Checking…";
-  try { await refreshUsage(true); } finally { el("usageRefresh").disabled = false; }
-};
 
 const APP_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 // Dates shown to people are written like "03 Nov 2026" (CLAUDE.md); with a time: "03 Nov 2026, 14:05" (local time).
@@ -927,10 +931,6 @@ async function refreshAeos() {
     ". Each part is all-or-nothing and comes from a check that was actually run when the data was collected.";
   el("aeosMsg").textContent = "Collected " + niceDate(body.collectedAt, true) + " (not live).";
 }
-el("aeosRefresh").onclick = async () => {
-  el("aeosRefresh").disabled = true;
-  try { await refreshAeos(); } finally { el("aeosRefresh").disabled = false; }
-};
 
 // --- Database relationships ---------------------------------------------------
 // Required foreign keys per app (docs/database-relationships.md). Every percentage shows
@@ -986,10 +986,6 @@ async function refreshRelationships() {
   el("relApps").innerHTML = `<div class="ugrid" style="margin-top:12px">${body.apps.map(relAppHtml).join("")}</div>`;
   el("relMsg").textContent = body.collectedAt ? `Register recorded ${niceDate(body.collectedAt, true)}; Secval is measured live.` : "";
 }
-el("relRefresh").onclick = async () => {
-  el("relRefresh").disabled = true;
-  try { await refreshRelationships(); } finally { el("relRefresh").disabled = false; }
-};
 
 // --- EEES v1.0 quality standard ---------------------------------------------------
 // 30 dimensions per app from eees/evidence/*.json plus Secval's own monitors.
@@ -1086,10 +1082,6 @@ el("eeesTable").addEventListener("click", (e) => {
   showEeesApp(b.dataset.eees);
   el("eeesDetail").scrollIntoView({ block: "start" });
 });
-el("eeesRefresh").onclick = async () => {
-  el("eeesRefresh").disabled = true;
-  try { await refreshEees(); } finally { el("eeesRefresh").disabled = false; }
-};
 
 // --- Menus (tabs) -------------------------------------------------------------
 // Each menu is a section of this one page. The address (#health, #scans,
@@ -1104,6 +1096,7 @@ function showTab(name) {
   for (const sec of document.querySelectorAll("[data-panel]")) sec.hidden = sec.dataset.panel !== tab;
   for (const a of document.querySelectorAll("nav.tabs a")) a.setAttribute("aria-selected", String(a.dataset.tab === tab));
   try { localStorage.setItem("secval_tab", tab); } catch { /* not remembered */ }
+  if (typeof showRefreshStamp === "function") showRefreshStamp(tab);
   if (tab === "tests" && signedIn) refreshTests();
   if (tab === "settings" && signedIn && !lenovoLoaded) { lenovoLoaded = true; refreshLenovo(false); refreshLenovoQuestions(); }
   if (tab === "usage" && signedIn) refreshUsage();
@@ -1352,7 +1345,17 @@ function renderDelivery() {
     el("dlTable").innerHTML = "";
     return;
   }
-  const prBox =
+  // Plain yes/no on the live ledger, with where it was looked for. "Does not exist" is only said when GitHub
+  // answered that the file is not there; if it could not be read, the page says it does not know.
+  const LEDGER_FILE = "docs/delivery-ledger.json";
+  const where = `${esc(a.repo)}/${LEDGER_FILE}`;
+  const ledgerLine =
+    a.status === "ok"
+      ? `<div class="dlledger"><b>Live ledger: exists</b> <span class="note">checked ${where}${a.branch ? ` on branch ${esc(a.branch)}` : ""}</span></div>`
+      : a.status === "missing"
+        ? `<div class="dlledger"><b>Live ledger: does not exist</b> <span class="note">checked ${where} on GitHub: no such file${a.snapshot ? "; the pasted summary below is only a starting point" : ""}</span></div>`
+        : `<div class="dlledger"><b>Live ledger: unknown</b> <span class="note bad">could not read ${where} (${a.status === "no-access" ? "no access" : "error"})</span></div>`;
+  const prBox = ledgerLine +
     `<a class="dlpr" href="${esc(a.prsLink)}" target="_blank" rel="noopener noreferrer"><b>${a.openPrs == null ? "?" : esc(a.openPrs)}</b>` +
     `<span>open pull requests${a.openPrs == null ? " (could not be read)" : ""}</span></a>`;
   if (a.status !== "ok") {
@@ -1431,13 +1434,63 @@ el("dlApps").onclick = (e) => {
 for (const b of document.querySelectorAll("[data-dlfilter]")) {
   b.onclick = () => { dlFilter = b.dataset.dlfilter; renderDelivery(); };
 }
-el("dlRefresh").onclick = async () => {
-  el("dlRefresh").disabled = true;
-  el("dlMsg").textContent = "Checking…";
-  try { await refreshDelivery(true); } finally { el("dlRefresh").disabled = false; }
-};
 // Every 10 minutes while the Delivery menu is open.
-setInterval(() => { if (currentTab === "delivery" && signedIn && !document.hidden) refreshDelivery(true); }, 10 * 60_000);
+setInterval(() => { if (currentTab === "delivery" && signedIn && !document.hidden) refreshTab("delivery"); }, 10 * 60_000);
+
+// --- Refresh (one button under the menus, works on every menu) ---------------
+// Pressing it re-reads that menu's data from the server, which re-reads the
+// live source (ledger, GitHub, Render, Dropbox) instead of a saved copy: the
+// browser is told not to reuse anything, and the server is asked to skip its
+// own short-term copy (?refresh=1). The result is written next to the button:
+// when it was read, or exactly what could not be read.
+const REFRESHERS = {
+  health: () => [refreshDashboard(), refreshAllowlist()],
+  delivery: () => [refreshDelivery(true)],
+  eees: () => [refreshEees()],
+  scans: () => [refreshScans(), refreshAudit(), refreshSchedule(), refreshAllowlist()],
+  tests: () => [refreshTests()],
+  usage: () => [refreshUsage(true)],
+  aeos: () => [refreshAeos()],
+  relationships: () => [refreshRelationships()],
+  database: () => [typeof loadDbarch === "function" ? loadDbarch() : Promise.resolve()],
+  backup: () => [refreshBackup(), refreshDropbox(true), refreshRollback()],
+  settings: () => [refreshLenovo(false), refreshLenovoQuestions(), refreshKillSwitch()],
+};
+const lastRefreshed = {};
+function showRefreshStamp(tab, problems) {
+  const box = el("refreshStamp");
+  const at = lastRefreshed[tab];
+  const when = at ? "Last refreshed " + formatDateTime(at) : "Press Refresh to re-read this menu from the live sources.";
+  if (problems && problems.length) {
+    box.className = "note bad";
+    box.textContent = "Could not read: " + [...new Set(problems)].join("; ") + ". " + (at ? "Showing data from " + formatDateTime(at) + "." : "Showing the data already on screen.");
+  } else {
+    box.className = "note";
+    box.textContent = when;
+  }
+}
+async function refreshTab(tab) {
+  if (!REFRESHERS[tab]) return;
+  const btn = el("refreshBtn");
+  btn.disabled = true;
+  el("refreshStamp").className = "note";
+  el("refreshStamp").textContent = "Refreshing…";
+  const problems = [];
+  refreshProblems = problems;
+  try {
+    const results = await Promise.allSettled(REFRESHERS[tab]());
+    for (const r of results) if (r.status === "rejected") problems.push("an unexpected error (" + (r.reason?.message || r.reason) + ")");
+  } finally {
+    refreshProblems = null;
+    btn.disabled = false;
+  }
+  if (!problems.length) lastRefreshed[tab] = new Date().toISOString();
+  if (tab === currentTab) showRefreshStamp(tab, problems);
+}
+el("refreshBtn").onclick = () => {
+  if (!signedIn) return askForToken(NEED_TOKEN);
+  refreshTab(currentTab);
+};
 
 showTab(location.hash.slice(1) || storedTab() || "health");
 

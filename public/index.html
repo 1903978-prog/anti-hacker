@@ -45,6 +45,8 @@
       .sev.low { color: var(--low); } .sev.info { color: var(--info); }
       .muted { color: var(--muted); }
       .note { font-size: 13px; color: var(--muted); margin-top: 6px; }
+      .note.bad { color: var(--high); }
+      .dlledger { margin: 0 0 8px; font-size: 15px; }
       .ks { display: flex; align-items: center; gap: 10px; }
       .dot { width: 9px; height: 9px; border-radius: 50%; background: #1f9d55; }
       .dot.engaged { background: var(--danger); }
@@ -277,6 +279,11 @@
         <div id="tokenMsg" class="note">Needed once. This browser stays signed in.</div>
       </div>
 
+      <div class="row refreshbar" style="align-items:center;margin:10px 0">
+        <button id="refreshBtn" class="ghost" title="Re-read this menu's data from the live sources">Refresh</button>
+        <span id="refreshStamp" class="note" style="margin:0" role="status" aria-live="polite"></span>
+      </div>
+
       <section data-panel="health">
       <div class="card">
         <h2>Health dashboard</h2>
@@ -334,7 +341,6 @@
         <div id="dlTable"></div>
         <div class="row" style="margin-top:8px;align-items:center">
           <span id="dlMsg" class="note" style="flex:1;margin:0"></span>
-          <button id="dlRefresh" class="ghost">Refresh now</button>
         </div>
       </div>
       </section>
@@ -355,7 +361,6 @@
         <div id="eeesDetail"></div>
         <div class="row" style="margin-top:8px;align-items:center">
           <span id="eeesMsg" class="note" style="flex:1;margin:0"></span>
-          <button id="eeesRefresh" class="ghost">Reload</button>
         </div>
       </div>
       </section>
@@ -437,7 +442,6 @@
         <details style="margin-top:10px"><summary>How the score is made</summary><div id="aeosBasis" class="note"></div></details>
         <div class="row" style="margin-top:8px;align-items:center">
           <span id="aeosMsg" class="note" style="flex:1;margin:0"></span>
-          <button id="aeosRefresh" class="ghost">Reload</button>
         </div>
       </div>
       </section>
@@ -463,7 +467,6 @@
         </div></details>
         <div class="row" style="margin-top:8px;align-items:center">
           <span id="relMsg" class="note" style="flex:1;margin:0"></span>
-          <button id="relRefresh" class="ghost">Reload</button>
         </div>
       </div>
       </section>
@@ -477,7 +480,6 @@
         <div id="usageApps" class="muted">Loading…</div>
         <div class="row" style="margin-top:8px;align-items:center">
           <span id="usageMsg" class="note" style="flex:1;margin:0"></span>
-          <button id="usageRefresh" class="ghost">Refresh now</button>
         </div>
       </div>
 
