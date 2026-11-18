@@ -33,7 +33,12 @@ const api = (path, opts = {}) => {
   // cache: "no-store" = the browser must ask the server every time, never reuse an earlier answer.
   return fetch(path, { ...opts, headers, credentials: "same-origin", cache: "no-store" }).then(
     (r) =>
-      r.json().then((b) => {
+      r.json().catch((error) => {
+        // A proxy/server may answer 502 HTML rather than JSON; name the failed
+        // source rather than showing only a generic syntax exception.
+        noteProblem(`${path.split("?")[0]} returned unreadable JSON (HTTP ${r.status})`);
+        throw error;
+      }).then((b) => {
         if (r.status === 401) askForToken(el("tokenMsg").textContent === WRONG ? undefined : WHY[b?.reason]);
         else if (r.ok && path.startsWith("/api/")) signedIn = true;
         if (!r.ok) noteProblem(r.status === 401 ? "not signed in" : `${path.split("?")[0]} answered ${r.status}${b?.error ? " (" + b.error + ")" : ""}`);
