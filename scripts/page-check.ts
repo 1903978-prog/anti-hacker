@@ -158,6 +158,57 @@ async function main(): Promise<void> {
         await ctx.close();
       }
     }
+    // Refresh button: every menu has one, it makes real requests (no browser copy, server copy skipped where
+    // there is one), says when it read, and says what it could not read.
+    {
+      const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, bypassCSP: true });
+      const page = await ctx.newPage();
+      await page.goto(`${base}/#health`);
+      await page.locator("#tokenInput").waitFor({ state: "visible" });
+      await page.fill("#tokenInput", TOKEN);
+      await page.click("#tokenSave");
+      await page.locator("table.dash").waitFor();
+      const urls: string[] = [];
+      const cacheHeaders: string[] = [];
+      page.on("request", (r) => { if (r.url().includes("/api/")) urls.push(r.url()); });
+      page.on("response", async (r) => { if (r.url().includes("/api/")) cacheHeaders.push((await r.allHeaders())["cache-control"] || "(none)"); });
+      const FORCED: Record<string, string> = { delivery: "/api/delivery?refresh=1", usage: "/api/usage?refresh=1", backup: "/api/backup/dropbox?refresh=1" };
+      for (const tab of [...TABS, "backup"]) {
+        await page.goto(`${base}/#${tab}`);
+        await page.locator(`section[data-panel="${tab}"]`).waitFor({ state: "visible" });
+        await page.waitForTimeout(500);
+        if (!(await page.locator("#refreshBtn").isVisible())) { problems.push(`${tab}: no Refresh button`); continue; }
+        urls.length = 0;
+        await page.click("#refreshBtn");
+        await page.locator("#refreshStamp", { hasText: "Last refreshed" }).waitFor({ timeout: 8000 }).catch(() => problems.push(`${tab}: Refresh did not report when it read`));
+        if (!urls.length) problems.push(`${tab}: Refresh made no request to the server`);
+        if (tab === "delivery" && !(await page.locator(".dlledger", { hasText: /Live ledger: (exists|does not exist|unknown)/ }).first().isVisible())) problems.push("delivery: no 'Live ledger: exists / does not exist' line");
+        const want = FORCED[tab];
+        if (want && !urls.some((u) => u.endsWith(want))) problems.push(`${tab}: Refresh did not ask the server to skip its saved copy (${want})`);
+        checks++;
+      }
+      if (cacheHeaders.some((h) => !h.includes("no-store"))) problems.push(`an API answer was not marked no-store: ${[...new Set(cacheHeaders)].join(", ")}`);
+      // A source that cannot be read must be named, not hidden.
+      await page.goto(`${base}/#scans`);
+      await page.locator('section[data-panel="scans"]').waitFor({ state: "visible" });
+      await page.route("**/api/audit*", (route) => route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"boom"}' }));
+      await page.click("#refreshBtn");
+      await page.locator("#refreshStamp", { hasText: "Could not read" }).waitFor({ timeout: 8000 }).catch(() => problems.push("scans: a failed read was not reported"));
+      const text = await page.locator("#refreshStamp").innerText();
+      if (!text.includes("/api/audit")) problems.push(`scans: failure message does not name what failed: ${text}`);
+      await page.unroute("**/api/audit*");
+      // A reverse proxy can return HTML instead of JSON on a failed API read.
+      // The Refresh message must still name the failed endpoint.
+      await page.route("**/api/audit*", (route) => route.fulfill({ status: 502, contentType: "text/html", body: "bad gateway" }));
+      await page.click("#refreshBtn");
+      await page.locator("#refreshStamp", { hasText: "/api/audit returned unreadable JSON" }).waitFor({ timeout: 8000 })
+        .catch(() => problems.push("scans: non-JSON failure did not name the API source"));
+      await page.unroute("**/api/audit*");
+      await page.click("#refreshBtn");
+      await page.locator("#refreshStamp", { hasText: "Last refreshed" }).waitFor({ timeout: 8000 }).catch(() => problems.push("scans: Refresh did not recover after the failure"));
+      checks++;
+      await ctx.close();
+    }
   } finally {
     await browser.close();
     server.close();
