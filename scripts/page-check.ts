@@ -197,6 +197,13 @@ async function main(): Promise<void> {
       const text = await page.locator("#refreshStamp").innerText();
       if (!text.includes("/api/audit")) problems.push(`scans: failure message does not name what failed: ${text}`);
       await page.unroute("**/api/audit*");
+      // A reverse proxy can return HTML instead of JSON on a failed API read.
+      // The Refresh message must still name the failed endpoint.
+      await page.route("**/api/audit*", (route) => route.fulfill({ status: 502, contentType: "text/html", body: "bad gateway" }));
+      await page.click("#refreshBtn");
+      await page.locator("#refreshStamp", { hasText: "/api/audit returned unreadable JSON" }).waitFor({ timeout: 8000 })
+        .catch(() => problems.push("scans: non-JSON failure did not name the API source"));
+      await page.unroute("**/api/audit*");
       await page.click("#refreshBtn");
       await page.locator("#refreshStamp", { hasText: "Last refreshed" }).waitFor({ timeout: 8000 }).catch(() => problems.push("scans: Refresh did not recover after the failure"));
       checks++;
