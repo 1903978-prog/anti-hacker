@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { centralProblems, checkDropbox, judge, parseCopyName, showDate, type DropboxFetcher } from "../server/backup/dropbox.js";
+import { CENTRAL_STATUS_FALLBACK, centralProblems, checkDropbox, judge, parseCopyName, showDate, type DropboxFetcher } from "../server/backup/dropbox.js";
 
 const NOW = new Date("2026-11-14T09:00:00Z"); // Saturday 14 Nov 2026
 
@@ -107,8 +107,20 @@ describe("dropbox backup check", () => {
   });
 
   it("flags a central backup that stopped running", () => {
-    const c = centralProblems({ runAt: "2026-11-09T14:00:00Z", apps: {} }, NOW);
+    const c = centralProblems({ runAt: "2026-11-09T14:00:00Z", apps: { nexus: {} } }, NOW);
     expect(c.byApp.get("nexus")).toEqual(["the central backup has not run since 09 Nov 2026"]);
+  });
+
+  it("reproduces 20 Nov 2026: an app missing from the central status file is red, even with overdue: []", () => {
+    const status = {
+      runAt: "2026-11-14T06:00:00Z",
+      apps: { "lm-op-model": { problem: null }, compplan: { problem: null }, "10bonds": { problem: null }, "template-tiles": { problem: null } },
+      overdue: [],
+    };
+    const c = centralProblems(status, NOW);
+    expect(c.byApp.get("nexus")).toEqual(["the central backup does not cover this app (missing from its status file)"]);
+    expect(c.byApp.has("compplan")).toBe(false);
+    expect(c.byApp.has("secval")).toBe(false);
   });
 
   it("fails closed for future, invalid and missing central run times", () => {
@@ -142,7 +154,7 @@ describe("dropbox backup check", () => {
       ];
       const f: DropboxFetcher = async (url) => {
         if (url.endsWith("/list_folder")) return { status: 200, async json() { return { entries, has_more: false }; } };
-        if (url.endsWith("/download")) return { status: 403, async json() { return {}; } };
+        if (url.endsWith("/download")) return { status: includeStatus ? 403 : 409, async json() { return {}; } };
         return { status: 200, async json() { return { access_token: "t" }; } };
       };
       return checkDropbox({ env, fetcher: f, now: NOW });
@@ -173,7 +185,11 @@ describe("dropbox backup check", () => {
     const r = judge(files, NOW, centralProblems(status, NOW).byApp);
     expect(r.status).toBe("red");
     expect(r.apps.every((a) => a.status === "red")).toBe(true);
-    expect(r.apps.find((a) => a.app === "nexus")!.problems).toEqual(["only 1 database copy in the last 8 days (needs 2)"]);
+    expect(r.apps.find((a) => a.app === "nexus")!.problems).toEqual([
+      "only 1 database copy in the last 8 days (needs 2)",
+      // The 13 Nov status file did not list Nexus either; that gap was only noticed on 20 Nov 2026.
+      "the central backup does not cover this app (missing from its status file)",
+    ]);
   });
 
   it("looks only in the one folder Livio chose", async () => {
@@ -211,7 +227,7 @@ describe("dropbox backup check", () => {
       if (url.endsWith("/download")) {
         // Dropbox refuses a text/plain body on content endpoints, so the download must carry none.
         expect(init.body).toBeUndefined();
-        return { status: 200, async json() { return { runAt: "2026-11-14T06:00:00Z", apps: {} }; } };
+        return { status: 200, async json() { return { runAt: "2026-11-14T06:00:00Z", apps: { compplan: {}, "lm-op-model": {}, nexus: {}, "10bonds": {} } }; } };
       }
       if (url.endsWith("/list_folder")) {
         const path = JSON.parse(init.body ?? "{}").path;
@@ -228,6 +244,24 @@ describe("dropbox backup check", () => {
     expect(r.centralNote).toContain("14 Nov 2026");
     expect(r.centralNote).toContain("Folder not found: /old");
     expect(seen.filter((u) => u.endsWith("/list_folder"))).toHaveLength(2);
+  });
+
+  it("reads the central status file from the old folder when the main folder has none", async () => {
+    const downloads: string[] = [];
+    const entries = copies(["261113", "261114"]).map((name) => ({ ".tag": "file", name, path_display: `/backups nov26/${name}`, size: 9 }));
+    const f: DropboxFetcher = async (url, init) => {
+      if (url.endsWith("/list_folder")) return { status: 200, async json() { return { entries, has_more: false }; } };
+      if (url.endsWith("/download")) {
+        downloads.push(JSON.parse(init.headers["Dropbox-API-Arg"] ?? "{}").path);
+        return { status: 200, async json() { return { runAt: "2026-11-14T06:00:00Z", apps: { compplan: {}, "lm-op-model": {}, "10bonds": {} } }; } };
+      }
+      return { status: 200, async json() { return { access_token: "t" }; } };
+    };
+    const r = await checkDropbox({ env: { DROPBOX_ACCESS_TOKEN: "t" }, fetcher: f, now: NOW });
+    expect(downloads).toEqual([CENTRAL_STATUS_FALLBACK]);
+    expect(r.centralNote).toContain(CENTRAL_STATUS_FALLBACK);
+    expect(r.apps.find((a) => a.app === "nexus")!.problems).toContain("the central backup does not cover this app (missing from its status file)");
+    expect(r.apps.find((a) => a.app === "compplan")!.problems).not.toContain("the central backup status file was not found");
   });
 
   it("reports a refused key without leaking it", async () => {
