@@ -52,6 +52,9 @@ export function appsChecked(env: Env): { app: string; needsDb: boolean }[] {
   return env.SECVAL_SECOND_COPY === "on" ? [...BACKUP_APPS, { app: "secval", needsDb: true }] : BACKUP_APPS;
 }
 
+/** Where the central backup actually writes its status.json (20 Nov 2026), read when the main folder has none. */
+export const CENTRAL_STATUS_FALLBACK = "/App backups/status.json";
+
 /** Livio, 14 Nov 2026: every app backs up into ONE folder, one subfolder per app. */
 export const DEFAULT_FOLDERS = ["/backups nov26"];
 
@@ -240,6 +243,14 @@ export function centralProblems(status: unknown, now: Date): { byApp: Map<string
     if (str(db.problem)) p.push(`the last database copy failed to save (${plain(str(db.problem))})`);
     if (!p.length && str(a.problem)) p.push(`the last run reported a problem (${plain(str(a.problem))})`);
     if (p.length) byApp.set(app, p);
+  }
+  // 20 Nov 2026: Nexus was missing from status.json for days while it said "overdue: []".
+  // An app the central backup does not list is not protected by it, so it is a red line.
+  const listed = new Set(Object.keys(obj(s.apps)));
+  for (const { app } of BACKUP_APPS) if (!listed.has(app)) {
+    const list = byApp.get(app) ?? [];
+    list.push("the central backup does not cover this app (missing from its status file)");
+    byApp.set(app, list);
   }
   if (age > NEWEST_MAX_DAYS) {
     for (const { app } of BACKUP_APPS) if (app !== "secval") {
@@ -467,18 +478,21 @@ export async function checkDropbox(
     };
     const statusPath = `${folders[0]}/status.json`.toLowerCase();
     const statusFile = files.find((x) => x.name === "status.json" && (x.path ?? "").toLowerCase() === statusPath);
-    if (statusFile) {
-      try {
-        const body = await post(f, "https://content.dropboxapi.com/2/files/download",
-          { authorization: headers.authorization, "Dropbox-API-Arg": JSON.stringify({ path: statusFile.path }) });
-        const c = centralProblems(body, now);
-        central = c.byApp;
-        centralNote = c.note;
-      } catch (err) {
+    // The central backup still writes its status file in its old folder (checked 20 Nov 2026), so look there too.
+    const readFrom = statusFile?.path ?? CENTRAL_STATUS_FALLBACK;
+    try {
+      const body = await post(f, "https://content.dropboxapi.com/2/files/download",
+        { authorization: headers.authorization, "Dropbox-API-Arg": JSON.stringify({ path: readFrom }) });
+      const c = centralProblems(body, now);
+      central = c.byApp;
+      centralNote = c.note + (statusFile ? "" : ` (status file read from ${CENTRAL_STATUS_FALLBACK})`);
+    } catch (err) {
+      if (!statusFile && err instanceof HttpError && err.status === 409)
+        failClosed("the central backup status file was not found", "The central backup's status file was not found.");
+      else
         failClosed("the central backup status file could not be read",
           "Could not read the central backup's status file: " + failReason(err) + ".");
-      }
-    } else failClosed("the central backup status file was not found", "The central backup's status file was not found.");
+    }
     if (missingFolders.length) centralNote += ` Folder not found: ${missingFolders.join(", ")}.`;
     const own = await verifySecvalCopies(files, f, headers.authorization, env, now);
     const judged = judge(files, now, central, appsChecked(env), own.verified);
