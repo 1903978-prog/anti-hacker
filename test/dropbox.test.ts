@@ -262,6 +262,19 @@ describe("dropbox backup check", () => {
     expect(r.centralNote).toContain(CENTRAL_STATUS_FALLBACK);
     expect(r.apps.find((a) => a.app === "nexus")!.problems).toContain("the central backup does not cover this app (missing from its status file)");
     expect(r.apps.find((a) => a.app === "compplan")!.problems).not.toContain("the central backup status file was not found");
+    expect(r.apps.find((a) => a.app === "nexus")!.status).toBe("red");
+  });
+
+  it("fails closed when the fallback status file exists but cannot be read", async () => {
+    const entries = copies(["261113", "261114"]).map((name) => ({ ".tag": "file", name, path_display: `/backups nov26/${name}`, size: 9 }));
+    const f: DropboxFetcher = async (url) => {
+      if (url.endsWith("/list_folder")) return { status: 200, async json() { return { entries, has_more: false }; } };
+      if (url.endsWith("/download")) return { status: 500, async json() { return {}; } };
+      return { status: 200, async json() { return { access_token: "t" }; } };
+    };
+    const r = await checkDropbox({ env: { DROPBOX_ACCESS_TOKEN: "t" }, fetcher: f, now: NOW });
+    expect(r.status).toBe("red");
+    expect(r.apps.find((a) => a.app === "compplan")!.problems).toContain("the central backup status file could not be read");
   });
 
   it("reports a refused key without leaking it", async () => {
