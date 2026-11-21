@@ -14,6 +14,7 @@
  * app backs up into, one subfolder per app), recursively. Copies left only in
  * the old folders ("/App backups", "/Apps/LM CLAUDE BACK UP") do not count. It reads every
  * naming style used so far: "261112-lm-op-model-db.dump.enc" (central),
+ * "261120-compplan-code~161208956-4d5720.zip.enc" (central since 20 Nov 2026, run id after "~"),
  * "261113-nexus-db.zip" (old GitHub backups) and
  * "compplan-db-20261026-0700Z.dump" (old PC script). It also reads the central
  * backup's own "status.json" and turns any problem it records (for example
@@ -25,7 +26,7 @@
  *
  * Only READ calls are made. The keys come from environment variables, are never
  * stored, logged or sent to the browser, and Dropbox error bodies are not passed
- * on (only the status code).
+ * on (only the status code, plus the name of a missing permission when Dropbox states one).
  *
  * This is not scanning: it reads Livio's own account, so it does not go through
  * the scan policy engine.
@@ -51,9 +52,6 @@ export const BACKUP_APPS: { app: string; needsDb: boolean }[] = [
 export function appsChecked(env: Env): { app: string; needsDb: boolean }[] {
   return env.SECVAL_SECOND_COPY === "on" ? [...BACKUP_APPS, { app: "secval", needsDb: true }] : BACKUP_APPS;
 }
-
-/** Where the central backup actually writes its status.json (20 Nov 2026), read when the main folder has none. */
-export const CENTRAL_STATUS_FALLBACK = "/App backups/status.json";
 
 /** Livio, 14 Nov 2026: every app backs up into ONE folder, one subfolder per app. */
 export const DEFAULT_FOLDERS = ["/backups nov26"];
@@ -95,6 +93,8 @@ export interface FileEntry {
 export interface DropboxResponse {
   status: number;
   json(): Promise<unknown>;
+  /** Plain-text error body (Dropbox explains a 400 this way). Only matched against known reasons, never shown. */
+  text?(): Promise<string>;
 }
 /** Minimal fetch shape so tests can hand in canned Dropbox answers. */
 export type DropboxFetcher = (
@@ -114,13 +114,24 @@ const RULE =
   `the newest at most ${NEWEST_MAX_DAYS} days old. Empty files do not count.`;
 
 class HttpError extends Error {
-  constructor(public status: number) {
+  constructor(public status: number, public missingScope: string | null = null) {
     super(`HTTP ${status}`);
   }
 }
 
+/**
+ * The permission Dropbox names when the app itself lacks it (a 400 with a plain-text body such as
+ * "... does not have the required scope 'files.content.read' ..."). Only a scope name is kept, never the body.
+ */
+export function scopeFromError(body: string): string | null {
+  const m = /required scope ['"]?([a-z_]+(?:\.[a-z_]+)+)['"]?/i.exec(body);
+  return m ? m[1]!.toLowerCase() : null;
+}
+
 function failReason(err: unknown): string {
   if (err instanceof HttpError) {
+    if (err.missingScope)
+      return `Secval's Dropbox app is not allowed to use "${err.missingScope}" (HTTP ${err.status}); it can be switched on in the app's Permissions tab in the Dropbox App Console, then a new key is needed`;
     if (err.status === 400 || err.status === 401 || err.status === 403)
       return `the Dropbox key was refused (HTTP ${err.status}); it may be wrong, expired or missing the "files.metadata.read" permission`;
     if (err.status === 429) return "too many requests right now (HTTP 429); try again later";
@@ -187,7 +198,7 @@ function daysBetween(a: string, b: string): number {
  * Returns null for anything else (history bundles, logs, status files).
  */
 export function parseCopyName(name: string): { app: string; kind: "code" | "db"; at: Date } | null {
-  let m = /^(\d{2})(\d{2})(\d{2})-(.+)-(code|db)\.(?:zip|dump)(?:\.enc)?$/.exec(name);
+  let m = /^(\d{2})(\d{2})(\d{2})-(.+)-(code|db)(?:~[A-Za-z0-9-]+)?\.(?:zip|dump)(?:\.enc)?$/.exec(name);
   if (m) {
     const [, y, mo, d, app = "", kind = ""] = m;
     const at = new Date(Date.UTC(2000 + Number(y), Number(mo) - 1, Number(d), 12));
@@ -370,7 +381,11 @@ export function judge(
 async function post(f: DropboxFetcher, url: string, headers: Record<string, string>, body?: string): Promise<unknown> {
   // No body at all for content downloads: a string body makes fetch send text/plain, which Dropbox refuses (400).
   const res = await f(url, body === undefined ? { method: "POST", headers } : { method: "POST", headers, body });
-  if (res.status < 200 || res.status >= 300) throw new HttpError(res.status);
+  if (res.status < 200 || res.status >= 300) {
+    let scope: string | null = null;
+    if (res.status === 400 && res.text) scope = scopeFromError(await res.text().catch(() => ""));
+    throw new HttpError(res.status, scope);
+  }
   return res.json();
 }
 
@@ -478,20 +493,21 @@ export async function checkDropbox(
     };
     const statusPath = `${folders[0]}/status.json`.toLowerCase();
     const statusFile = files.find((x) => x.name === "status.json" && (x.path ?? "").toLowerCase() === statusPath);
-    // The central backup still writes its status file in its old folder (checked 20 Nov 2026), so look there too.
-    const readFrom = statusFile?.path ?? CENTRAL_STATUS_FALLBACK;
-    try {
-      const body = await post(f, "https://content.dropboxapi.com/2/files/download",
-        { authorization: headers.authorization, "Dropbox-API-Arg": JSON.stringify({ path: readFrom }) });
-      const c = centralProblems(body, now);
-      central = c.byApp;
-      centralNote = c.note + (statusFile ? "" : ` (status file read from ${CENTRAL_STATUS_FALLBACK})`);
-    } catch (err) {
-      if (!statusFile && err instanceof HttpError && err.status === 409)
-        failClosed("the central backup status file was not found", "The central backup's status file was not found.");
-      else
+    // The central backup writes its status file in "/backups nov26" (checked 21 Nov 2026); the old
+    // "/App backups" folder was deleted on 20 Nov 2026, so there is no other place to look.
+    if (!statusFile) {
+      failClosed("the central backup status file was not found", `The central backup's status file was not found in ${folders[0]}.`);
+    } else {
+      try {
+        const body = await post(f, "https://content.dropboxapi.com/2/files/download",
+          { authorization: headers.authorization, "Dropbox-API-Arg": JSON.stringify({ path: statusFile.path }) });
+        const c = centralProblems(body, now);
+        central = c.byApp;
+        centralNote = c.note;
+      } catch (err) {
         failClosed("the central backup status file could not be read",
           "Could not read the central backup's status file: " + failReason(err) + ".");
+      }
     }
     if (missingFolders.length) centralNote += ` Folder not found: ${missingFolders.join(", ")}.`;
     const own = await verifySecvalCopies(files, f, headers.authorization, env, now);
