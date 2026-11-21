@@ -12,7 +12,9 @@ const WRONG = "That secret token was wrong. Paste it again.";
 // Why the server refused this browser (sent with the 401).
 const WHY = {
   "token-changed": "The secret token was changed on Render, so this browser's sign-in stopped working. Paste the new token once.",
-  "not-signed-in": "This browser has no sign-in saved (cookies cleared, another browser or a private window). Paste your token once; it is then remembered for over a year.",
+  "not-signed-in": "This browser has no sign-in saved (cookies cleared, another browser or a private window). Paste your token once; it is then remembered for 30 days.",
+  "expired": "Your sign-in ended after 30 days, as planned. Your data is safe. Paste your token once to sign in for another 30 days.",
+  "signed-out": "This browser was signed out. Your data is safe. Paste your token once to sign in again.",
 };
 function askForToken(message) {
   signedIn = false;

@@ -1,5 +1,7 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { Request, Response, NextFunction } from "express";
+import type { DB } from "./db.js";
+import { appendAudit } from "./audit/log.js";
 
 /**
  * Security hardening middleware for secval's OWN HTTP surface. None of this
@@ -80,23 +82,123 @@ function constantTimeEqual(a: string, b: string): boolean {
 }
 
 export const SESSION_COOKIE = "secval_session";
-// 400 days is the longest a browser (Chrome) keeps a cookie; each use renews it.
-const SESSION_DAYS = 400;
+/** A sign-in lasts 30 days from the moment the token was pasted; using the page does not extend it. */
+export const SESSION_DAYS = 30;
+const SESSION_MS = SESSION_DAYS * 86_400_000;
+/** Allowed clock difference for a sign-in time slightly in the future. */
+const SKEW_MS = 5 * 60_000;
+/**
+ * Sign-ins made before 30-day sessions (one fixed value per token, no end
+ * date) are swapped once for a 30-day one, so the release does not sign the
+ * owner out. After this date they are refused and the token must be pasted.
+ */
+export const V1_UPGRADE_UNTIL = Date.parse("2026-12-31T23:59:59Z");
+const REVOKED_KEY = "session_revoked";
+const VALID_AFTER_KEY = "session_valid_after";
+
+/** Where a sign-out is remembered, and the clock (tests pass a fake one). */
+export interface SessionDeps {
+  db?: DB;
+  now?: () => number;
+}
 
 /**
- * The browser session value: derived from the API token, so it survives a
- * restart (the free tier sleeps) and stops working the moment the token is
- * changed. The token itself never leaves the server after sign-in.
+ * The pre-30-day session value (v1): derived from the API token. Kept only to
+ * recognise old cookies for the one-time swap above.
  */
 export function sessionValue(token: string): string {
   return createHmac("sha256", token).update("secval-session-v1").digest("base64url");
 }
 
-function setSessionCookie(res: Response, value: string): void {
+/**
+ * The signing key for sign-ins. Derived from the API token, so it survives a
+ * restart or deploy (nothing to store), and changing the token on Render ends
+ * every sign-in at once. The token itself never leaves the server.
+ */
+function sessionKey(token: string): Buffer {
+  return createHmac("sha256", token).update("secval-session-v2").digest();
+}
+
+function mac(token: string, body: string): string {
+  return createHmac("sha256", sessionKey(token)).update(body).digest("base64url");
+}
+
+/** A new signed sign-in: "v2.<issued ms>.<random id>.<signature>". */
+export function issueSession(token: string, issuedAt: number): string {
+  const body = `v2.${issuedAt.toString(36)}.${randomBytes(16).toString("base64url")}`;
+  return `${body}.${mac(token, body)}`;
+}
+
+type Check =
+  | { ok: true; id: string; issuedAt: number }
+  | { ok: false; reason: "expired" | "signed-out" | "token-changed" };
+
+/** Reads a v2 cookie: right signature, not older than 30 days, not signed out. */
+export function checkSession(token: string, value: string, deps: SessionDeps = {}): Check {
+  const now = (deps.now ?? Date.now)();
+  const parts = value.split(".");
+  if (parts.length !== 4 || parts[0] !== "v2") return { ok: false, reason: "token-changed" };
+  const body = parts.slice(0, 3).join(".");
+  if (!constantTimeEqual(parts[3] ?? "", mac(token, body))) return { ok: false, reason: "token-changed" };
+  const issuedAt = parseInt(parts[1] ?? "", 36);
+  const id = parts[2] ?? "";
+  if (!Number.isFinite(issuedAt) || issuedAt > now + SKEW_MS) return { ok: false, reason: "token-changed" };
+  if (now >= issuedAt + SESSION_MS) return { ok: false, reason: "expired" };
+  if (deps.db && (issuedAt < validAfter(deps.db) || revokedIds(deps.db, now).has(id))) {
+    return { ok: false, reason: "signed-out" };
+  }
+  return { ok: true, id, issuedAt };
+}
+
+function readState(db: DB, key: string): string | undefined {
+  return (db.prepare(`SELECT value FROM app_state WHERE key = ?`).get(key) as { value: string } | undefined)?.value;
+}
+
+function writeState(db: DB, key: string, value: string): void {
+  db.prepare(`INSERT INTO app_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(key, value);
+}
+
+function validAfter(db: DB): number {
+  const v = Number(readState(db, VALID_AFTER_KEY));
+  return Number.isFinite(v) ? v : 0;
+}
+
+/** Signed-out sign-in ids, each kept until its own 30 days would have ended. */
+function revokedList(db: DB, now: number): { id: string; until: number }[] {
+  try {
+    const list = JSON.parse(readState(db, REVOKED_KEY) ?? "[]") as { id: string; until: number }[];
+    return Array.isArray(list) ? list.filter((r) => typeof r?.id === "string" && r.until > now) : [];
+  } catch {
+    return [];
+  }
+}
+
+function revokedIds(db: DB, now: number): Set<string> {
+  return new Set(revokedList(db, now).map((r) => r.id));
+}
+
+/** Ends one sign-in on the server too, so a copied cookie stops working. */
+function revokeSession(db: DB, id: string, issuedAt: number, now: number): void {
+  const list = revokedList(db, now);
+  list.push({ id, until: issuedAt + SESSION_MS });
+  writeState(db, REVOKED_KEY, JSON.stringify(list.slice(-500)));
+}
+
+/** Security sign-out: every sign-in made before now stops working, in every browser. */
+export function revokeAllSessions(db: DB, now: number): void {
+  writeState(db, VALID_AFTER_KEY, String(now));
+  appendAudit(db, { actor: "owner", action: "session.revoke_all", decision: "info", reason: "every browser sign-in ended" });
+}
+
+function setSessionCookie(res: Response, value: string, maxAgeSeconds: number): void {
   res.setHeader(
     "Set-Cookie",
-    `${SESSION_COOKIE}=${value}; Path=/api; HttpOnly; Secure; SameSite=Strict; Max-Age=${SESSION_DAYS * 86400}`,
+    `${SESSION_COOKIE}=${value}; Path=/api; HttpOnly; Secure; SameSite=Strict; Max-Age=${Math.max(0, Math.floor(maxAgeSeconds))}`,
   );
+}
+
+function clearSessionCookie(res: Response): void {
+  res.setHeader("Set-Cookie", `${SESSION_COOKIE}=; Path=/api; HttpOnly; Secure; SameSite=Strict; Max-Age=0`);
 }
 
 function readCookie(req: Request, name: string): string {
@@ -141,14 +243,21 @@ function tooManyTries(res: Response): Response {
 
 /**
  * Sign-in for the web page: swaps the secret token for an HttpOnly cookie, so
- * no script on the page can read it. POST /session checks the token; POST
- * /session/end signs out. Mounted under /api, before apiAuth.
+ * no script on the page can read it. POST /session checks the token and starts
+ * a 30-day sign-in; POST /session/end signs this browser out (on the server
+ * too). Mounted under /api, before apiAuth.
  */
-export function sessionRoutes(token: string | undefined, limiter: FailedAuthLimiter) {
+export function sessionRoutes(token: string | undefined, limiter: FailedAuthLimiter, deps: SessionDeps = {}) {
+  const now = deps.now ?? Date.now;
   return (req: Request, res: Response, next: NextFunction) => {
     if (req.method !== "POST") return next();
     if (req.path === "/session/end") {
-      res.setHeader("Set-Cookie", `${SESSION_COOKIE}=; Path=/api; HttpOnly; Secure; SameSite=Strict; Max-Age=0`);
+      const cookie = readCookie(req, SESSION_COOKIE);
+      if (token && cookie && deps.db) {
+        const c = checkSession(token, cookie, deps);
+        if (c.ok) revokeSession(deps.db, c.id, c.issuedAt, now());
+      }
+      clearSessionCookie(res);
       return res.json({ signedIn: false });
     }
     if (req.path !== "/session") return next();
@@ -164,8 +273,8 @@ export function sessionRoutes(token: string | undefined, limiter: FailedAuthLimi
       limiter.fail();
       return res.status(401).json({ error: "wrong token" });
     }
-    setSessionCookie(res, sessionValue(token));
-    res.json({ signedIn: true });
+    setSessionCookie(res, issueSession(token, now()), SESSION_MS / 1000);
+    res.json({ signedIn: true, days: SESSION_DAYS });
   };
 }
 
@@ -193,8 +302,14 @@ export function parseAppTokens(raw: string | undefined): Map<string, string> {
   return out;
 }
 
-export function apiAuth(token: string | undefined, limiter?: FailedAuthLimiter, appTokens: Map<string, string> = new Map()) {
-  const session = token ? sessionValue(token) : "";
+export function apiAuth(
+  token: string | undefined,
+  limiter?: FailedAuthLimiter,
+  appTokens: Map<string, string> = new Map(),
+  deps: SessionDeps = {},
+) {
+  const v1 = token ? sessionValue(token) : "";
+  const now = deps.now ?? Date.now;
   return (req: Request, res: Response, next: NextFunction) => {
     if (req.method === "OPTIONS") return next();
     const bearer = /^Bearer\s+(.+)$/i.exec(req.get("authorization") ?? "")?.[1]?.trim() ?? "";
@@ -216,26 +331,36 @@ export function apiAuth(token: string | undefined, limiter?: FailedAuthLimiter, 
     const provided = match?.[1]?.trim() ?? "";
     if (provided && constantTimeEqual(provided, token)) return next();
     const cookie = readCookie(req, SESSION_COOKIE);
-    if (!provided && cookie && constantTimeEqual(cookie, session)) {
-      const origin = req.get("origin");
-      const changes = req.method !== "GET" && req.method !== "HEAD";
-      // Render's proxy keeps the Host header; X-Forwarded-Host is accepted too
-      // in case a proxy rewrites it. A browser cannot set either cross-site.
-      const own = [req.get("host"), req.get("x-forwarded-host")];
-      if (changes && origin && !own.some((h) => sameHost(origin, h))) {
-        return res.status(403).json({ error: "cross-site request refused" });
+    let reason = provided ? "wrong-token" : cookie ? "token-changed" : "not-signed-in";
+    if (!provided && cookie) {
+      const t = now();
+      const c = checkSession(token, cookie, deps);
+      // A pre-30-day cookie: swapped once for a 30-day sign-in starting now,
+      // unless the owner has since ended every sign-in or the swap date passed.
+      const upgrade =
+        !c.ok && constantTimeEqual(cookie, v1) && t < V1_UPGRADE_UNTIL && !(deps.db && validAfter(deps.db) > 0);
+      if (c.ok || upgrade) {
+        const origin = req.get("origin");
+        const changes = req.method !== "GET" && req.method !== "HEAD";
+        // Render's proxy keeps the Host header; X-Forwarded-Host is accepted too
+        // in case a proxy rewrites it. A browser cannot set either cross-site.
+        const own = [req.get("host"), req.get("x-forwarded-host")];
+        if (changes && origin && !own.some((h) => sameHost(origin, h))) {
+          return res.status(403).json({ error: "cross-site request refused" });
+        }
+        // The 30 days count from sign-in: a valid cookie is not renewed.
+        if (upgrade) setSessionCookie(res, issueSession(token, t), SESSION_MS / 1000);
+        return next();
       }
-      // Each visit pushes the expiry forward, so regular use never signs out.
-      setSessionCookie(res, session);
-      return next();
+      if (!c.ok) reason = c.reason;
     }
-    if (provided || cookie) {
+    if (provided || reason === "token-changed") {
       if (limiter?.blocked()) return tooManyTries(res);
       limiter?.fail();
     }
     // Say why, so the page can tell the owner whether the browser lost its
-    // sign-in or the token was changed on the server (old cookies stop working).
-    const reason = provided ? "wrong-token" : cookie ? "token-changed" : "not-signed-in";
+    // sign-in, the 30 days ran out, it was signed out, or the token was changed.
+    if (cookie && !provided) clearSessionCookie(res);
     return res.status(401).json({ error: "unauthorized", reason });
   };
 }
