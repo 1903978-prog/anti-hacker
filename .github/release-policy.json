@@ -59,16 +59,23 @@
     "server/dbarch/readonly.ts",
     "server/dbarch/permissions.ts",
     "server/dbarch/grants.ts",
-    "server/dbarch/connect.ts"
+    "server/dbarch/connect.ts",
+    "server/dbarch/routes.ts",
+    "server/dbarch/engine.ts",
+    "server/health/dbcheck.ts",
+    "server/scan/active.ts",
+    "server/scan/passive.ts",
+    "server/health/uptime.ts",
+    "server/lenovo/monitor.ts"
   ],
   "amber_paths": [
     "server/migrations.ts",
     "server/db.ts",
     "server/schedule/**",
     "server/backup/**",
-    "server/scan/**",
     "package.json",
-    "package-lock.json"
+    "package-lock.json",
+    "server/scan/**"
   ],
   "green_paths": [
     "server/**",
@@ -96,8 +103,8 @@
     },
     {
       "id": "env-access",
-      "pattern": "\\bprocess\\s*\\.\\s*env\\b|\\bprocess\\s*\\[",
-      "why": "new or changed use of configuration or a credential",
+      "pattern": "\\bprocess\\b|\\benv\\s*(\\.|\\[)\\s*[\"'`]?[A-Z][A-Z0-9_]*|\\bimportMeta\\.env|import\\.meta\\.env",
+      "why": "reads configuration or a credential (process, or an env object)",
       "skip_paths": [
         "**/*.md",
         "docs/**",
@@ -151,9 +158,9 @@
   ],
   "red_removed": [
     {
-      "id": "safety-call-removed",
+      "id": "safety-hunk",
       "pattern": "\\b(requestApproval|isEngaged|appendAudit|apiAuth|rateLimit|failedAuthLimiter|sessionRoutes|securityHeaders|assertReadOnlySql|readOnly|isolated|verifyPermissions|resolveLimits|HARD_CAPS|markProven|ownershipProven|verifyOwnership|getEntry|noStore)\\b",
-      "why": "removes or changes a line that calls a safety, auth or audit control",
+      "why": "changes code next to an auth, audit, approval, kill-switch, read-only or ownership control",
       "skip_paths": [
         "**/*.md",
         "docs/**"
@@ -173,5 +180,6 @@
     }
   ],
   "pause_variable_values": "unset or 'on' = runs; any other value (off, stop, 0, false ...) = paused",
-  "always_requires": "production /health reports backup mode on, so a deploy cannot reset the store and its audit trail"
+  "always_requires": "production /health reports backup mode on, so a deploy cannot reset the store and its audit trail",
+  "red_removed_note": "red_removed rules are applied to every changed hunk, including its context lines"
 }

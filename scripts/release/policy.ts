@@ -104,6 +104,17 @@ function pathTier(p: Policy, path: string): Tier {
   return "RED";
 }
 
+/** Splits a GitHub per-file patch into hunks that contain at least one changed line. */
+function hunks(patch: string): string[][] {
+  const out: string[][] = [];
+  let cur: string[] = [];
+  for (const l of patch.split("\n")) {
+    if (l.startsWith("@@")) { out.push(cur); cur = []; } else cur.push(l);
+  }
+  out.push(cur);
+  return out.filter((h) => h.some((l) => l.startsWith("+") || l.startsWith("-")));
+}
+
 const DATA_PATHS = ["server/migrations.ts", "server/db.ts", "server/backup/**"];
 
 /** Classifies a PR's change set. Unknown paths, missing diffs, deleted tests and red content are RED. */
@@ -132,7 +143,6 @@ export function classify(p: Policy, files: ChangedFile[]): Classification {
     }
     const lines = (f.patch ?? "").split("\n");
     const added = lines.filter((l) => l.startsWith("+")).map((l) => l.slice(1));
-    const removed = lines.filter((l) => l.startsWith("-")).map((l) => l.slice(1));
     const hit = (rs: typeof red, ls: string[], tier: Tier, what: string) => {
       for (const r of rs) {
         if (matchesAny(f.filename, r.skip_paths)) continue;
@@ -143,7 +153,18 @@ export function classify(p: Policy, files: ChangedFile[]): Classification {
       }
     };
     hit(red, added, "RED", "added");
-    hit(removedRules, removed, "RED", "removed");
+    // Safety rules look at each changed hunk with its context lines, so replacing the body of
+    // `if (isEngaged(db)) { ... }` without touching the `if` line is still caught.
+    for (const h of hunks(f.patch ?? "")) {
+      for (const r of removedRules) {
+        if (matchesAny(f.filename, r.skip_paths)) continue;
+        if (h.some((l) => r.re.test(l.slice(1)))) {
+          t = "RED";
+          reasons.push(`${f.filename}: ${r.id} (${r.why})`);
+          break;
+        }
+      }
+    }
     hit(amber, added, "AMBER", "added");
     out.push({ path: f.filename, tier: t });
     tier = worst(tier, t);

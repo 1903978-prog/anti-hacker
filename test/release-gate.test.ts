@@ -112,6 +112,30 @@ describe("classification", () => {
     expect(classify(real, [file("server/x.ts", "+await fetch(u);")]).tier).toBe("AMBER");
     expect(classify(real, [file("server/x.ts", "+await fetch(u, { headers: { authorization: process.env.K } });")]).tier).toBe("RED");
   });
+  it("replacing the body of a kill-switch check without touching the if line is RED", () => {
+    const patch = "@@ -40,6 +40,6 @@\n   app.post(\"/x\", (req, res) => {\n     if (isEngaged(db)) {\n-      res.status(423).json({ error: \"kill switch\" });\n-      return;\n+      // carry on\n     }";
+    expect(classify(real, [file("server/health/score.ts", patch)]).tier).toBe("RED");
+  });
+  it("removing the throw after an ownership check is RED", () => {
+    const patch = "@@ -1,4 +1,3 @@\n   const ok = await verifyOwnership(db, host, v);\n-  if (!ok) throw new Error(\"not proven\");\n   run();";
+    expect(classify(real, [file("server/quality/x.ts", patch)]).tier).toBe("RED");
+  });
+  it("a hunk far from any safety call stays GREEN", () => {
+    expect(classify(real, [file("server/health/score.ts", "@@ -1,3 +1,3 @@\n const a = 1;\n-const b = 2;\n+const b = 3;")]).tier).toBe("GREEN");
+  });
+  it.each([
+    "+import { env } from \"node:process\";",
+    "+const P = process;",
+    "+const k = env.CRON_SECRET;",
+    "+const k = env[\"CRON_SECRET\"];",
+  ])("configuration access in another spelling is RED: %s", (patch) => expect(classify(real, [file("server/x.ts", patch)]).tier).toBe("RED"));
+  it("every server file that calls a kill-switch, approval, ownership or auth gate is a RED path", async () => {
+    const { readdirSync, statSync } = await import("node:fs");
+    const walk = (d: string): string[] => readdirSync(d).flatMap((n) => { const p = `${d}/${n}`; return statSync(p).isDirectory() ? walk(p) : [p]; });
+    const callers = walk("server").filter((f) => f.endsWith(".ts") && /\b(isEngaged|requestApproval|verifyOwnership|apiAuth)\(/.test(readFileSync(f, "utf8")));
+    expect(callers.length).toBeGreaterThan(3);
+    expect(callers.filter((f) => classify(real, [file(f)]).tier !== "RED")).toEqual([]);
+  });
   it("app wiring, auth, integrity and read-only DB guards are RED paths", () => {
     for (const f of ["server/app.ts", "server/index.ts", "server/integrity.ts", "server/dbarch/readonly.ts", "server/dbarch/permissions.ts"]) {
       expect(classify(real, [file(f)]).tier, f).toBe("RED");
