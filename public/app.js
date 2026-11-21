@@ -366,7 +366,23 @@ async function refreshDropbox(force) {
   el("dropboxText").innerHTML = `<span class="badge${body.status === "ok" ? " ok" : ""}"${body.status === "ok" ? "" : ' style="color:var(--danger)"'}>${esc(label)}</span> ${esc(body.message)}${lines}` +
     (body.centralNote ? `<div>${esc(body.centralNote)}</div>` : "") + table +
     ` · <a href="${esc(body.link)}" target="_blank" rel="noopener">open Dropbox</a>`;
+  const rc = body.reconnect;
+  if (rc) {
+    el("reconnectText").innerHTML = `<span class="badge${rc.ok ? " ok" : ""}"${rc.ok ? "" : ' style="color:var(--danger)"'}>${rc.ok ? "reconnected" : "reconnect failed"}</span> ` +
+      esc(formatDateTime(rc.at)) + " · " + esc(rc.detail);
+  }
 }
+el("reconnectBtn").onclick = async () => {
+  el("reconnectBtn").disabled = true;
+  el("reconnectText").textContent = "Opening Dropbox…";
+  const r = await api("/api/backup/dropbox/reconnect", { method: "POST", body: "{}" });
+  if (r.ok && r.body && typeof r.body.url === "string" && r.body.url.startsWith("https://www.dropbox.com/oauth2/authorize?")) {
+    location.href = r.body.url;
+    return;
+  }
+  el("reconnectText").textContent = (r.body && r.body.error) || "Could not start the reconnect.";
+  el("reconnectBtn").disabled = false;
+};
 let lenovoLoaded = false;
 async function refreshLenovo(run) {
   const { ok, body } = run ? await api("/api/lenovo/check", { method: "POST", body: "{}" }) : await api("/api/lenovo");

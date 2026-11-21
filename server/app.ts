@@ -54,11 +54,15 @@ export interface AppOptions {
   dbarch?: DbarchDeps;
   /** Delivery ledger: GitHub caller, env and clock (tests hand in fakes). */
   delivery?: DeliveryDeps;
+  /** "Reconnect Dropbox": environment and Dropbox token caller (tests hand in fakes). */
+  dropboxEnv?: Record<string, string | undefined>;
+  dropboxTokenFetch?: Parameters<typeof finishReconnect>[3];
 }
 import { DEFAULT_WEEKLY, getLastRun, runWeeklySweep } from "./schedule/weekly.js";
 import { backupMode, backupStatus, runRestoreDrill } from "./backup/drill.js";
 import { runSecondCopy, secondCopyMode, secondCopyStatus } from "./backup/secondCopy.js";
 import { dropboxStatus } from "./backup/dropbox.js";
+import { CALLBACK_PATH, finishReconnect, lastReconnect, loadStoredToken, startReconnect } from "./backup/dropboxConnect.js";
 import { lastIntegrity, refreshIntegrity } from "./integrity.js";
 import { bigBodyBypass, qualityRoutes } from "./quality/routes.js";
 import { dbarchRoutes, defaultDeps as dbarchDefaultDeps } from "./dbarch/routes.js";
@@ -113,6 +117,16 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
       store: { ok: s.ok, checkedAt: s.at, schemaVersion: s.schemaVersion, brokenLinks: s.brokenLinks },
       measurement: measurementStatus(db),
     });
+  });
+
+  // "Reconnect Dropbox": Dropbox sends the owner back here. Public on purpose: the login cookie is
+  // SameSite=Strict, so the browser does not send it on a redirect from dropbox.com. The one-time
+  // state made by the logged-in start (POST /api/backup/dropbox/reconnect) is the check instead.
+  const dropboxEnv = options.dropboxEnv ?? process.env;
+  loadStoredToken(db, dropboxEnv);
+  app.get(CALLBACK_PATH, rateLimit({ windowMs: 60_000, max: 20 }), async (req, res) => {
+    const r = await finishReconnect(db, { code: req.query.code, state: req.query.state, error: req.query.error }, dropboxEnv, options.dropboxTokenFetch);
+    res.redirect(303, `/?dropbox=${r.ok ? "connected" : "failed"}#backup`);
   });
 
   // Store check for a monitor: 200 when the database is intact, 503 when not.
@@ -275,7 +289,18 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
 
   // Dropbox copies of each app's code and database (read-only check).
   app.get("/api/backup/dropbox", async (req, res) => {
-    res.json(await dropboxStatus({ refresh: req.query.refresh === "1" }));
+    res.json({ ...(await dropboxStatus({ refresh: req.query.refresh === "1" })), reconnect: lastReconnect(db) });
+  });
+
+  // Starts "Reconnect Dropbox" (logged-in only): returns Dropbox's consent page; the browser goes there.
+  app.post("/api/backup/dropbox/reconnect", (req, res) => {
+    const r = startReconnect(db, `${req.protocol}://${req.get("host")}`, dropboxEnv);
+    if (!r.ok) {
+      res.status(409).json({ error: r.error });
+      return;
+    }
+    appendAudit(db, { actor: ACTOR, action: "backup.dropbox_reconnect_start", decision: "info" });
+    res.json({ url: r.url });
   });
 
   // --- Rollback (recent Render deploys, one-click rollback) -------------------
