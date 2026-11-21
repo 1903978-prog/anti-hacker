@@ -1,0 +1,145 @@
+{
+  "policy_id": "SECVAL-SRD-001",
+  "version": 1,
+  "status": "inactive",
+  "status_values": "inactive = dry run only (the gate reports what it would do, never merges); active = GREEN/AMBER may merge and deploy; revoked = nothing runs. Changing this file is RED: it needs Livio's own approval.",
+  "repository": "1903978-prog/anti-hacker",
+  "target_branch": "integration",
+  "production_url": "https://secval.onrender.com",
+  "required_checks": [
+    "check"
+  ],
+  "review_marker": "secval-ai-review",
+  "trusted_logins": [
+    "1903978-prog"
+  ],
+  "stop_labels": [
+    "release-stop",
+    "release-incident"
+  ],
+  "pause_variable": "SECVAL_AUTO_RELEASE",
+  "limits": {
+    "max_changed_files": 40,
+    "max_changed_lines": 1500,
+    "amber_max_changed_lines": 600
+  },
+  "verify": {
+    "timeout_minutes": 25,
+    "poll_seconds": 30
+  },
+  "red_paths": [
+    ".github/**",
+    "CLAUDE.md",
+    "AGENTS.md",
+    "EENDIGO_AEOS.md",
+    ".engineering/aeos.config.json",
+    ".engineering/aeos.lock.json",
+    ".claude/**",
+    "docs/policies/**",
+    "scripts/release/**",
+    "scripts/aeos/**",
+    "scripts/start.sh",
+    "scripts/get-litestream.sh",
+    "render.yaml",
+    "litestream.yml",
+    "server/governance/**",
+    "server/audit/**",
+    "server/ownership/**",
+    "server/middleware.ts",
+    "server/notify/**",
+    "server/deploy/**",
+    "test/release-*.test.ts",
+    "test/releasePolicy.test.ts",
+    "test/policy.test.ts",
+    "test/audit.test.ts",
+    "test/ownership.test.ts"
+  ],
+  "amber_paths": [
+    "server/migrations.ts",
+    "server/db.ts",
+    "server/schedule/**",
+    "server/backup/**",
+    "server/scan/**",
+    "package.json",
+    "package-lock.json"
+  ],
+  "green_paths": [
+    "server/**",
+    "public/**",
+    "test/**",
+    "docs/**",
+    "reports/**",
+    "eees/**",
+    "scripts/**",
+    ".engineering/**",
+    "README.md",
+    "tsconfig.json",
+    "eslint.config.js"
+  ],
+  "red_content": [
+    {
+      "id": "sql-delete",
+      "pattern": "\\b(DROP\\s+(TABLE|COLUMN|INDEX)|TRUNCATE|DELETE\\s+FROM)\\b",
+      "why": "irreversible deletion of production data",
+      "skip_paths": [
+        "**/*.md",
+        "docs/**",
+        "test/**"
+      ]
+    },
+    {
+      "id": "new-secret",
+      "pattern": "process\\.env\\.[A-Z0-9_]*(TOKEN|KEY|SECRET|PASSWORD)\\b",
+      "why": "new or changed use of a credential",
+      "skip_paths": [
+        "**/*.md",
+        "docs/**",
+        "test/**"
+      ]
+    },
+    {
+      "id": "outside-send",
+      "pattern": "(api\\.resend\\.com|smtp\\.|sendgrid|mailgun|stripe\\.com|paypal)",
+      "why": "external email or payment",
+      "skip_paths": [
+        "**/*.md",
+        "docs/**",
+        "test/**"
+      ]
+    },
+    {
+      "id": "test-disabled",
+      "pattern": "\\b(it|test|describe)\\.(skip|todo)\\(|\\bxit\\(",
+      "why": "disables a test",
+      "skip_paths": [
+        "**/*.md",
+        "docs/**"
+      ]
+    },
+    {
+      "id": "lint-disabled",
+      "pattern": "eslint-disable",
+      "why": "turns off a lint check",
+      "skip_paths": [
+        "**/*.md",
+        "docs/**"
+      ]
+    },
+    {
+      "id": "kill-switch",
+      "pattern": "killswitch\\.js|\\bisEngaged\\(|\\bengage\\(db",
+      "why": "touches the scan kill switch",
+      "skip_paths": [
+        "**/*.md",
+        "docs/**",
+        "test/**"
+      ]
+    }
+  ],
+  "amber_requirements": [
+    "a test file changed in the same PR",
+    "the AI review marker carries impact=assessed and rollback=ok",
+    "changed lines within amber_max_changed_lines",
+    "for migrations/db/backup changes: production /health reports backup mode on and the last restore drill passed"
+  ]
+}

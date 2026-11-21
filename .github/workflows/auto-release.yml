@@ -1,0 +1,103 @@
+# Standing release delegation (SECVAL-SRD-001, .github/release-policy.json).
+#
+# The gate always runs from the default branch's copy of this workflow and of
+# scripts/release/ (workflow_run, issue_comment and push events never run PR
+# code), so a PR cannot change the rules that judge it. It reads PR data
+# through the API only and never checks out PR code.
+#
+# While the policy status is "inactive" (the shipped state) it is a DRY RUN:
+# it comments what it would do and never merges. Owner controls, each
+# immediate: repo variable SECVAL_AUTO_RELEASE=off, or any open issue
+# labelled release-stop / release-incident.
+#
+# Cost: public repo, Actions minutes are free. About 1 minute per finished CI
+# run on a PR; a real release waits for the Render deploy (up to 25 min).
+name: Auto release
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  issue_comment:
+    types: [created]
+  push:
+    branches: [integration]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR number to evaluate"
+        required: true
+
+# One release at a time; never cancel a release that is merging or verifying.
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  gate:
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, 'secval-ai-review') && github.event.comment.author_association == 'OWNER') ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write # merge, and revert on failed verification
+      pull-requests: write
+      issues: write # evidence comments, incident issues
+      actions: write # start CI on integration after a merge
+      checks: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --omit=dev --ignore-scripts
+      - name: Find the PR
+        id: pr
+        env:
+          RUN_PRS: ${{ toJSON(github.event.workflow_run.pull_requests) }}
+          ISSUE: ${{ github.event.issue.number }}
+          INPUT: ${{ github.event.inputs.pr }}
+        run: |
+          n="${INPUT:-$ISSUE}"
+          if [ -z "$n" ]; then n=$(echo "$RUN_PRS" | jq -r '.[0].number // empty'); fi
+          case "$n" in ''|*[!0-9]*) n="" ;; esac # digits only
+          echo "number=$n" >> "$GITHUB_OUTPUT"
+      - name: Release gate
+        if: steps.pr.outputs.number != ''
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PAUSE_VARIABLE: ${{ vars.SECVAL_AUTO_RELEASE }}
+          PR: ${{ steps.pr.outputs.number }}
+        run: npx tsx scripts/release/run.ts gate --pr "$PR"
+
+  audit:
+    # Detect and alert: protected files reaching integration without an
+    # Owner-Approval line open an incident, which pauses automatic releases.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --omit=dev --ignore-scripts
+      - env:
+          GITHUB_TOKEN: ${{ github.token }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+        run: npx tsx scripts/release/run.ts audit --before "$BEFORE" --after "$AFTER"
