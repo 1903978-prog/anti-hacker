@@ -91,6 +91,19 @@ describe("Reconnect Dropbox", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("an anonymous callback with a wrong or no state changes nothing: no audit row, no page message", async () => {
+    const { db, state } = start();
+    const { f } = tokenOk({ refresh_token: TOKEN, scope: "files.content.read" });
+    expect((await finishReconnect(db, { code: "c", state }, ENV, f, NOW)).ok).toBe(true);
+    const audit = listAudit(db).length;
+    const last = lastReconnect(db);
+    for (let i = 0; i < 50; i++) await finishReconnect(db, { code: "c", state: `x${i}` }, ENV, f, NOW);
+    await finishReconnect(db, { code: "c", state }, ENV, f, NOW); // replay of the used state
+    expect(listAudit(db).length).toBe(audit);
+    expect(lastReconnect(db)).toEqual(last);
+    expect(checkEnv(ENV).DROPBOX_REFRESH_TOKEN).toBe(TOKEN);
+  });
+
   it("refuses an expired reconnect", async () => {
     const { db, state } = start();
     const later = new Date(NOW.getTime() + 11 * 60_000);
@@ -119,6 +132,8 @@ describe("Reconnect Dropbox", () => {
     expect(openToken(sealed, ENV)).toBe(TOKEN);
     expect(openToken(sealed, { DROPBOX_APP_SECRET: "another-secret" })).toBeNull();
     expect(openToken("not json", ENV)).toBeNull();
+    const cut = JSON.parse(sealed);
+    expect(openToken(JSON.stringify({ ...cut, tag: cut.tag.slice(0, 8) }), ENV)).toBeNull();
     const db = openDb(":memory:");
     db.prepare(`INSERT INTO app_state (key, value) VALUES ('dropbox.reconnect.token', ?)`).run(sealed);
     expect(loadStoredToken(db, { ...ENV, DROPBOX_APP_SECRET: "another-secret" })).toBe(false);
@@ -155,6 +170,7 @@ describe("Reconnect Dropbox routes", () => {
     const { app, db } = make();
     const bad = await request(app).get("/dropbox/callback?code=c&state=forged").expect(303);
     expect(bad.headers.location).toBe("/?dropbox=failed#backup");
+    expect(lastReconnect(db)).toBeNull();
     const started = await request(app).post("/api/backup/dropbox/reconnect").set("authorization", `Bearer ${API}`).send({});
     const state = new URL(started.body.url).searchParams.get("state")!;
     const good = await request(app).get(`/dropbox/callback?code=c&state=${encodeURIComponent(state)}`).expect(303);

@@ -124,7 +124,7 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
   // state made by the logged-in start (POST /api/backup/dropbox/reconnect) is the check instead.
   const dropboxEnv = options.dropboxEnv ?? process.env;
   loadStoredToken(db, dropboxEnv);
-  app.get(CALLBACK_PATH, async (req, res) => {
+  app.get(CALLBACK_PATH, rateLimit({ windowMs: 60_000, max: 20 }), async (req, res) => {
     const r = await finishReconnect(db, { code: req.query.code, state: req.query.state, error: req.query.error }, dropboxEnv, options.dropboxTokenFetch);
     res.redirect(303, `/?dropbox=${r.ok ? "connected" : "failed"}#backup`);
   });

@@ -75,7 +75,7 @@ export function openToken(sealed: string, env: Env): string | null {
   if (!key) return null;
   try {
     const s = JSON.parse(sealed) as { v: number; iv: string; tag: string; data: string };
-    if (s.v !== 1) return null;
+    if (s.v !== 1 || Buffer.from(s.tag, "base64").length !== 16 || Buffer.from(s.iv, "base64").length !== 12) return null;
     const d = createDecipheriv("aes-256-gcm", key, Buffer.from(s.iv, "base64"));
     d.setAuthTag(Buffer.from(s.tag, "base64"));
     return Buffer.concat([d.update(Buffer.from(s.data, "base64")), d.final()]).toString("utf8");
@@ -159,8 +159,10 @@ export async function finishReconnect(
   const state = typeof q.state === "string" ? q.state : "";
   const given = sha256(state);
   const expected = pending?.stateHash ? Buffer.from(pending.stateHash, "hex") : Buffer.alloc(0);
+  // Not started on this page (or already used): anyone can call this address, so nothing is
+  // recorded or changed, not even the audit trail or the last result shown on the page.
   if (!pending || !state || expected.length !== given.length || !timingSafeEqual(expected, given))
-    return fail("Reconnect refused: the link did not come from a reconnect started on this page.");
+    return { ok: false, at, detail: "Reconnect refused: the link did not come from a reconnect started on this page." };
   // One use only, whatever happens next.
   putState(db, PENDING_KEY, JSON.stringify({ used: at }));
   if (Date.parse(pending.expiresAt) < now.getTime())
