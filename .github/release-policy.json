@@ -1,0 +1,185 @@
+{
+  "policy_id": "SECVAL-SRD-001",
+  "version": 1,
+  "status": "inactive",
+  "status_values": "inactive = dry run only (the gate reports what it would do, never merges); active = GREEN/AMBER may merge and deploy; revoked = nothing runs. Changing this file is RED: it needs Livio's own approval.",
+  "repository": "1903978-prog/anti-hacker",
+  "target_branch": "integration",
+  "production_url": "https://secval.onrender.com",
+  "required_checks": [
+    "check"
+  ],
+  "review_marker": "secval-ai-review",
+  "trusted_logins": [
+    "1903978-prog"
+  ],
+  "stop_labels": [
+    "release-stop",
+    "release-incident"
+  ],
+  "pause_variable": "SECVAL_AUTO_RELEASE",
+  "limits": {
+    "max_changed_files": 40,
+    "max_changed_lines": 1500,
+    "amber_max_changed_lines": 600
+  },
+  "verify": {
+    "timeout_minutes": 25,
+    "poll_seconds": 30
+  },
+  "red_paths": [
+    ".github/**",
+    "CLAUDE.md",
+    "AGENTS.md",
+    "EENDIGO_AEOS.md",
+    ".engineering/aeos.config.json",
+    ".engineering/aeos.lock.json",
+    ".claude/**",
+    "docs/policies/**",
+    "scripts/release/**",
+    "scripts/aeos/**",
+    "scripts/start.sh",
+    "scripts/get-litestream.sh",
+    "render.yaml",
+    "litestream.yml",
+    "server/governance/**",
+    "server/audit/**",
+    "server/ownership/**",
+    "server/middleware.ts",
+    "server/notify/**",
+    "server/deploy/**",
+    "test/release-*.test.ts",
+    "test/releasePolicy.test.ts",
+    "test/policy.test.ts",
+    "test/audit.test.ts",
+    "test/ownership.test.ts",
+    "server/app.ts",
+    "server/index.ts",
+    "server/integrity.ts",
+    "server/dbarch/readonly.ts",
+    "server/dbarch/permissions.ts",
+    "server/dbarch/grants.ts",
+    "server/dbarch/connect.ts",
+    "server/dbarch/routes.ts",
+    "server/dbarch/engine.ts",
+    "server/health/dbcheck.ts",
+    "server/scan/active.ts",
+    "server/scan/passive.ts",
+    "server/health/uptime.ts",
+    "server/lenovo/monitor.ts"
+  ],
+  "amber_paths": [
+    "server/migrations.ts",
+    "server/db.ts",
+    "server/schedule/**",
+    "server/backup/**",
+    "package.json",
+    "package-lock.json",
+    "server/scan/**"
+  ],
+  "green_paths": [
+    "server/**",
+    "public/**",
+    "test/**",
+    "docs/**",
+    "reports/**",
+    "eees/**",
+    "scripts/**",
+    ".engineering/**",
+    "README.md",
+    "tsconfig.json",
+    "eslint.config.js"
+  ],
+  "red_content": [
+    {
+      "id": "sql-delete",
+      "pattern": "\\b(DROP\\s+(TABLE|COLUMN|INDEX)|TRUNCATE|DELETE\\s+FROM)\\b",
+      "why": "irreversible deletion of production data",
+      "skip_paths": [
+        "**/*.md",
+        "docs/**",
+        "test/**"
+      ]
+    },
+    {
+      "id": "env-access",
+      "pattern": "\\bprocess\\b|\\benv\\s*(\\.|\\[)\\s*[\"'`]?[A-Z][A-Z0-9_]*|\\bimportMeta\\.env|import\\.meta\\.env",
+      "why": "reads configuration or a credential (process, or an env object)",
+      "skip_paths": [
+        "**/*.md",
+        "docs/**",
+        "test/**"
+      ]
+    },
+    {
+      "id": "outside-send",
+      "pattern": "(resend|smtp|sendgrid|mailgun|nodemailer|stripe|paypal)",
+      "why": "external email or payment",
+      "skip_paths": [
+        "**/*.md",
+        "docs/**",
+        "test/**"
+      ]
+    },
+    {
+      "id": "test-disabled",
+      "pattern": "\\b(it|test|describe)\\s*\\.\\s*(skip|todo|only)\\b|\\bx(it|describe)\\s*\\(",
+      "why": "disables a test",
+      "skip_paths": [
+        "**/*.md",
+        "docs/**"
+      ]
+    },
+    {
+      "id": "lint-disabled",
+      "pattern": "eslint-disable|@ts-(ignore|nocheck|expect-error)",
+      "why": "turns off a check",
+      "skip_paths": [
+        "**/*.md",
+        "docs/**"
+      ]
+    },
+    {
+      "id": "kill-switch",
+      "pattern": "killswitch|\\bisEngaged\\b|\\bengage\\s*\\(",
+      "why": "touches the scan kill switch",
+      "skip_paths": [
+        "**/*.md",
+        "docs/**",
+        "test/**"
+      ]
+    }
+  ],
+  "amber_requirements": [
+    "a test file changed in the same PR",
+    "the AI review marker carries impact=assessed and rollback=ok",
+    "changed lines within amber_max_changed_lines",
+    "for migrations/db/backup changes: production /health reports backup mode on and the last restore drill passed"
+  ],
+  "red_removed": [
+    {
+      "id": "safety-hunk",
+      "pattern": "\\b(requestApproval|isEngaged|appendAudit|apiAuth|rateLimit|failedAuthLimiter|sessionRoutes|securityHeaders|assertReadOnlySql|readOnly|isolated|verifyPermissions|resolveLimits|HARD_CAPS|markProven|ownershipProven|verifyOwnership|getEntry|noStore)\\b",
+      "why": "changes code next to an auth, audit, approval, kill-switch, read-only or ownership control",
+      "skip_paths": [
+        "**/*.md",
+        "docs/**"
+      ]
+    }
+  ],
+  "amber_content": [
+    {
+      "id": "outbound-call",
+      "pattern": "\\bfetch\\s*\\(|https?://",
+      "why": "new outbound network call or URL",
+      "skip_paths": [
+        "**/*.md",
+        "docs/**",
+        "test/**"
+      ]
+    }
+  ],
+  "pause_variable_values": "unset or 'on' = runs; any other value (off, stop, 0, false ...) = paused",
+  "always_requires": "production /health reports backup mode on, so a deploy cannot reset the store and its audit trail",
+  "red_removed_note": "red_removed rules are applied to every changed hunk, including its context lines"
+}

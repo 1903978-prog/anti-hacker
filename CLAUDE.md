@@ -44,9 +44,12 @@ Every date people see is "03 Nov 2026" (with time "03 Nov 2026, 14:05"). Use `pu
 ## 3a. Release authority (EEN-REL-001, Livio, 14 Nov 2026, permanent)
 Livio is the only human release approver. Never require or ask for a second human, second GitHub account, collaborator or approving review. Independent review = an AI reviewer. Full text: `docs/policies/EEN-REL-001.md` (checked by `test/releasePolicy.test.ts`).
 
+## 3b. Standing release delegation (SECVAL-SRD-001, built 21 Nov 2026, INACTIVE)
+Policy `.github/release-policy.json`; rules, tiers, owner switches and limits: `docs/policies/SECVAL-SRD-001.md`. While `status` is `inactive` the gate is a dry run and section 4 applies unchanged. Only Livio's own approval may change the policy or activate it; never edit it to widen your own authority. Every PR body carries `Author-Session: <session id>`; a different session posts the review marker on the exact head SHA. A hand merge that touches protected files carries `Owner-Approval: <approval id>` (the id of Livio's GO card or message). A release with a recorded valid GO is never asked for again.
+
 ## 4. Work and release
 1. **One branch:** all work merges into `integration`. No other long-lived branches.
-2. **No ship without the word:** no PR, push to a remote or deploy unless Livio writes **"ship it"**. Until then, commit locally to `integration` only.
+2. **No ship without the word:** no PR, push to a remote or deploy unless Livio writes **"ship it"**. Until then, commit locally to `integration` only. Exception, only while SECVAL-SRD-001 (section 3b) is `active`: a change it classifies GREEN or AMBER-with-controls is released by its workflow without a per-release word; everything else keeps this rule.
 3. **Fast tests while editing:** only the touched module's tests, well under two minutes.
 4. **Full gate before every push:** `npm run verify` (type check, lint, tests, page check), the same as CI. If Chromium is missing set `PW_CHROMIUM` (cloud: `/opt/pw-browsers/chromium`). Any change to `public/` must pass the page check in light and dark. Never push on a red or unrun `verify`.
 5. **Warn before spending** GitHub Actions minutes or Render compute.
