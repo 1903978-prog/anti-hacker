@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import request from "supertest";
 import { openDb, type DB } from "../server/db.js";
 import { createApp } from "../server/app.js";
-import { sessionValue, V1_UPGRADE_UNTIL } from "../server/middleware.js";
+import { createHmac } from "node:crypto";
 
 // 30-day sign-in (P0, 21 Nov 2026): measured from sign-in, survives refresh,
 // browser and server restarts and deploys, ends on day 30, on sign-out and on
@@ -10,6 +10,8 @@ import { sessionValue, V1_UPGRADE_UNTIL } from "../server/middleware.js";
 const TOKEN = "test-token-123";
 const DAY = 86_400_000;
 const T0 = Date.parse("2026-11-21T09:00:00Z");
+// The pre-30-day cookie value (one fixed value per token, no end date).
+const oldCookie = `secval_session=${createHmac("sha256", TOKEN).update("secval-session-v1").digest("base64url")}`;
 
 function clock(start = T0) {
   let t = start;
@@ -158,27 +160,30 @@ describe("30-day browser sign-in", () => {
     }
   });
 
-  it("swaps an old (pre-30-day) cookie once for a 30-day sign-in, so the release signs nobody out", async () => {
-    const c = clock();
-    const db = openDb(":memory:");
-    const a = app(db, c.now);
-    const r = await read(a, `secval_session=${sessionValue(TOKEN)}`);
-    expect(r.status).toBe(200);
-    const fresh = String(r.headers["set-cookie"]);
-    expect(fresh).toMatch(/Max-Age=2592000/);
-    expect((await read(a, fresh.split(";")[0] ?? "")).status).toBe(200);
-    // after the swap date old cookies are refused
-    c.set(V1_UPGRADE_UNTIL + 1);
-    expect((await read(a, `secval_session=${sessionValue(TOKEN)}`)).status).toBe(401);
+  it("refuses an old never-ending cookie: it needs one new 30-day sign-in", async () => {
+    const r = await read(app(openDb(":memory:"), clock().now), oldCookie);
+    expect(r.status).toBe(401);
+    expect(r.body.reason).toBe("token-changed");
   });
 
-  it("an old cookie is not swapped after a security sign-out", async () => {
+  it("fails closed when the stored sign-out records are unreadable", async () => {
     const c = clock();
     const db = openDb(":memory:");
     const a = app(db, c.now);
+    const cookie = await signIn(a);
+    db.prepare(`INSERT INTO app_state (key, value) VALUES ('session_revoked', '{bad')`).run();
+    expect((await read(a, cookie)).body.reason).toBe("signed-out");
+    db.prepare(`DELETE FROM app_state WHERE key = 'session_revoked'`).run();
+    db.prepare(`INSERT INTO app_state (key, value) VALUES ('session_valid_after', 'garbage')`).run();
+    expect((await read(a, cookie)).body.reason).toBe("signed-out");
+  });
+
+  it("security sign-out also ends a sign-in made in the same millisecond", async () => {
+    const c = clock();
+    const a = app(openDb(":memory:"), c.now);
+    const cookie = await signIn(a);
     await request(a).post("/api/session/end-all").set("authorization", `Bearer ${TOKEN}`).send({});
-    c.set(T0 + 1000);
-    expect((await read(a, `secval_session=${sessionValue(TOKEN)}`)).status).toBe(401);
+    expect((await read(a, cookie)).body.reason).toBe("signed-out");
   });
 
   it("scripts with the bearer token are unaffected by the clock", async () => {
