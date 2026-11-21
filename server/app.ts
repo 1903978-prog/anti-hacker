@@ -19,7 +19,7 @@ import { requestApproval, type ScanMode } from "./governance/policy.js";
 import { getFindings, listScans, runPassiveScan } from "./scan/passive.js";
 import { runActiveScan } from "./scan/active.js";
 import { checkReport } from "./scan/catalogue.js";
-import { apiAuth, failedAuthLimiter, parseAppTokens, noStore, rateLimit, securityHeaders, sessionRoutes } from "./middleware.js";
+import { apiAuth, failedAuthLimiter, parseAppTokens, noStore, rateLimit, revokeAllSessions, securityHeaders, sessionRoutes } from "./middleware.js";
 import { dashboard } from "./health/score.js";
 import { dashboardHosts, guessApp, listEstimates, saveReport } from "./health/report.js";
 import { checkAllUptime } from "./health/uptime.js";
@@ -57,6 +57,8 @@ export interface AppOptions {
   /** "Reconnect Dropbox": environment and Dropbox token caller (tests hand in fakes). */
   dropboxEnv?: Record<string, string | undefined>;
   dropboxTokenFetch?: Parameters<typeof finishReconnect>[3];
+  /** Clock for the 30-day sign-in (tests pass a fake one). */
+  now?: () => number;
 }
 import { DEFAULT_WEEKLY, getLastRun, runWeeklySweep } from "./schedule/weekly.js";
 import { backupMode, backupStatus, runRestoreDrill } from "./backup/drill.js";
@@ -99,12 +101,19 @@ export function createApp(db: DB, options: AppOptions = {}): Express {
   app.use("/api", rateLimit({ windowMs: 60_000, max: 240 }));
   app.use("/api", noStore());
   const wrongTokens = failedAuthLimiter({ windowMs: 60_000, max: 10 });
-  app.use("/api", sessionRoutes(apiToken, wrongTokens));
+  const sessionDeps = { db, now: options.now };
+  app.use("/api", sessionRoutes(apiToken, wrongTokens, sessionDeps));
   // Apps send data quality checks with their own write-only token
   // (SECVAL_QUALITY_TOKENS="app=token,..."): it opens POST /api/quality/validate
   // for that app's data and nothing else.
   const appTokens = parseAppTokens(options.qualityTokens ?? process.env.SECVAL_QUALITY_TOKENS);
-  app.use("/api", apiAuth(apiToken, wrongTokens, appTokens));
+  app.use("/api", apiAuth(apiToken, wrongTokens, appTokens, sessionDeps));
+  // Security sign-out: ends every browser sign-in at once (this one included).
+  app.post("/api/session/end-all", (_req, res) => {
+    revokeAllSessions(db, (options.now ?? Date.now)());
+    res.setHeader("Set-Cookie", "secval_session=; Path=/api; HttpOnly; Secure; SameSite=Strict; Max-Age=0");
+    res.json({ signedIn: false, allEnded: true });
+  });
 
   // Public liveness check (for the uptime pinger): always 200 while the
   // server runs. `store` is the last integrity check of the database (yes/no
