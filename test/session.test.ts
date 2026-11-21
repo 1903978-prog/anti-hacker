@@ -176,6 +176,10 @@ describe("30-day browser sign-in", () => {
     db.prepare(`DELETE FROM app_state WHERE key = 'session_revoked'`).run();
     db.prepare(`INSERT INTO app_state (key, value) VALUES ('session_valid_after', 'garbage')`).run();
     expect((await read(a, cookie)).body.reason).toBe("signed-out");
+    // a security sign-out repairs it: new sign-ins work again
+    await request(a).post("/api/session/end-all").set("authorization", `Bearer ${TOKEN}`).send({});
+    c.set(T0 + 1000);
+    expect((await read(a, await signIn(a))).status).toBe(200);
   });
 
   it("security sign-out also ends a sign-in made in the same millisecond", async () => {

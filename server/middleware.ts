@@ -192,6 +192,9 @@ function revokeSession(db: DB, id: string, issuedAt: number, now: number): void 
 /** Security sign-out: every sign-in made before now stops working, in every browser. */
 export function revokeAllSessions(db: DB, now: number): void {
   writeState(db, VALID_AFTER_KEY, String(now));
+  // Every earlier sign-in is now ended anyway, so the per-browser list can start
+  // fresh (this also repairs an unreadable list, which otherwise refuses all).
+  writeState(db, REVOKED_KEY, "[]");
   appendAudit(db, { actor: "owner", action: "session.revoke_all", decision: "info", reason: "every browser sign-in ended" });
 }
 
