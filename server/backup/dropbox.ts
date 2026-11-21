@@ -131,7 +131,7 @@ export function scopeFromError(body: string): string | null {
 function failReason(err: unknown): string {
   if (err instanceof HttpError) {
     if (err.missingScope)
-      return `Secval's Dropbox app is not allowed to use "${err.missingScope}" (HTTP ${err.status}); it can be switched on in the app's Permissions tab in the Dropbox App Console, then a new key is needed`;
+      return `Secval's Dropbox app is not allowed to use "${err.missingScope}" (HTTP ${err.status}); tick it in the app's Permissions tab in the Dropbox App Console, press Submit, then press "Reconnect Dropbox" on this page`;
     if (err.status === 400 || err.status === 401 || err.status === 403)
       return `the Dropbox key was refused (HTTP ${err.status}); it may be wrong, expired or missing the "files.metadata.read" permission`;
     if (err.status === 429) return "too many requests right now (HTTP 429); try again later";
@@ -531,10 +531,20 @@ export async function checkDropbox(
 const CACHE_MS = 15 * 60_000;
 let cache: { at: number; data: DropboxCheck } | null = null;
 
+/** The key kept by "Reconnect Dropbox" (dropboxConnect.ts); used instead of DROPBOX_REFRESH_TOKEN when set. Never logged. */
+let storedRefreshToken: string | null = null;
+export function setStoredRefreshToken(token: string | null): void {
+  storedRefreshToken = token;
+}
+/** The environment the live check uses: Render's variables, with the reconnected key in front when there is one. */
+export function checkEnv(env: Env = process.env): Env {
+  return storedRefreshToken ? { ...env, DROPBOX_REFRESH_TOKEN: storedRefreshToken } : env;
+}
+
 export async function dropboxStatus(opts: { refresh?: boolean; now?: Date } = {}): Promise<DropboxCheck> {
   const now = opts.now ?? new Date();
   if (cache && !opts.refresh && now.getTime() - cache.at < CACHE_MS) return cache.data;
-  const data = await checkDropbox({ now });
+  const data = await checkDropbox({ now, env: checkEnv() });
   cache = { at: now.getTime(), data };
   return data;
 }
