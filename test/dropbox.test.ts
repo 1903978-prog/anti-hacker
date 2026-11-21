@@ -225,12 +225,15 @@ describe("dropbox backup check", () => {
       now: new Date("2026-11-26T09:00:00Z"),
       fetcher: async (url) => {
         if (url.endsWith("/list_folder")) return { status: 200, async json() { return { entries: listing(), has_more: false }; } };
-        if (url.endsWith("/download")) return { status: 200, async json() { return status; } };
+        // A fresh status file, so the copies' age is the only reason for red.
+        if (url.endsWith("/download")) return { status: 200, async json() { return { ...status, runAt: "2026-11-26T06:00:00Z" }; } };
         return { status: 200, async json() { return {}; } };
       },
     });
     expect(stale.status).toBe("red");
     expect(stale.apps.every((a) => a.status === "red")).toBe(true);
+    expect(stale.apps.every((a) => a.problems.includes("newest code copy is from 21 Nov 2026 (5 days old)"))).toBe(true);
+    expect(stale.apps.every((a) => a.problems.every((p) => !p.includes("status file")))).toBe(true);
 
     // Status file readable only with a permission the app lacks (21 Nov 2026 production): every app red, permission named.
     const noScope = await run(listing(), { status: 400, text: "does not have the required scope 'files.content.read'" });
