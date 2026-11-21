@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CENTRAL_STATUS_FALLBACK, centralProblems, checkDropbox, judge, parseCopyName, showDate, type DropboxFetcher } from "../server/backup/dropbox.js";
+import { centralProblems, checkDropbox, judge, parseCopyName, scopeFromError, showDate, type DropboxFetcher } from "../server/backup/dropbox.js";
 
 const NOW = new Date("2026-11-14T09:00:00Z"); // Saturday 14 Nov 2026
 
@@ -17,6 +17,12 @@ describe("dropbox backup check", () => {
     expect(parseCopyName("261113-nexus-code.zip")).toMatchObject({ app: "nexus", kind: "code" });
     expect(parseCopyName("compplan-db-20261026-0700Z.dump")).toMatchObject({ app: "compplan", kind: "db" });
     expect(parseCopyName("secval-code-20261102-0700Z.zip")).toMatchObject({ app: "secval", kind: "code" });
+    // Central backup since 20 Nov 2026: a run id after "~" (seen in "/backups nov26" on 21 Nov 2026).
+    expect(parseCopyName("261120-compplan-code~161208956-4d5720.zip.enc")).toMatchObject({ app: "compplan", kind: "code" });
+    expect(parseCopyName("261120-lm-op-model-db~160428656-6b308e.dump.enc")).toMatchObject({ app: "lm-op-model", kind: "db" });
+    expect(parseCopyName("261120-compplan-code~161208956-4d5720.zip.enc")!.at.toISOString()).toBe("2026-11-20T12:00:00.000Z");
+    expect(parseCopyName("261120-compplan-code~bad id.zip.enc")).toBeNull();
+    expect(parseCopyName("261120-compplan-history~161208956-4d5720.bundle")).toBeNull();
     expect(parseCopyName("compplan-history-20261026-0700Z.bundle")).toBeNull();
     expect(parseCopyName("status.json")).toBeNull();
     expect(parseCopyName("261399-nexus-db.zip")).toBeNull();
@@ -169,6 +175,93 @@ describe("dropbox backup check", () => {
     expect(unreadable.apps.find((app) => app.app === "compplan")?.problems).toContain("the central backup status file could not be read");
   });
 
+  it("reproduces 21 Nov 2026: new central names (run id after ~) count, and real gaps stay red", async () => {
+    const now = new Date("2026-11-21T07:00:00Z");
+    const apps = ["compplan", "lm-op-model", "nexus", "10bonds"];
+    // Exactly the shape seen in "/backups nov26/compplan" on 21 Nov 2026: one old-style copy, one new-style copy.
+    const listing = (skip: (name: string) => boolean = () => false) => [
+      { ".tag": "file", name: "status.json", path_display: "/backups nov26/status.json", size: 3573 },
+      ...apps.flatMap((a) => [
+        `261112-${a}-code.zip.enc`,
+        `261112-${a}-db.dump.enc`,
+        `261120-${a}-code~161208956-4d5720.zip.enc`,
+        `261120-${a}-db~160428656-6b308e.dump.enc`,
+        `261121-${a}-code~060512000-a1b2c3.zip.enc`,
+        `261121-${a}-db~060230000-d4e5f6.dump.enc`,
+      ]).filter((n) => !skip(n)).map((name) => ({ ".tag": "file", name, path_display: `/backups/${name}`, size: 9 })),
+    ];
+    const status = { runAt: "2026-11-20T16:17:07Z", apps: Object.fromEntries(apps.map((a) => [a, {}])) };
+    const run = (entries: unknown[], download: { status: number; text?: string } = { status: 200 }) =>
+      checkDropbox({
+        env: { DROPBOX_ACCESS_TOKEN: "t" },
+        now,
+        fetcher: async (url) => {
+          if (url.endsWith("/list_folder")) return { status: 200, async json() { return { entries, has_more: false }; } };
+          if (url.endsWith("/download"))
+            return { status: download.status, async json() { return status; }, async text() { return download.text ?? ""; } };
+          return { status: 200, async json() { return {}; } };
+        },
+      });
+
+    // Before the fix every app was red here (no copy after 12 Nov was recognised).
+    const ok = await run(listing());
+    expect(ok.status).toBe("ok");
+
+    // 21 Nov 2026 before the 06:00 run: only the 20 Nov copy is within 8 days -> one copy, red (a real gap, not a false alarm).
+    const oneCopy = await run(listing((n) => n.startsWith("261121-")));
+    expect(oneCopy.status).toBe("red");
+    expect(oneCopy.apps.find((a) => a.app === "compplan")!.problems).toContain("only 1 code copy in the last 8 days (needs 2)");
+    expect(oneCopy.apps.find((a) => a.app === "compplan")!.problems.join(" ")).not.toContain("days old");
+
+    // Missing: no 20 or 21 Nov database copy for nexus -> newest database copy 9 days old.
+    const missing = await run(listing((n) => /^2611(20|21)-nexus-db/.test(n)));
+    expect(missing.status).toBe("red");
+    expect(missing.apps.find((a) => a.app === "nexus")!.status).toBe("red");
+    expect(missing.apps.find((a) => a.app === "compplan")!.status).toBe("ok");
+
+    // Stale: the same files checked 5 days later (newest copy 5 days old).
+    const stale = await checkDropbox({
+      env: { DROPBOX_ACCESS_TOKEN: "t" },
+      now: new Date("2026-11-26T09:00:00Z"),
+      fetcher: async (url) => {
+        if (url.endsWith("/list_folder")) return { status: 200, async json() { return { entries: listing(), has_more: false }; } };
+        // A fresh status file, so the copies' age is the only reason for red.
+        if (url.endsWith("/download")) return { status: 200, async json() { return { ...status, runAt: "2026-11-26T06:00:00Z" }; } };
+        return { status: 200, async json() { return {}; } };
+      },
+    });
+    expect(stale.status).toBe("red");
+    expect(stale.apps.every((a) => a.status === "red")).toBe(true);
+    expect(stale.apps.every((a) => a.problems.includes("newest code copy is from 21 Nov 2026 (5 days old)"))).toBe(true);
+    expect(stale.apps.every((a) => a.problems.every((p) => !p.includes("central backup")))).toBe(true);
+
+    // Status file readable only with a permission the app lacks (21 Nov 2026 production): every app red, permission named.
+    const noScope = await run(listing(), { status: 400, text: "does not have the required scope 'files.content.read'" });
+    expect(noScope.status).toBe("red");
+    expect(noScope.apps.every((a) => a.problems.includes("the central backup status file could not be read"))).toBe(true);
+    expect(noScope.centralNote).toContain('"files.content.read"');
+
+    // Key refused while reading the status file (expired / revoked): red, no permission guessed.
+    for (const code of [401, 403]) {
+      const refused = await run(listing(), { status: code });
+      expect(refused.status).toBe("red");
+      expect(refused.centralNote).toContain(`refused (HTTP ${code})`);
+      expect(refused.centralNote).not.toContain("not allowed to use");
+    }
+  });
+
+  it("is an error, never ok, when the key is refused while listing the folder", async () => {
+    for (const code of [400, 401]) {
+      const r = await checkDropbox({
+        env: { DROPBOX_ACCESS_TOKEN: "t" },
+        now: NOW,
+        fetcher: async () => ({ status: code, async json() { return {}; }, async text() { return "invalid_access_token"; } }),
+      });
+      expect(r.status).toBe("error");
+      expect(r.message).toContain(`HTTP ${code}`);
+    }
+  });
+
   it("reproduces 14 Nov 2026: red for every app", () => {
     const files = [
       ...["lm-op-model", "compplan", "10bonds"].flatMap((a) => [
@@ -246,27 +339,55 @@ describe("dropbox backup check", () => {
     expect(seen.filter((u) => u.endsWith("/list_folder"))).toHaveLength(2);
   });
 
-  it("reads the central status file from the old folder when the main folder has none", async () => {
+  it("fails closed when the main folder has no status file, and never looks in the deleted old folder", async () => {
     const downloads: string[] = [];
     const entries = copies(["261113", "261114"]).map((name) => ({ ".tag": "file", name, path_display: `/backups nov26/${name}`, size: 9 }));
     const f: DropboxFetcher = async (url, init) => {
       if (url.endsWith("/list_folder")) return { status: 200, async json() { return { entries, has_more: false }; } };
       if (url.endsWith("/download")) {
         downloads.push(JSON.parse(init.headers["Dropbox-API-Arg"] ?? "{}").path);
-        return { status: 200, async json() { return { runAt: "2026-11-14T06:00:00Z", apps: { compplan: {}, "lm-op-model": {}, "10bonds": {} } }; } };
+        return { status: 200, async json() { return {}; } };
       }
       return { status: 200, async json() { return { access_token: "t" }; } };
     };
     const r = await checkDropbox({ env: { DROPBOX_ACCESS_TOKEN: "t" }, fetcher: f, now: NOW });
-    expect(downloads).toEqual([CENTRAL_STATUS_FALLBACK]);
-    expect(r.centralNote).toContain(CENTRAL_STATUS_FALLBACK);
-    expect(r.apps.find((a) => a.app === "nexus")!.problems).toContain("the central backup does not cover this app (missing from its status file)");
-    expect(r.apps.find((a) => a.app === "compplan")!.problems).not.toContain("the central backup status file was not found");
-    expect(r.apps.find((a) => a.app === "nexus")!.status).toBe("red");
+    expect(downloads).toEqual([]);
+    expect(r.status).toBe("red");
+    expect(r.centralNote).toContain("The central backup's status file was not found in /backups nov26.");
+    expect(r.apps.find((a) => a.app === "compplan")!.problems).toContain("the central backup status file was not found");
   });
 
-  it("fails closed when the fallback status file exists but cannot be read", async () => {
-    const entries = copies(["261113", "261114"]).map((name) => ({ ".tag": "file", name, path_display: `/backups nov26/${name}`, size: 9 }));
+  it("names the missing Dropbox permission when the status file download is refused (400)", async () => {
+    const entries = [
+      { ".tag": "file", name: "status.json", path_display: "/backups nov26/status.json", size: 5 },
+      ...copies(["261113", "261114"]).map((name) => ({ ".tag": "file", name, path_display: `/backups nov26/${name}`, size: 9 })),
+    ];
+    const f: DropboxFetcher = async (url) => {
+      if (url.endsWith("/list_folder")) return { status: 200, async json() { return { entries, has_more: false }; } };
+      if (url.endsWith("/download")) return {
+        status: 400,
+        async json() { throw new Error("not json"); },
+        async text() { return "Error in call to API function \"files/download\": Your app (ID: 123) is not permitted to access this endpoint because it does not have the required scope 'files.content.read'. SECRET123"; },
+      };
+      return { status: 200, async json() { return { access_token: "t" }; } };
+    };
+    const r = await checkDropbox({ env: { DROPBOX_ACCESS_TOKEN: "t" }, fetcher: f, now: NOW });
+    expect(r.status).toBe("red");
+    expect(r.centralNote).toContain('not allowed to use "files.content.read" (HTTP 400)');
+    expect(JSON.stringify(r)).not.toContain("SECRET123");
+    expect(JSON.stringify(r)).not.toContain("ID: 123");
+  });
+
+  it("reads only a scope name out of a Dropbox error body", () => {
+    expect(scopeFromError("... does not have the required scope 'files.content.read'. The owner ...")).toBe("files.content.read");
+    expect(scopeFromError("Bad HTTP \"Content-Type\" header")).toBeNull();
+  });
+
+  it("fails closed when the status file exists but cannot be read", async () => {
+    const entries = [
+      { ".tag": "file", name: "status.json", path_display: "/backups nov26/status.json", size: 5 },
+      ...copies(["261113", "261114"]).map((name) => ({ ".tag": "file", name, path_display: `/backups nov26/${name}`, size: 9 })),
+    ];
     const f: DropboxFetcher = async (url) => {
       if (url.endsWith("/list_folder")) return { status: 200, async json() { return { entries, has_more: false }; } };
       if (url.endsWith("/download")) return { status: 500, async json() { return {}; } };
