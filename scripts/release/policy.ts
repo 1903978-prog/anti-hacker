@@ -41,6 +41,8 @@ export const PolicySchema = z.object({
   amber_paths: z.array(z.string().min(1)),
   green_paths: z.array(z.string().min(1)),
   red_content: z.array(ContentRule),
+  red_removed: z.array(ContentRule).min(1),
+  amber_content: z.array(ContentRule),
 }).passthrough();
 
 export type Policy = z.infer<typeof PolicySchema>;
@@ -112,7 +114,8 @@ export function classify(p: Policy, files: ChangedFile[]): Classification {
   if (files.length === 0) {
     return { tier: "RED", reasons: ["no changed files reported (fail closed)"], files: [], touchesData: false, testsChanged: false, changedLines: 0 };
   }
-  const rules = p.red_content.map((r) => ({ ...r, re: new RegExp(r.pattern, "i") }));
+  const compile = (rs: Policy["red_content"]) => rs.map((r) => ({ ...r, re: new RegExp(r.pattern, "i") }));
+  const red = compile(p.red_content), removedRules = compile(p.red_removed), amber = compile(p.amber_content);
   for (const f of files) {
     const paths = [f.filename, ...(f.previous_filename ? [f.previous_filename] : [])];
     let t: Tier = paths.map((x) => pathTier(p, x)).reduce(worst, "GREEN" as Tier);
@@ -121,18 +124,27 @@ export function classify(p: Policy, files: ChangedFile[]): Classification {
       t = "RED";
       reasons.push(`${f.filename}: deletes a test`);
     }
-    if (f.patch === undefined && f.additions + f.deletions > 0) {
+    // GitHub's per-file patch has no ---/+++ headers, so every "+"/"-" line is content.
+    // No patch (binary, submodule, too large) means the change cannot be checked.
+    if (typeof f.patch !== "string" || (f.patch === "" && f.status !== "removed" && f.additions + f.deletions > 0)) {
       t = "RED";
       reasons.push(`${f.filename}: diff not available, cannot be checked`);
     }
-    const added = (f.patch ?? "").split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++")).map((l) => l.slice(1));
-    for (const r of rules) {
-      if (matchesAny(f.filename, r.skip_paths)) continue;
-      if (added.some((l) => r.re.test(l))) {
-        t = "RED";
-        reasons.push(`${f.filename}: ${r.id} (${r.why})`);
+    const lines = (f.patch ?? "").split("\n");
+    const added = lines.filter((l) => l.startsWith("+")).map((l) => l.slice(1));
+    const removed = lines.filter((l) => l.startsWith("-")).map((l) => l.slice(1));
+    const hit = (rs: typeof red, ls: string[], tier: Tier, what: string) => {
+      for (const r of rs) {
+        if (matchesAny(f.filename, r.skip_paths)) continue;
+        if (ls.some((l) => r.re.test(l))) {
+          t = worst(t, tier);
+          reasons.push(`${f.filename}: ${r.id} (${r.why}) in ${what} lines`);
+        }
       }
-    }
+    };
+    hit(red, added, "RED", "added");
+    hit(removedRules, removed, "RED", "removed");
+    hit(amber, added, "AMBER", "added");
     out.push({ path: f.filename, tier: t });
     tier = worst(tier, t);
   }

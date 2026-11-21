@@ -28,7 +28,7 @@ function input(over: Partial<GateInput> = {}, pr: Partial<GateInput["pr"]> = {})
     checks: [{ name: "check", status: "completed", conclusion: "success", head_sha: SHA }],
     comments: [{ body: marker(), login: "1903978-prog", association: "OWNER", created_at: "2026-11-21T06:00:00Z" }],
     files: [file("public/app.js")],
-    production: null,
+    production: { backupMode: "on", lastDrillOk: true },
     ...over,
   };
 }
@@ -85,7 +85,7 @@ describe("classification", () => {
   it.each([
     ["server/x.ts", "+db.exec('DROP TABLE findings')", "sql-delete"],
     ["server/x.ts", "+db.exec(`DELETE FROM audit_log`)", "sql-delete"],
-    ["server/x.ts", "+const k = process.env.NEW_API_KEY;", "new-secret"],
+    ["server/x.ts", "+const k = process.env.NEW_API_KEY;", "env-access"],
     ["server/x.ts", "+await fetch('https://api.resend.com/emails')", "outside-send"],
     ["test/score.test.ts", "+it.skip('x', () => {})", "test-disabled"],
     ["server/x.ts", "+// eslint-disable-next-line", "lint-disabled"],
@@ -95,7 +95,32 @@ describe("classification", () => {
     expect(c.tier).toBe("RED");
     expect(c.reasons.join(" ")).toContain(id);
   });
-  it("content rules ignore removed lines and markdown", () => {
+  it.each([
+    ["server/app.ts", "-  app.use(\"/api\", apiAuth(apiToken, wrongTokens, appTokens));"],
+    ["server/scan/active.ts", "-  if (isEngaged(db)) return refused;"],
+    ["server/health/x.ts", "-  app.use(noStore());"],
+    ["server/dbarch/engine.ts", "-  const ro = readOnly(client);"],
+  ])("removing a safety call in %s is RED", (f, patch) => expect(classify(real, [file(f, patch)]).tier).toBe("RED"));
+  it.each([
+    "+const k = process.env[\"RESEND_API_KEY\"];",
+    "+const { RESEND_API_KEY } = process.env;",
+    "+++i; const k = process.env.RESEND_API_KEY;",
+    "+const k = process [\"env\"];",
+  ])("credential access in any spelling is RED: %s", (patch) => expect(classify(real, [file("server/x.ts", patch)]).tier).toBe("RED"));
+  it("a split e-mail host is still an outbound call (AMBER), and sending needs a credential, which is RED", () => {
+    expect(classify(real, [file("server/x.ts", "+await fetch('https://api.re' + 'send.com/emails');")]).tier).toBe("AMBER");
+    expect(classify(real, [file("server/x.ts", "+await fetch(u);")]).tier).toBe("AMBER");
+    expect(classify(real, [file("server/x.ts", "+await fetch(u, { headers: { authorization: process.env.K } });")]).tier).toBe("RED");
+  });
+  it("app wiring, auth, integrity and read-only DB guards are RED paths", () => {
+    for (const f of ["server/app.ts", "server/index.ts", "server/integrity.ts", "server/dbarch/readonly.ts", "server/dbarch/permissions.ts"]) {
+      expect(classify(real, [file(f)]).tier, f).toBe("RED");
+    }
+  });
+  it("a patch-less file (binary, submodule, renamed without diff) is RED", () => {
+    expect(classify(real, [{ filename: "public/logo.png", status: "added", additions: 0, deletions: 0 }]).tier).toBe("RED");
+  });
+  it("content rules ignore removed non-safety lines and markdown", () => {
     expect(classify(real, [file("server/x.ts", "-db.exec('DROP TABLE x')")]).tier).toBe("GREEN");
     expect(classify(real, [file("docs/x.md", "+never DROP TABLE")]).tier).toBe("GREEN");
   });
@@ -115,7 +140,9 @@ describe("gate decisions", () => {
 
   describe("owner controls stop everything at once", () => {
     it("revoked", () => expect(decide(input({ policy: policy("revoked") })).outcome).toBe("refuse"));
-    it("pause variable off", () => expect(decide(input({ policy: policy("active"), pauseVariable: "OFF" })).outcome).toBe("refuse"));
+    it.each(["OFF", "off!", "stop", "false", "0", "paused"])("pause variable %s pauses (only unset or on runs)", (v) =>
+      expect(decide(input({ policy: policy("active"), pauseVariable: v })).outcome).toBe("refuse"));
+    it("pause variable on runs", () => expect(decide(input({ policy: policy("active"), pauseVariable: "on" })).outcome).toBe("release"));
     it("open stop or incident issue", () => expect(decide(input({ policy: policy("active"), stopIssues: [12] })).reasons[0]).toContain("#12"));
     it("stop issues unreadable", () => expect(decide(input({ policy: policy("active"), stopIssues: null })).outcome).toBe("refuse"));
   });
@@ -163,6 +190,10 @@ describe("gate decisions", () => {
   describe("what was tested is what ships", () => {
     it("behind the target branch waits", () => expect(decide(input({ behindBy: 2 })).outcome).toBe("wait"));
     it("comparison unreadable refuses", () => expect(decide(input({ behindBy: null })).outcome).toBe("refuse"));
+    it("a non-number comparison (NaN) refuses", () => expect(decide(input({ behindBy: NaN })).outcome).toBe("refuse"));
+    it("production backup off: a deploy would reset the store, so it goes to the owner", () =>
+      expect(decide(input({ policy: policy("active"), production: { backupMode: "off", lastDrillOk: null } })).outcome).toBe("owner"));
+    it("production unreadable refuses", () => expect(decide(input({ policy: policy("active"), production: null })).outcome).toBe("refuse"));
     it("merge conflict refuses", () => expect(decide(input({}, { mergeable: false, mergeableState: "dirty" })).outcome).toBe("refuse"));
     it("mergeability unknown waits", () => expect(decide(input({}, { mergeable: null })).outcome).toBe("wait"));
   });
@@ -175,7 +206,7 @@ describe("gate decisions", () => {
     it("review without impact assessment goes to the owner", () => expect(decide(amber({}, "")).outcome).toBe("owner"));
     it("data change with backup off goes to the owner", () => expect(decide(amber({ production: { backupMode: "off", lastDrillOk: null } })).outcome).toBe("owner"));
     it("data change with failed restore drill goes to the owner", () => expect(decide(amber({ production: { backupMode: "on", lastDrillOk: false } })).outcome).toBe("owner"));
-    it("data change with unreadable production goes to the owner", () => expect(decide(amber({ production: null })).outcome).toBe("owner"));
+    it("data change with unreadable production refuses", () => expect(decide(amber({ production: null })).outcome).toBe("refuse"));
   });
 });
 

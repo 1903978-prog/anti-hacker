@@ -142,7 +142,58 @@ describe("verifyDeploy", () => {
   });
 });
 
+describe("real git revert (no fake)", () => {
+  it("reverts a merge commit on the branch, pushes it, and the rollback commit carries the audit line", async () => {
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { execFileSync } = await import("node:child_process");
+    const { gitRevert } = await import("../scripts/release/run.js");
+    const root = mkdtempSync(join(tmpdir(), "rev-"));
+    const sh = (cwd: string, ...a: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...a], { cwd, encoding: "utf8", env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" } }).trim();
+    execFileSync("git", ["init", "-q", "--bare", "-b", "integration", join(root, "o.git")]);
+    const w = join(root, "w");
+    execFileSync("git", ["clone", "-q", join(root, "o.git"), w]);
+    sh(w, "checkout", "-q", "-b", "integration");
+    sh(w, "commit", "-q", "--allow-empty", "-m", "base");
+    sh(w, "checkout", "-q", "-b", "feature");
+    execFileSync("sh", ["-c", "echo bad > f.txt"], { cwd: w });
+    sh(w, "add", "f.txt");
+    sh(w, "commit", "-q", "-m", "feature");
+    sh(w, "checkout", "-q", "integration");
+    sh(w, "merge", "-q", "--no-ff", "-m", "merge", "feature");
+    const merge = sh(w, "rev-parse", "HEAD");
+    sh(w, "push", "-q", "origin", "integration");
+    // Simulate the runner: no global git identity, a fresh clone.
+    const runner = join(root, "r");
+    execFileSync("git", ["clone", "-q", join(root, "o.git"), runner]);
+    const prev = { g: process.env.GIT_CONFIG_GLOBAL, s: process.env.GIT_CONFIG_NOSYSTEM };
+    process.env.GIT_CONFIG_GLOBAL = "/dev/null"; process.env.GIT_CONFIG_NOSYSTEM = "1";
+    try {
+      const rev = gitRevert("integration", merge, runner);
+      expect(rev).toMatch(/^[0-9a-f]{40}$/);
+      expect(execFileSync("git", ["--git-dir", join(root, "o.git"), "rev-parse", "integration"], { encoding: "utf8" }).trim()).toBe(rev);
+      expect(execFileSync("git", ["--git-dir", join(root, "o.git"), "log", "-1", "--format=%B", "integration"], { encoding: "utf8" })).toContain(`Auto-Rollback: ${merge}`);
+      expect(execFileSync("git", ["--git-dir", join(root, "o.git"), "ls-tree", "--name-only", "integration"], { encoding: "utf8" })).not.toContain("f.txt");
+    } finally {
+      process.env.GIT_CONFIG_GLOBAL = prev.g; process.env.GIT_CONFIG_NOSYSTEM = prev.s;
+      if (prev.g === undefined) delete process.env.GIT_CONFIG_GLOBAL;
+      if (prev.s === undefined) delete process.env.GIT_CONFIG_NOSYSTEM;
+    }
+  });
+  it("refuses a malformed SHA or branch before running git", async () => {
+    const { gitRevert } = await import("../scripts/release/run.js");
+    expect(() => gitRevert("integration; rm -rf /", "a".repeat(40))).toThrow();
+    expect(() => gitRevert("integration", "HEAD")).toThrow();
+  });
+});
+
 describe("push audit (detect and alert)", () => {
+  it("a capped compare list (300+ files) cannot prove nothing protected changed", async () => {
+    const f = fakeGh();
+    f.gh.compare = async () => ({ files: Array.from({ length: 300 }, (_, i) => `public/f${i}.js`), messages: [] });
+    expect(await runAudit(real, SHA, MERGE, deps(f.gh, prod([])))).toBe(99);
+  });
   it("protected files reaching integration without an Owner-Approval line open an incident", async () => {
     const f = fakeGh({ files: [".github/release-policy.json"] });
     expect(await runAudit(real, SHA, MERGE, deps(f.gh, prod([])))).toBe(99);

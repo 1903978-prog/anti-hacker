@@ -3,7 +3,7 @@
 Livio is the only human release approver for every Eendigo repository and agent.
 
 1. A second human reviewer, second GitHub account, extra collaborator or formal GitHub "approving review" is never required and must never be requested.
-2. Release process: develop -> CI -> independent AI review -> Livio's GO for the exact commit SHA -> merge -> deploy -> production verification.
+2. Release process: develop -> CI -> independent AI review -> Livio's GO for the exact commit SHA -> merge -> deploy -> production verification. Where Livio has approved a repository-specific standing delegation and it is active (Secval: `docs/policies/SECVAL-SRD-001.md`), his approval of that delegation is the GO for the changes it covers; the machine still checks the exact SHA. Changes outside it need his GO as above.
 3. "Independent review" means an AI reviewer that did not write the change. It never means a second GitHub user.
 4. A GO stays valid while the SHA, scope, tests and review are unchanged. Do not ask for it again. A new SHA or scope needs a new GO.
 5. GitHub target on each protected release branch: required approving reviews = 0; pull request required = ON; required CI checks = ON; other security controls kept. Check classic branch protection AND rulesets.

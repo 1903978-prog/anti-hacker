@@ -52,7 +52,14 @@
     "test/releasePolicy.test.ts",
     "test/policy.test.ts",
     "test/audit.test.ts",
-    "test/ownership.test.ts"
+    "test/ownership.test.ts",
+    "server/app.ts",
+    "server/index.ts",
+    "server/integrity.ts",
+    "server/dbarch/readonly.ts",
+    "server/dbarch/permissions.ts",
+    "server/dbarch/grants.ts",
+    "server/dbarch/connect.ts"
   ],
   "amber_paths": [
     "server/migrations.ts",
@@ -88,9 +95,9 @@
       ]
     },
     {
-      "id": "new-secret",
-      "pattern": "process\\.env\\.[A-Z0-9_]*(TOKEN|KEY|SECRET|PASSWORD)\\b",
-      "why": "new or changed use of a credential",
+      "id": "env-access",
+      "pattern": "\\bprocess\\s*\\.\\s*env\\b|\\bprocess\\s*\\[",
+      "why": "new or changed use of configuration or a credential",
       "skip_paths": [
         "**/*.md",
         "docs/**",
@@ -99,7 +106,7 @@
     },
     {
       "id": "outside-send",
-      "pattern": "(api\\.resend\\.com|smtp\\.|sendgrid|mailgun|stripe\\.com|paypal)",
+      "pattern": "(resend|smtp|sendgrid|mailgun|nodemailer|stripe|paypal)",
       "why": "external email or payment",
       "skip_paths": [
         "**/*.md",
@@ -109,7 +116,7 @@
     },
     {
       "id": "test-disabled",
-      "pattern": "\\b(it|test|describe)\\.(skip|todo)\\(|\\bxit\\(",
+      "pattern": "\\b(it|test|describe)\\s*\\.\\s*(skip|todo|only)\\b|\\bx(it|describe)\\s*\\(",
       "why": "disables a test",
       "skip_paths": [
         "**/*.md",
@@ -118,8 +125,8 @@
     },
     {
       "id": "lint-disabled",
-      "pattern": "eslint-disable",
-      "why": "turns off a lint check",
+      "pattern": "eslint-disable|@ts-(ignore|nocheck|expect-error)",
+      "why": "turns off a check",
       "skip_paths": [
         "**/*.md",
         "docs/**"
@@ -127,7 +134,7 @@
     },
     {
       "id": "kill-switch",
-      "pattern": "killswitch\\.js|\\bisEngaged\\(|\\bengage\\(db",
+      "pattern": "killswitch|\\bisEngaged\\b|\\bengage\\s*\\(",
       "why": "touches the scan kill switch",
       "skip_paths": [
         "**/*.md",
@@ -141,5 +148,30 @@
     "the AI review marker carries impact=assessed and rollback=ok",
     "changed lines within amber_max_changed_lines",
     "for migrations/db/backup changes: production /health reports backup mode on and the last restore drill passed"
-  ]
+  ],
+  "red_removed": [
+    {
+      "id": "safety-call-removed",
+      "pattern": "\\b(requestApproval|isEngaged|appendAudit|apiAuth|rateLimit|failedAuthLimiter|sessionRoutes|securityHeaders|assertReadOnlySql|readOnly|isolated|verifyPermissions|resolveLimits|HARD_CAPS|markProven|ownershipProven|verifyOwnership|getEntry|noStore)\\b",
+      "why": "removes or changes a line that calls a safety, auth or audit control",
+      "skip_paths": [
+        "**/*.md",
+        "docs/**"
+      ]
+    }
+  ],
+  "amber_content": [
+    {
+      "id": "outbound-call",
+      "pattern": "\\bfetch\\s*\\(|https?://",
+      "why": "new outbound network call or URL",
+      "skip_paths": [
+        "**/*.md",
+        "docs/**",
+        "test/**"
+      ]
+    }
+  ],
+  "pause_variable_values": "unset or 'on' = runs; any other value (off, stop, 0, false ...) = paused",
+  "always_requires": "production /health reports backup mode on, so a deploy cannot reset the store and its audit trail"
 }

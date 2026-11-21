@@ -70,7 +70,6 @@ export async function runGate(policy: Policy, prNumber: number, d: RunDeps): Pro
   const { gh } = d;
   const pr = await gh.pull(prNumber);
   const files = await safe(() => gh.files(prNumber));
-  const needsProd = files?.some((f) => matchesAny(f.filename, ["server/migrations.ts", "server/db.ts", "server/backup/**"])) ?? false;
   const decision = decide({
     policy,
     pauseVariable: d.pauseVariable,
@@ -80,7 +79,7 @@ export async function runGate(policy: Policy, prNumber: number, d: RunDeps): Pro
     checks: await safe(() => gh.checks(pr.headSha)),
     comments: await safe(() => gh.comments(prNumber)),
     files,
-    production: needsProd ? await safe(() => gh.production(policy.production_url)) : null,
+    production: await safe(() => gh.production(policy.production_url)),
   });
   const report: GateReport = { decision, merged: null, verify: null, rolledBack: null, incident: null };
   d.log(`gate PR #${prNumber} ${decision.sha.slice(0, 12)}: ${decision.outcome} ${decision.reasons.join("; ")}`);
@@ -138,7 +137,8 @@ export async function runGate(policy: Policy, prNumber: number, d: RunDeps): Pro
 /** RED files pushed to the target branch without an Owner-Approval line open an incident (detect and alert). */
 export async function runAudit(policy: Policy, before: string, after: string, d: RunDeps): Promise<number | null> {
   const c = await d.gh.compare(before, after);
-  const red = c.files.filter((f) => matchesAny(f, policy.red_paths));
+  // GitHub lists at most 300 files per compare: a capped list cannot prove nothing protected changed.
+  const red = c.files.length >= 300 ? [`(${c.files.length}+ files: list capped, cannot be checked)`] : c.files.filter((f) => matchesAny(f, policy.red_paths));
   if (!red.length) return null;
   if (c.messages.some((m) => /^Owner-Approval:\s*\S+/m.test(m))) return null;
   return d.gh.openIssue(
@@ -146,6 +146,19 @@ export async function runAudit(policy: Policy, before: string, after: string, d:
     [`Push ${before.slice(0, 12)}..${after.slice(0, 12)} changed protected (RED) files without an \`Owner-Approval:\` line:`, ...red.map((f) => `- ${f}`), "", "Automatic releases are paused while this issue is open. If Livio approved this change, close the issue.", `Evidence: ${d.runUrl}`].join("\n"),
     ["release-incident"],
   );
+}
+
+/** Reverts merge commit `mergeSha` on `branch` in the git checkout at `cwd` and pushes it to origin. */
+export function gitRevert(branch: string, mergeSha: string, cwd = process.cwd()): string {
+  if (!/^[0-9a-f]{40}$/.test(mergeSha) || !/^[\w./-]+$/.test(branch)) throw new Error("bad revert input");
+  const id = ["-c", "user.name=github-actions[bot]", "-c", "user.email=41898282+github-actions[bot]@users.noreply.github.com"];
+  const git = (...a: string[]) => execFileSync("git", [...id, ...a], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  git("fetch", "origin", branch);
+  git("checkout", "-B", branch, `origin/${branch}`);
+  git("revert", "-m", "1", "--no-commit", mergeSha);
+  git("commit", "-m", `Auto-rollback of ${mergeSha}`, "-m", `Auto-Rollback: ${mergeSha}\nReason: production verification failed`);
+  git("push", "origin", `HEAD:${branch}`);
+  return git("rev-parse", "HEAD");
 }
 
 /* ---------------- real GitHub client (Actions only) ---------------- */
@@ -193,7 +206,11 @@ export function githubClient(repo: string, token: string, f: typeof fetch = fetc
     async comments(n) {
       return (await pages(`/issues/${n}/comments`)).map((x) => { const r = o(x); return { body: s(r.body), login: s(o(r.user).login), association: s(r.author_association), created_at: s(r.created_at) }; });
     },
-    async behindBy(base, sha) { return Number(o(await api("GET", `/compare/${base}...${sha}`)).behind_by); },
+    async behindBy(base, sha) {
+      const n = o(await api("GET", `/compare/${base}...${sha}`)).behind_by;
+      if (typeof n !== "number" || !Number.isInteger(n)) throw new Error("compare answer has no behind_by");
+      return n;
+    },
     async stopIssues(labels) {
       const all = new Set<number>();
       for (const l of labels) for (const x of await pages(`/issues?state=open&labels=${encodeURIComponent(l)}`)) all.add(Number(o(x).number));
@@ -217,14 +234,7 @@ export function githubClient(repo: string, token: string, f: typeof fetch = fetc
       return { files: (c.files as unknown[] ?? []).map((x) => s(o(x).filename)), messages: (c.commits as unknown[] ?? []).map((x) => s(o(o(x).commit).message)) };
     },
     async revert(branch, mergeSha) {
-      const git = (...a: string[]) => execFileSync("git", a, { encoding: "utf8" }).trim();
-      git("fetch", "origin", branch);
-      git("checkout", "-B", branch, `origin/${branch}`);
-      git("-c", "user.name=github-actions[bot]", "-c", "user.email=41898282+github-actions[bot]@users.noreply.github.com",
-        "revert", "-m", "1", "--no-edit", mergeSha);
-      git("commit", "--amend", "--no-edit", "-m", `Auto-rollback of ${mergeSha}`, "-m", `Auto-Rollback: ${mergeSha}\nReason: production verification failed`);
-      git("push", "origin", branch);
-      return git("rev-parse", "HEAD");
+      return gitRevert(branch, mergeSha);
     },
   };
 }

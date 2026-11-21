@@ -33,7 +33,7 @@ export interface GateInput {
   checks: CheckRun[] | null;
   comments: Comment[] | null;
   files: ChangedFile[] | null;
-  /** Production backup facts, needed only for AMBER data changes; null when unreadable. */
+  /** Production backup facts (every release needs backup on: a free-plan deploy otherwise resets the store); null when unreadable. */
   production: { backupMode: string; lastDrillOk: boolean | null } | null;
 }
 
@@ -75,7 +75,8 @@ export function decide(i: GateInput): Decision {
 
   // 1. Owner controls first: revoked, paused or an open stop/incident issue stops everything.
   if (p.status === "revoked") return refuse("standing delegation is revoked");
-  if ((i.pauseVariable ?? "").trim().toLowerCase() === "off") return refuse(`paused by the owner (${p.pause_variable}=off)`);
+  const pv = (i.pauseVariable ?? "").trim().toLowerCase();
+  if (pv !== "" && pv !== "on") return refuse(`paused by the owner (${p.pause_variable}=${pv.slice(0, 20)}; only unset or "on" runs)`);
   if (i.stopIssues === null) return refuse("could not read stop issues (fail closed)");
   if (i.stopIssues.length > 0) return refuse(`paused: open stop/incident issue #${i.stopIssues.join(", #")}`);
 
@@ -118,12 +119,16 @@ export function decide(i: GateInput): Decision {
   if (author === pass.reviewer) return { ...refuse("reviewer is the same session that wrote the change"), tier: c.tier, classification: c };
 
   // 6. Up to date with the target branch and mergeable, so what was tested is what ships.
-  if (i.behindBy === null) return refuse("could not compare with the target branch (fail closed)");
+  if (i.behindBy === null || !Number.isInteger(i.behindBy) || i.behindBy < 0) return refuse("could not compare with the target branch (fail closed)");
   if (i.behindBy > 0) return wait(`PR is ${i.behindBy} commit(s) behind ${p.target_branch}; update the branch`);
   if (i.pr.mergeable === null) return wait("GitHub is still computing mergeability");
   if (!i.pr.mergeable || !["clean", "unstable", "has_hooks"].includes(i.pr.mergeableState)) return refuse(`not mergeable (${i.pr.mergeableState})`);
 
-  // 7. AMBER extra controls.
+  // 7. A deploy must not reset the store (and with it the audit trail): backup must be on.
+  if (!i.production) return { ...refuse("production backup state unreadable (fail closed)"), tier: c.tier, classification: c };
+  if (i.production.backupMode !== "on") return { ...base, outcome: "owner", tier: c.tier, classification: c, review: pass, reasons: [`production backup mode is ${i.production.backupMode || "unknown"}: a deploy would reset the store and its audit trail`] };
+
+  // 8. AMBER extra controls.
   const reasons: string[] = [...c.reasons];
   if (c.tier === "AMBER") {
     const miss: string[] = [];
@@ -131,13 +136,7 @@ export function decide(i: GateInput): Decision {
     if (pass.impact !== "assessed") miss.push("review has no impact=assessed");
     if (pass.rollback !== "ok") miss.push("review has no rollback=ok");
     if (c.changedLines > p.limits.amber_max_changed_lines) miss.push(`AMBER change is ${c.changedLines} lines, over ${p.limits.amber_max_changed_lines}`);
-    if (c.touchesData) {
-      if (!i.production) miss.push("production backup state unreadable");
-      else {
-        if (i.production.backupMode !== "on") miss.push(`production backup mode is ${i.production.backupMode}, not on`);
-        if (i.production.lastDrillOk !== true) miss.push("last restore drill did not pass");
-      }
-    }
+    if (c.touchesData && i.production.lastDrillOk !== true) miss.push("last restore drill did not pass");
     if (miss.length) return { ...base, outcome: "owner", tier: "AMBER", classification: c, review: pass, reasons: ["AMBER controls not met: needs Livio's approval", ...miss] };
     reasons.push("AMBER controls met");
   }
