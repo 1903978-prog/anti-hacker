@@ -32,12 +32,13 @@
  * the scan policy engine.
  */
 import { attestationKey, verifyCopy } from "./attestation.js";
+import { requiredSlot } from "./schedule.js";
 
 export type DropboxStatus = "ok" | "red" | "not-connected" | "error";
 
 export const MIN_COPIES = 2;
-export const WINDOW_DAYS = 8;
-export const NEWEST_MAX_DAYS = 2;
+/** Weekly schedule (Monday 08:00 Bangkok): two generations are 15 days; the newest must be from the slot that is due (12 h grace). */
+export const WINDOW_DAYS = 15;
 
 /** The apps whose copies are checked: the four subfolders of "backups nov26" (checked 14 Nov 2026).
  * secval is not one of them: its database is kept by Litestream in Backblaze and nothing copies its code there. */
@@ -111,7 +112,7 @@ const realFetch: DropboxFetcher = (url, init) =>
 const LINK = "https://www.dropbox.com/home/backups%20nov26";
 const RULE =
   `Each app needs at least ${MIN_COPIES} code copies and ${MIN_COPIES} database copies made in the last ${WINDOW_DAYS} days, ` +
-  `the newest at most ${NEWEST_MAX_DAYS} days old. Empty files do not count.`;
+  `the newest from the latest Monday 08:00 Bangkok backup (12 hours grace). Empty files do not count.`;
 
 class HttpError extends Error {
   constructor(public status: number, public missingScope: string | null = null) {
@@ -240,7 +241,6 @@ export function centralProblems(status: unknown, now: Date): { byApp: Map<string
   if (runTime === null)
     return flagAllApps("the central backup status has an invalid run time", "The central backup's status file has an invalid run time.");
   const runDay = parisDate(new Date(runTime));
-  const age = daysBetween(runDay, parisDate(now));
   if (runTime > now.getTime())
     return flagAllApps("the central backup run time is in the future", `The central backup's status file is future-dated (${showDate(runDay)}).`);
   const notes = [`Central backup last ran on ${showDate(runDay)}.`];
@@ -263,7 +263,8 @@ export function centralProblems(status: unknown, now: Date): { byApp: Map<string
     list.push("the central backup does not cover this app (missing from its status file)");
     byApp.set(app, list);
   }
-  if (age > NEWEST_MAX_DAYS) {
+  const dueDay = parisDate(requiredSlot(now));
+  if (daysBetween(dueDay, runDay) < 0) {
     for (const { app } of BACKUP_APPS) if (app !== "secval") {
       const list = byApp.get(app) ?? [];
       list.push(`the central backup has not run since ${showDate(runDay)}`);
@@ -350,7 +351,8 @@ export function judge(
           problems.push(`only ${recent} ${label} cop${recent === 1 ? "y" : "ies"} in the last ${WINDOW_DAYS} days (needs ${MIN_COPIES})`);
         const age = daysBetween(newest, today);
         if (age < 0) problems.push(`newest ${label} copy is future-dated (${showDate(newest)})`);
-        else if (age > NEWEST_MAX_DAYS) problems.push(`newest ${label} copy is from ${showDate(newest)} (${age} days old)`);
+        else if (daysBetween(parisDate(requiredSlot(now)), newest) < 0)
+          problems.push(`newest ${label} copy is from ${showDate(newest)} (${age} days old), older than the last Monday 08:00 Bangkok backup`);
       }
       return { latest: all[0]?.at.toISOString() ?? null, recent };
     };

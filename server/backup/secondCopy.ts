@@ -8,6 +8,7 @@ import { appendAudit } from "../audit/log.js";
 import { checkStoreCopy } from "./drill.js";
 import { accessTokenWithScope, parisDate, type DropboxFetcher, type Env } from "./dropbox.js";
 import { attestationKey, dropboxContentHash, signManifest } from "./attestation.js";
+import { lastScheduledSlot, requiredSlot } from "./schedule.js";
 
 /**
  * Second backup copy of secval itself (database AND code) in Livio's Dropbox,
@@ -15,7 +16,7 @@ import { attestationKey, dropboxContentHash, signManifest } from "./attestation.
  * and GitHub (code); this is the second, kept with a different provider, so the
  * release rule "2 database + 2 code copies" can be met without a new credential.
  *
- * Once a day (only when SECVAL_SECOND_COPY=on), on the server:
+ * Once a week, Monday 08:00 Bangkok = 01:00 UTC (only when SECVAL_SECOND_COPY=on), on the server:
  *  - database: a consistent snapshot of the live store (SQLite VACUUM INTO), gzip;
  *  - code: a zip of the deployed source tree, with the commit it was built from;
  *  - both encrypted (AES-256-GCM) BEFORE they leave the server; Dropbox then also
@@ -560,14 +561,15 @@ export function secondCopyStatus(db: DB, now: Date = new Date(), env: Env = proc
 } {
   const mode = secondCopyMode(env);
   const last = getSecondCopy(db);
-  const fresh = !!last && now.getTime() - Date.parse(last.at) < 2 * 24 * HOUR_MS;
+  // Weekly schedule: fresh = a good run since the slot that is due (Monday 08:00 Bangkok, 12 h grace).
+  const fresh = !!last && Date.parse(last.at) >= requiredSlot(now).getTime();
   const healthy = mode === "on" && fresh && !!last?.ok;
   const message =
     mode === "off" ? "Second copy in Dropbox is switched off (SECVAL_SECOND_COPY is not on)."
       : mode === "dryrun" ? `Second copy is in DRY RUN (nothing written to Dropbox). ${last ? last.detail : "Not run yet."}`
       : !last ? "Second copy in Dropbox has not run yet."
       : !last.ok ? `SECOND COPY FAILED: ${last.detail}`
-      : !fresh ? "SECOND COPY IS OLD: the last good copy is over two days old."
+      : !fresh ? "SECOND COPY IS OLD: no good copy since the last Monday 08:00 Bangkok backup."
       : last.detail;
   return { mode, last, healthy, message };
 }
@@ -575,7 +577,8 @@ export function secondCopyStatus(db: DB, now: Date = new Date(), env: Env = proc
 /** Whether the scheduler should run now: switched on, no good copy for today, and no failed try in the last 3 hours. */
 export function dueNow(last: SecondCopyRun | null, now: Date): boolean {
   if (!last) return true;
-  if (last.ok && last.day === parisDate(now)) return false;
+  // Weekly: one good run per Monday 01:00 UTC slot; a good run since the latest slot means nothing is due.
+  if (last.ok && Date.parse(last.at) >= lastScheduledSlot(now).getTime()) return false;
   if (!last.ok && now.getTime() - Date.parse(last.at) < RETRY_AFTER_MS) return false;
   return true;
 }

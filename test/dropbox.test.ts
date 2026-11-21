@@ -52,7 +52,7 @@ describe("dropbox backup check", () => {
   it("is red with only one copy, even a fresh one", () => {
     const r = judge(copies(["261114"]), NOW);
     expect(r.status).toBe("red");
-    expect(r.apps[0]!.problems[0]).toBe("only 1 code copy in the last 8 days (needs 2)");
+    expect(r.apps[0]!.problems[0]).toBe("only 1 code copy in the last 15 days (needs 2)");
   });
 
   it("two files on the same day count as one copy", () => {
@@ -82,9 +82,12 @@ describe("dropbox backup check", () => {
   });
 
   it("is red when the newest copy is stale", () => {
-    const r = judge(copies(["261108", "261110"]), NOW);
+    // Weekly schedule: NOW is Saturday 14 Nov, so the Monday 09 Nov 08:00 Bangkok backup is due; a 05 Nov copy is from the week before.
+    const r = judge(copies(["261102", "261105"]), NOW);
     expect(r.status).toBe("red");
-    expect(r.apps[0]!.problems).toContain("newest code copy is from 10 Nov 2026 (4 days old)");
+    expect(r.apps[0]!.problems).toContain("newest code copy is from 05 Nov 2026 (9 days old), older than the last Monday 08:00 Bangkok backup");
+    // Copies from the due Monday and the one before are fine: two weekly generations.
+    expect(judge(copies(["261102", "261109"]), NOW).status).toBe("ok");
   });
 
   it("does not count empty files", () => {
@@ -113,8 +116,8 @@ describe("dropbox backup check", () => {
   });
 
   it("flags a central backup that stopped running", () => {
-    const c = centralProblems({ runAt: "2026-11-09T14:00:00Z", apps: { nexus: {} } }, NOW);
-    expect(c.byApp.get("nexus")).toEqual(["the central backup has not run since 09 Nov 2026"]);
+    const c = centralProblems({ runAt: "2026-11-02T14:00:00Z", apps: { nexus: {} } }, NOW);
+    expect(c.byApp.get("nexus")).toEqual(["the central backup has not run since 02 Nov 2026"]);
   });
 
   it("reproduces 20 Nov 2026: an app missing from the central status file is red, even with overdue: []", () => {
@@ -207,10 +210,10 @@ describe("dropbox backup check", () => {
     const ok = await run(listing());
     expect(ok.status).toBe("ok");
 
-    // 21 Nov 2026 before the 06:00 run: only the 20 Nov copy is within 8 days -> one copy, red (a real gap, not a false alarm).
-    const oneCopy = await run(listing((n) => n.startsWith("261121-")));
+    // 21 Nov 2026 before the 06:00 run: only the 20 Nov copy is left within 15 days -> one copy, red (a real gap, not a false alarm).
+    const oneCopy = await run(listing((n) => n.startsWith("261121-") || n.startsWith("261112-")));
     expect(oneCopy.status).toBe("red");
-    expect(oneCopy.apps.find((a) => a.app === "compplan")!.problems).toContain("only 1 code copy in the last 8 days (needs 2)");
+    expect(oneCopy.apps.find((a) => a.app === "compplan")!.problems).toContain("only 1 code copy in the last 15 days (needs 2)");
     expect(oneCopy.apps.find((a) => a.app === "compplan")!.problems.join(" ")).not.toContain("days old");
 
     // Missing: no 20 or 21 Nov database copy for nexus -> newest database copy 9 days old.
@@ -232,7 +235,7 @@ describe("dropbox backup check", () => {
     });
     expect(stale.status).toBe("red");
     expect(stale.apps.every((a) => a.status === "red")).toBe(true);
-    expect(stale.apps.every((a) => a.problems.includes("newest code copy is from 21 Nov 2026 (5 days old)"))).toBe(true);
+    expect(stale.apps.every((a) => a.problems.includes("newest code copy is from 21 Nov 2026 (5 days old), older than the last Monday 08:00 Bangkok backup"))).toBe(true);
     expect(stale.apps.every((a) => a.problems.every((p) => !p.includes("central backup")))).toBe(true);
 
     // Status file readable only with a permission the app lacks (21 Nov 2026 production): every app red, permission named.
@@ -279,7 +282,7 @@ describe("dropbox backup check", () => {
     expect(r.status).toBe("red");
     expect(r.apps.every((a) => a.status === "red")).toBe(true);
     expect(r.apps.find((a) => a.app === "nexus")!.problems).toEqual([
-      "only 1 database copy in the last 8 days (needs 2)",
+      "only 1 database copy in the last 15 days (needs 2)",
       // The 13 Nov status file did not list Nexus either; that gap was only noticed on 20 Nov 2026.
       "the central backup does not cover this app (missing from its status file)",
     ]);
